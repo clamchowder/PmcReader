@@ -1,4 +1,5 @@
-﻿using PmcReader.Interop;
+﻿using System;
+using PmcReader.Interop;
 
 namespace PmcReader.AMD
 {
@@ -22,6 +23,7 @@ namespace PmcReader.AMD
             public string[] columns = new string[] { "Item", "Instructions", "IPC", "Op Cache Ops/C", "Op Cache Hitrate", "Decoder Ops/C", ">6 Ops From Op Cache", "Mop Queue Empty Cycles" };
             private ulong[] lastThreadAperf;
             private ulong[] lastThreadRetiredInstructions;
+            private long lastUpdateTime;
 
             public OpCacheConfig(Zen2 amdCpu)
             {
@@ -69,10 +71,13 @@ namespace PmcReader.AMD
                     Ring0.ReadMsr(MSR_APERF, out lastThreadAperf[threadIdx]);
                     Ring0.ReadMsr(MSR_INSTR_RETIRED, out lastThreadRetiredInstructions[threadIdx]);
                 }
+
+                lastUpdateTime = DateTimeOffset.Now.ToUnixTimeMilliseconds();
             }
 
             public MonitoringUpdateResults Update()
             {
+                float normalizationFactor = cpu.getNormalizationFactor(ref lastUpdateTime);
                 MonitoringUpdateResults results = new MonitoringUpdateResults();
                 results.unitMetrics = new string[cpu.GetThreadCount()][];
                 ulong totalOpCacheOps = 0;
@@ -123,7 +128,7 @@ namespace PmcReader.AMD
                     float opCacheOver6OpsCycles = (float)opCacheOver6Ops / opCacheCycles * 100;
                     float mopQueueEmpty = (float)mopQueueEmptyCycles / elapsedActiveCycles * 100;
                     results.unitMetrics[threadIdx] = new string[] { "Thread " + threadIdx, 
-                        FormatLargeNumber(elapsedRetiredInstr),
+                        FormatLargeNumber(elapsedRetiredInstr * normalizationFactor) + "/s",
                         string.Format("{0:F2}", threadIpc),
                         string.Format("{0:F2}", opCacheThroughput),
                         string.Format("{0:F2}%", opCacheHitrate),
@@ -139,7 +144,7 @@ namespace PmcReader.AMD
                 float overallOpCacheOver6OpsCycles = (float)totalCyclesOpCacheDeliveredOver6Ops / totalOpCacheCycles * 100;
                 float overallMopQueueEmpty = (float)totalMopQueueEmptyCylces / totalActiveCycles * 100;
                 results.overallMetrics = new string[] { "Overall",
-                        FormatLargeNumber(totalRetiredInstructions),
+                        FormatLargeNumber(totalRetiredInstructions * normalizationFactor) + "/s",
                         string.Format("{0:F2}", overallIpc),
                         string.Format("{0:F2}", overallOcThroughput),
                         string.Format("{0:F2}%", overallOcHitrate),
@@ -157,6 +162,7 @@ namespace PmcReader.AMD
             public string[] columns = new string[] { "Item", "Instructions", "IPC", "BPU Accuracy", "Branch MPKI", "L1 BTB Overhead", "L2 BTB Overhead", "Decoder Overrides/1K Instr", "% Branches Fused" };
             private ulong[] lastThreadAperf;
             private ulong[] lastThreadRetiredInstructions;
+            private long lastUpdateTime;
 
             public BpuMonitoringConfig(Zen2 amdCpu)
             {
@@ -204,10 +210,13 @@ namespace PmcReader.AMD
                     Ring0.ReadMsr(MSR_APERF, out lastThreadAperf[threadIdx]);
                     Ring0.ReadMsr(MSR_INSTR_RETIRED, out lastThreadRetiredInstructions[threadIdx]);
                 }
+
+                lastUpdateTime = DateTimeOffset.Now.ToUnixTimeMilliseconds();
             }
 
             public MonitoringUpdateResults Update()
             {
+                float normalizationFactor = cpu.getNormalizationFactor(ref lastUpdateTime);
                 MonitoringUpdateResults results = new MonitoringUpdateResults();
                 results.unitMetrics = new string[cpu.GetThreadCount()][];
                 ulong totalRetiredBranches = 0;
@@ -259,7 +268,7 @@ namespace PmcReader.AMD
                     float decoderOverridesPer1KInstr = (float)decoderOverrides / elapsedRetiredInstr * 1000;
                     float pctBranchesFused = (float)retiredFusedBranches / retiredBranches * 100;
                     results.unitMetrics[threadIdx] = new string[] { "Thread " + threadIdx,
-                        FormatLargeNumber(elapsedRetiredInstr),
+                        FormatLargeNumber(elapsedRetiredInstr * normalizationFactor) + "/s",
                         string.Format("{0:F2}", threadIpc),
                         string.Format("{0:F2}%", bpuAccuracy),
                         string.Format("{0:F2}", branchMpki),
@@ -277,7 +286,7 @@ namespace PmcReader.AMD
                 float averageBpuOverridesPer1KInstr = (float)totalDecoderOverrides / totalRetiredInstructions * 1000;
                 float averagePctBranchesFused = (float)totalRetiredFusedBranches / totalRetiredBranches * 100;
                 results.overallMetrics = new string[] { "Overall",
-                        FormatLargeNumber(totalRetiredInstructions),
+                        FormatLargeNumber(totalRetiredInstructions * normalizationFactor) + "/s",
                         string.Format("{0:F2}", overallIpc),
                         string.Format("{0:F2}%", averageBpuAccuracy),
                         string.Format("{0:F2}", averageBranchMpki),
@@ -296,6 +305,7 @@ namespace PmcReader.AMD
             public string[] columns = new string[] { "Item", "Instructions", "IPC", "FLOPs", "FMA FLOPs", "Non-FMA FLOPs", "FLOPs/c", "FP Sch Full Stall", "FP Regs Full Stall" };
             private ulong[] lastThreadAperf;
             private ulong[] lastThreadRetiredInstructions;
+            private long lastUpdateTime;
 
             public FlopsMonitoringConfig(Zen2 amdCpu)
             {
@@ -346,10 +356,13 @@ namespace PmcReader.AMD
                     Ring0.ReadMsr(MSR_APERF, out lastThreadAperf[threadIdx]);
                     Ring0.ReadMsr(MSR_INSTR_RETIRED, out lastThreadRetiredInstructions[threadIdx]);
                 }
+
+                lastUpdateTime = DateTimeOffset.Now.ToUnixTimeMilliseconds();
             }
 
             public MonitoringUpdateResults Update()
             {
+                float normalizationFactor = cpu.getNormalizationFactor(ref lastUpdateTime);
                 MonitoringUpdateResults results = new MonitoringUpdateResults();
                 results.unitMetrics = new string[cpu.GetThreadCount()][];
                 ulong totalMacFlops = 0;
@@ -394,11 +407,11 @@ namespace PmcReader.AMD
                     float fpSchStallPct = (float)fpSchedulerFullStall / elapsedActiveCycles * 100;
                     float fpRegsStallPct = (float)fpRegsFullStall / elapsedActiveCycles * 100;
                     results.unitMetrics[threadIdx] = new string[] { "Thread " + threadIdx,
-                        FormatLargeNumber(elapsedRetiredInstr),
+                        FormatLargeNumber(elapsedRetiredInstr * normalizationFactor) + "/s",
                         string.Format("{0:F2}", threadIpc),
-                        FormatLargeNumber(retiredMacFlops + retiredOtherFlops),
-                        FormatLargeNumber(retiredMacFlops),
-                        FormatLargeNumber(retiredOtherFlops),
+                        FormatLargeNumber(normalizationFactor * (retiredMacFlops + retiredOtherFlops)) + "/s",
+                        FormatLargeNumber(retiredMacFlops * normalizationFactor) + "/s",
+                        FormatLargeNumber(retiredOtherFlops * normalizationFactor) + "/s",
                         string.Format("{0:F1}", flopsPerClk),
                         string.Format("{0:F2}%", fpSchStallPct),
                         string.Format("{0:F2}%", fpRegsStallPct) };
@@ -409,11 +422,11 @@ namespace PmcReader.AMD
                 float totalFpSchStallPct = (float)totalFpSchedulerStalls / totalActiveCycles * 100;
                 float totalFpRegsStallPct = (float)totalFpRegFullStalls / totalActiveCycles * 100;
                 results.overallMetrics = new string[] { "Overall",
-                        FormatLargeNumber(totalRetiredInstructions),
+                        FormatLargeNumber(totalRetiredInstructions * normalizationFactor) + "/s",
                         string.Format("{0:F2}", overallIpc),
-                        FormatLargeNumber(totalMacFlops + totalOtherFlops),
-                        FormatLargeNumber(totalMacFlops),
-                        FormatLargeNumber(totalOtherFlops),
+                        FormatLargeNumber(normalizationFactor * (totalMacFlops + totalOtherFlops)) + "/s",
+                        FormatLargeNumber(totalMacFlops * normalizationFactor) + "/s",
+                        FormatLargeNumber(totalOtherFlops * normalizationFactor) + "/s",
                         string.Format("{0:F1}", overallFlopsPerClk),
                         string.Format("{0:F2}%", totalFpSchStallPct),
                         string.Format("{0:F2}%", totalFpRegsStallPct) };
@@ -428,6 +441,7 @@ namespace PmcReader.AMD
             public string[] columns = new string[] { "Item", "Instructions", "IPC", "ROB Full Stall", "Load Queue Full Stall", "Store Queue Full Stall", "Taken Branch Buffer Full Stall", "AGU Scheduler Stall", "AGSQ Token Stall" };
             private ulong[] lastThreadAperf;
             private ulong[] lastThreadRetiredInstructions;
+            private long lastUpdateTime;
 
             public ResourceStallMontitoringConfig(Zen2 amdCpu)
             {
@@ -475,10 +489,13 @@ namespace PmcReader.AMD
                     Ring0.ReadMsr(MSR_APERF, out lastThreadAperf[threadIdx]);
                     Ring0.ReadMsr(MSR_INSTR_RETIRED, out lastThreadRetiredInstructions[threadIdx]);
                 }
+
+                lastUpdateTime = DateTimeOffset.Now.ToUnixTimeMilliseconds();
             }
 
             public MonitoringUpdateResults Update()
             {
+                float normalizationFactor = cpu.getNormalizationFactor(ref lastUpdateTime);
                 MonitoringUpdateResults results = new MonitoringUpdateResults();
                 results.unitMetrics = new string[cpu.GetThreadCount()][];
                 ulong totalRobFullStalls = 0;
@@ -524,7 +541,7 @@ namespace PmcReader.AMD
 
                     float threadIpc = (float)elapsedRetiredInstr / elapsedActiveCycles;
                     results.unitMetrics[threadIdx] = new string[] { "Thread " + threadIdx,
-                        FormatLargeNumber(elapsedRetiredInstr),
+                        FormatLargeNumber(elapsedRetiredInstr * normalizationFactor) + "/s",
                         string.Format("{0:F2}", threadIpc),
                         string.Format("{0:F2}%", (float)robFullStalls / elapsedActiveCycles * 100),
                         string.Format("{0:F2}%", (float)ldqStalls / elapsedActiveCycles * 100),
@@ -536,7 +553,7 @@ namespace PmcReader.AMD
 
                 float overallIpc = (float)totalRetiredInstructions / totalActiveCycles;
                 results.overallMetrics = new string[] { "Overall",
-                        FormatLargeNumber(totalRetiredInstructions),
+                        FormatLargeNumber(totalRetiredInstructions * normalizationFactor) + "/s",
                         string.Format("{0:F2}", overallIpc),
                         string.Format("{0:F2}%", (float)totalRobFullStalls / totalActiveCycles * 100),
                         string.Format("{0:F2}%", (float)totalLdqStalls / totalActiveCycles * 100),
@@ -556,6 +573,7 @@ namespace PmcReader.AMD
             public string[] columns = new string[] { "Item", "Instructions", "IPC", "ALSQ3_0 Stall", "ALSQ1 Stall", "ALSQ2 Stall", "ALU Token Stall", "Int Regs Full Stall", "Int Sched Misc Stall" };
             private ulong[] lastThreadAperf;
             private ulong[] lastThreadRetiredInstructions;
+            private long lastUpdateTime;
 
             public IntSchedulerMonitoringConfig(Zen2 amdCpu)
             {
@@ -603,10 +621,13 @@ namespace PmcReader.AMD
                     Ring0.ReadMsr(MSR_APERF, out lastThreadAperf[threadIdx]);
                     Ring0.ReadMsr(MSR_INSTR_RETIRED, out lastThreadRetiredInstructions[threadIdx]);
                 }
+
+                lastUpdateTime = DateTimeOffset.Now.ToUnixTimeMilliseconds();
             }
 
             public MonitoringUpdateResults Update()
             {
+                float normalizationFactor = cpu.getNormalizationFactor(ref lastUpdateTime);
                 MonitoringUpdateResults results = new MonitoringUpdateResults();
                 results.unitMetrics = new string[cpu.GetThreadCount()][];
                 ulong totalAlsq3_0Stalls = 0;
@@ -652,7 +673,7 @@ namespace PmcReader.AMD
 
                     float threadIpc = (float)elapsedRetiredInstr / elapsedActiveCycles;
                     results.unitMetrics[threadIdx] = new string[] { "Thread " + threadIdx,
-                        FormatLargeNumber(elapsedRetiredInstr),
+                        FormatLargeNumber(elapsedRetiredInstr * normalizationFactor) + "/s",
                         string.Format("{0:F2}", threadIpc),
                         string.Format("{0:F2}%", (float)alsq3_0Stalls / elapsedActiveCycles * 100),
                         string.Format("{0:F2}%", (float)alsq1Stalls / elapsedActiveCycles * 100),
@@ -664,7 +685,7 @@ namespace PmcReader.AMD
 
                 float overallIpc = (float)totalRetiredInstructions / totalActiveCycles;
                 results.overallMetrics = new string[] { "Overall",
-                        FormatLargeNumber(totalRetiredInstructions),
+                        FormatLargeNumber(totalRetiredInstructions * normalizationFactor) + "/s",
                         string.Format("{0:F2}", overallIpc),
                         string.Format("{0:F2}%", (float)totalAlsq3_0Stalls / totalActiveCycles * 100),
                         string.Format("{0:F2}%", (float)totalAlsq1Stalls / totalActiveCycles * 100),
