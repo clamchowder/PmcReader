@@ -1,0 +1,10 @@
+D:\git\MsrUtil\obj\Debug\PmcReader.HaswellForm.resources
+D:\git\MsrUtil\obj\Debug\PmcReader.csproj.GenerateResource.cache
+D:\git\MsrUtil\obj\Debug\PmcReader.csproj.CoreCompileInputs.cache
+D:\git\MsrUtil\obj\Debug\PmcReader.csprojAssemblyReference.cache
+D:\git\MsrUtil\bin\Debug\PmcReader.exe.config
+D:\git\MsrUtil\bin\Debug\PmcReader.exe
+D:\git\MsrUtil\bin\Debug\PmcReader.pdb
+D:\git\MsrUtil\obj\Debug\PmcReader.Properties.Resources.resources
+D:\git\MsrUtil\obj\Debug\PmcReader.exe
+D:\git\MsrUtil\obj\Debug\PmcReader.pdb
