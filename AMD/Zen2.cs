@@ -7,20 +7,23 @@ namespace PmcReader.AMD
     {
         public Zen2()
         {
-            coreMonitoringConfigs = new MonitoringConfig[5];
+            coreMonitoringConfigs = new MonitoringConfig[8];
             coreMonitoringConfigs[0] = new OpCacheConfig(this);
             coreMonitoringConfigs[1] = new BpuMonitoringConfig(this);
             coreMonitoringConfigs[2] = new FlopsMonitoringConfig(this);
             coreMonitoringConfigs[3] = new ResourceStallMontitoringConfig(this);
             coreMonitoringConfigs[4] = new IntSchedulerMonitoringConfig(this);
+            coreMonitoringConfigs[5] = new L2MonitoringConfig(this);
+            coreMonitoringConfigs[6] = new DCMonitoringConfig(this);
+            coreMonitoringConfigs[7] = new ICMonitoringConfig(this);
             architectureName = "Zen 2";
         }
 
         public class OpCacheConfig : MonitoringConfig
         {
             private Zen2 cpu;
-            public string GetConfigName() { return "Op Cache Performance"; }
-            public string[] columns = new string[] { "Item", "Instructions", "IPC", "Op Cache Ops/C", "Op Cache Hitrate", "Decoder Ops/C", ">6 Ops From Op Cache", "Mop Queue Empty Cycles" };
+            public string GetConfigName() { return "Decode/Op Cache"; }
+            public string[] columns = new string[] { "Item", "Instructions", "IPC", "Ops/Instr", "Op Cache Hitrate", "Op Cache Ops/C", "Op Cache Active", "Decoder Ops/C", "Decoder Active", "Bogus Ops", "Op Queue Empty Cycles" };
             private ulong[] lastThreadAperf;
             private ulong[] lastThreadRetiredInstructions;
             private long lastUpdateTime;
@@ -59,9 +62,9 @@ namespace PmcReader.AMD
                     ulong decoderCycles = GetPerfCtlValue(0xAA, 0x1, true, true, false, false, true, false, 1, 0, false, false);
                     Ring0.WriteMsr(MSR_PERF_CTL_3, decoderCycles);
 
-                    // PERF_CTR4 = cycles where op cache delivered more than 6 ops
-                    ulong opCacheOver6Ops = GetPerfCtlValue(0xAA, 0x2, true, true, false, false, true, false, 7, 0, false, false);
-                    Ring0.WriteMsr(MSR_PERF_CTL_4, opCacheOver6Ops);
+                    // PERF_CTR4 = retired micro ops
+                    ulong retiredMops = GetPerfCtlValue(0xC1, 0, true, true, false, false, true, false, 0, 0, false, false);
+                    Ring0.WriteMsr(MSR_PERF_CTL_4, retiredMops);
 
                     // PERF_CTR5 = micro-op queue empty cycles
                     ulong mopQueueEmptyCycles = GetPerfCtlValue(0xA9, 0, true, true, false, false, true, false, 0, 0, false, false);
@@ -86,20 +89,19 @@ namespace PmcReader.AMD
                 ulong totalDecoderCycles = 0;
                 ulong totalRetiredInstructions = 0;
                 ulong totalActiveCycles = 0;
-                ulong totalCyclesOpCacheDeliveredOver6Ops = 0;
+                ulong totalRetiredOps = 0;
                 ulong totalMopQueueEmptyCylces = 0;
                 for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
                 {
-                    ulong retiredInstructions, activeCycles, elapsedRetiredInstr, elapsedActiveCycles;
-
                     ThreadAffinity.Set(1UL << threadIdx);
+                    ulong retiredInstructions, activeCycles, elapsedRetiredInstr, elapsedActiveCycles;
                     Ring0.ReadMsr(MSR_INSTR_RETIRED, out retiredInstructions);
                     Ring0.ReadMsr(MSR_APERF, out activeCycles);
                     ulong opCacheOps = ReadAndClearMsr(MSR_PERF_CTR_0);
                     ulong opCacheCycles = ReadAndClearMsr(MSR_PERF_CTR_1);
                     ulong decoderOps = ReadAndClearMsr(MSR_PERF_CTR_2);
                     ulong decoderCycles = ReadAndClearMsr(MSR_PERF_CTR_3);
-                    ulong opCacheOver6Ops = ReadAndClearMsr(MSR_PERF_CTR_4);
+                    ulong retiredOps = ReadAndClearMsr(MSR_PERF_CTR_4);
                     ulong mopQueueEmptyCycles = ReadAndClearMsr(MSR_PERF_CTR_5);
 
                     elapsedRetiredInstr = retiredInstructions;
@@ -118,40 +120,66 @@ namespace PmcReader.AMD
                     totalDecoderCycles += decoderCycles;
                     totalRetiredInstructions += elapsedRetiredInstr;
                     totalActiveCycles += elapsedActiveCycles;
-                    totalCyclesOpCacheDeliveredOver6Ops += opCacheOver6Ops;
+                    totalRetiredOps += retiredOps;
                     totalMopQueueEmptyCylces += mopQueueEmptyCycles;
 
-                    float threadIpc = (float)elapsedRetiredInstr / elapsedActiveCycles;
-                    float opCacheThroughput = (float)opCacheOps / opCacheCycles;
-                    float opCacheHitrate = opCacheOps / ((float)opCacheOps + decoderOps) * 100;
-                    float decoderThroughput = (float)decoderOps / decoderCycles;
-                    float opCacheOver6OpsCycles = (float)opCacheOver6Ops / opCacheCycles * 100;
-                    float mopQueueEmpty = (float)mopQueueEmptyCycles / elapsedActiveCycles * 100;
-                    results.unitMetrics[threadIdx] = new string[] { "Thread " + threadIdx, 
-                        FormatLargeNumber(elapsedRetiredInstr * normalizationFactor) + "/s",
-                        string.Format("{0:F2}", threadIpc),
-                        string.Format("{0:F2}", opCacheThroughput),
-                        string.Format("{0:F2}%", opCacheHitrate),
-                        string.Format("{0:F2}", decoderThroughput),
-                        string.Format("{0:F2}%", opCacheOver6OpsCycles),
-                        string.Format("{0:F2}%", mopQueueEmpty) };
+                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx,
+                        elapsedRetiredInstr,
+                        elapsedActiveCycles,
+                        opCacheOps,
+                        opCacheCycles,
+                        decoderOps,
+                        decoderCycles,
+                        retiredOps,
+                        mopQueueEmptyCycles,
+                        normalizationFactor);
                 }
 
-                float overallIpc = (float)totalRetiredInstructions / totalActiveCycles;
-                float overallOcThroughput = (float)totalOpCacheOps / totalOpCacheCycles;
-                float overallOcHitrate = totalOpCacheOps / ((float)totalOpCacheOps + totalDecoderOps) * 100;
-                float overallDecoderThroughput = (float)totalDecoderOps / totalDecoderCycles;
-                float overallOpCacheOver6OpsCycles = (float)totalCyclesOpCacheDeliveredOver6Ops / totalOpCacheCycles * 100;
-                float overallMopQueueEmpty = (float)totalMopQueueEmptyCylces / totalActiveCycles * 100;
-                results.overallMetrics = new string[] { "Overall",
-                        FormatLargeNumber(totalRetiredInstructions * normalizationFactor) + "/s",
-                        string.Format("{0:F2}", overallIpc),
-                        string.Format("{0:F2}", overallOcThroughput),
-                        string.Format("{0:F2}%", overallOcHitrate),
-                        string.Format("{0:F2}", overallDecoderThroughput),
-                        string.Format("{0:F2}%", overallOpCacheOver6OpsCycles),
-                        string.Format("{0:F2}%", overallMopQueueEmpty) };
+                results.overallMetrics = computeMetrics("Overall", 
+                    totalRetiredInstructions, 
+                    totalActiveCycles, 
+                    totalOpCacheOps, 
+                    totalOpCacheCycles, 
+                    totalDecoderOps, 
+                    totalDecoderCycles, 
+                    totalRetiredOps, 
+                    totalMopQueueEmptyCylces, 
+                    normalizationFactor);
                 return results;
+            }
+
+            private string[] computeMetrics(string itemName, 
+                ulong instr, 
+                ulong activeCycles, 
+                ulong opCacheOps, 
+                ulong opCacheCycles, 
+                ulong decoderOps, 
+                ulong decoderCycles, 
+                ulong retiredOps, 
+                ulong mopQueueEmptyCycles, 
+                float normalizationFactor)
+            {
+                float ipc = (float)instr / activeCycles;
+                float opCacheThroughput = (float)opCacheOps / opCacheCycles;
+                float opCacheHitrate = opCacheOps / ((float)opCacheOps + decoderOps) * 100;
+                float decoderThroughput = (float)decoderOps / decoderCycles;
+                float opsPerInstr = (float)retiredOps / instr;
+                float bogusOps = (float)(opCacheOps + decoderOps - retiredOps) / (opCacheOps + decoderOps) * 100;
+                float mopQueueEmpty = (float)mopQueueEmptyCycles / activeCycles * 100;
+                float opCacheActive = (float)opCacheCycles / activeCycles * 100;
+                float decoderActive = (float)decoderCycles / activeCycles * 100;
+                if (retiredOps > opCacheOps + decoderOps) bogusOps = 0;
+                return new string[] { itemName,
+                        FormatLargeNumber(instr * normalizationFactor) + "/s",
+                        string.Format("{0:F2}", ipc),
+                        string.Format("{0:F2}", opsPerInstr),
+                        string.Format("{0:F2}%", opCacheHitrate),
+                        string.Format("{0:F2}", opCacheThroughput),
+                        string.Format("{0:F2}%", opCacheActive),
+                        string.Format("{0:F2}", decoderThroughput),
+                        string.Format("{0:F2}%", decoderActive),
+                        string.Format("{0:F2}%", bogusOps),
+                        string.Format("{0:F2}%", mopQueueEmpty) };
             }
         }
 
@@ -695,6 +723,428 @@ namespace PmcReader.AMD
                         string.Format("{0:F2}%", (float)totalIntMiscStalls / totalActiveCycles * 100),
                 };
                 return results;
+            }
+        }
+        public class L2MonitoringConfig : MonitoringConfig
+        {
+            private Zen2 cpu;
+            public string GetConfigName() { return "L2 Cache"; }
+            public string[] columns = new string[] { "Item", "Instructions", "IPC", "L2 Hitrate", "L2 Hit BW", "L2 Code Hitrate", "L2 Code Hit BW", "L2 Data Hitrate", "L2 Data Hit BW", "L2 Prefetch Hitrate", "L2 Prefetch BW" };
+            private ulong[] lastThreadAperf;
+            private ulong[] lastThreadRetiredInstructions;
+            private long lastUpdateTime;
+
+            public L2MonitoringConfig(Zen2 amdCpu)
+            {
+                cpu = amdCpu;
+            }
+
+            public string[] GetColumns()
+            {
+                return columns;
+            }
+
+            public void Initialize()
+            {
+                cpu.EnablePerformanceCounters();
+                lastThreadAperf = new ulong[cpu.GetThreadCount()];
+                lastThreadRetiredInstructions = new ulong[cpu.GetThreadCount()];
+
+                ulong l2CodeRequests = GetPerfCtlValue(0x64, 0x7, true, true, false, false, true, false, 0, 0, false, false);
+                ulong l2CodeMiss = GetPerfCtlValue(0x64, 0x1, true, true, false, false, true, false, 0, 0, false, false);
+                ulong l2DataRequests = GetPerfCtlValue(0x64, 0xF8, true, true, false, false, true, false, 0, 0, false, false);
+                ulong l2DataMiss = GetPerfCtlValue(0x64, 0x8, true, true, false, false, true, false, 0, 0, false, false);
+                ulong l2PrefetchRequests = GetPerfCtlValue(0x60, 0x2, true, true, false, false, true, false, 0, 0, false, false);
+                ulong l2PrefetchHits = GetPerfCtlValue(0x70, 0x7, true, true, false, false, true, false, 0, 0, false, false);
+
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    ThreadAffinity.Set(1UL << threadIdx);
+                    Ring0.WriteMsr(MSR_PERF_CTL_0, l2CodeRequests);
+                    Ring0.WriteMsr(MSR_PERF_CTL_1, l2CodeMiss);
+                    Ring0.WriteMsr(MSR_PERF_CTL_2, l2DataRequests);
+                    Ring0.WriteMsr(MSR_PERF_CTL_3, l2DataMiss);
+                    Ring0.WriteMsr(MSR_PERF_CTL_4, l2PrefetchRequests);
+                    Ring0.WriteMsr(MSR_PERF_CTL_5, l2PrefetchHits);
+
+                    // Initialize last read values
+                    Ring0.ReadMsr(MSR_APERF, out lastThreadAperf[threadIdx]);
+                    Ring0.ReadMsr(MSR_INSTR_RETIRED, out lastThreadRetiredInstructions[threadIdx]);
+                }
+
+                lastUpdateTime = DateTimeOffset.Now.ToUnixTimeMilliseconds();
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                float normalizationFactor = cpu.getNormalizationFactor(ref lastUpdateTime);
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[cpu.GetThreadCount()][];
+                ulong totalL2CodeRequests = 0;
+                ulong totalL2CodeMisses = 0;
+                ulong totalL2DataRequests = 0;
+                ulong totalL2DataMisses = 0;
+                ulong totalRetiredInstructions = 0;
+                ulong totalActiveCycles = 0;
+                ulong totalL2PrefetchRequests = 0;
+                ulong totalL2PrefetchHits = 0;
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    ulong retiredInstructions, activeCycles, elapsedRetiredInstr, elapsedActiveCycles;
+
+                    ThreadAffinity.Set(1UL << threadIdx);
+                    Ring0.ReadMsr(MSR_INSTR_RETIRED, out retiredInstructions);
+                    Ring0.ReadMsr(MSR_APERF, out activeCycles);
+                    ulong l2CodeRequests = ReadAndClearMsr(MSR_PERF_CTR_0);
+                    ulong l2CodeMisses = ReadAndClearMsr(MSR_PERF_CTR_1);
+                    ulong l2DataRequests = ReadAndClearMsr(MSR_PERF_CTR_2);
+                    ulong l2DataMisses = ReadAndClearMsr(MSR_PERF_CTR_3);
+                    ulong l2PrefetchRequests = ReadAndClearMsr(MSR_PERF_CTR_4);
+                    ulong l2PrefetchHits = ReadAndClearMsr(MSR_PERF_CTR_5);
+
+                    elapsedRetiredInstr = retiredInstructions;
+                    elapsedActiveCycles = activeCycles;
+                    if (retiredInstructions > lastThreadRetiredInstructions[threadIdx])
+                        elapsedRetiredInstr = retiredInstructions - lastThreadRetiredInstructions[threadIdx];
+                    if (activeCycles > lastThreadAperf[threadIdx])
+                        elapsedActiveCycles = activeCycles - lastThreadAperf[threadIdx];
+
+                    lastThreadRetiredInstructions[threadIdx] = retiredInstructions;
+                    lastThreadAperf[threadIdx] = activeCycles;
+
+                    totalL2CodeRequests += l2CodeRequests;
+                    totalL2CodeMisses += l2CodeMisses;
+                    totalL2DataRequests += l2DataRequests;
+                    totalL2DataMisses += l2DataMisses;
+                    totalRetiredInstructions += elapsedRetiredInstr;
+                    totalActiveCycles += elapsedActiveCycles;
+                    totalL2PrefetchRequests += l2PrefetchRequests;
+                    totalL2PrefetchHits += l2PrefetchHits;
+                    results.unitMetrics[threadIdx] = computeMetrics("Thread" + threadIdx, 
+                        elapsedRetiredInstr, 
+                        elapsedActiveCycles, 
+                        l2CodeRequests, 
+                        l2CodeMisses, 
+                        l2DataRequests, 
+                        l2DataMisses, 
+                        l2PrefetchRequests, 
+                        l2PrefetchHits, 
+                        normalizationFactor);
+                }
+
+                results.overallMetrics = computeMetrics("Overall",
+                    totalRetiredInstructions,
+                    totalActiveCycles,
+                    totalL2CodeRequests,
+                    totalL2CodeMisses,
+                    totalL2DataRequests,
+                    totalL2DataMisses,
+                    totalL2PrefetchRequests,
+                    totalL2PrefetchHits,
+                    normalizationFactor);
+                return results;
+            }
+
+            private string[] computeMetrics(string itemName, ulong instr, ulong activeCycles, ulong l2CodeRequests, ulong l2CodeMisses, ulong l2DataRequests, ulong l2DataMisses, ulong l2PrefetchRequests, ulong l2PrefetchHits, float normalizationFactor)
+            {
+                float ipc = (float)instr / activeCycles;
+                float l2Hitrate = ((float)(l2PrefetchHits + l2CodeRequests + l2DataRequests - l2CodeMisses - l2DataMisses) / (l2CodeRequests + l2DataRequests + l2PrefetchRequests)) * 100;
+                float l2HitBw = (l2PrefetchHits + l2CodeRequests + l2DataRequests - l2CodeMisses - l2DataMisses) * 64 * normalizationFactor;
+                float l2CodeHitrate = (1 - (float)l2CodeMisses / l2CodeRequests) * 100;
+                float l2CodeHitBw = (l2CodeRequests - l2CodeMisses) * 64 * normalizationFactor;
+                float l2DataHitrate = (1 - (float)l2DataMisses / l2DataRequests) * 100;
+                float l2DataHitBw = (l2DataRequests - l2DataMisses) * 64 * normalizationFactor;
+                float l2PrefetchHitrate = (float)l2PrefetchHits / l2PrefetchRequests * 100;
+                float l2PrefetchBw = l2PrefetchHits * 64;
+                return new string[] { itemName,
+                        FormatLargeNumber(instr * normalizationFactor) + "/s",
+                        string.Format("{0:F2}", ipc),
+                        string.Format("{0:F2}%", l2Hitrate),
+                        FormatLargeNumber(l2HitBw) + "B/s",
+                        string.Format("{0:F2}%", l2CodeHitrate),
+                        FormatLargeNumber(l2CodeHitBw) + "B/s",
+                        string.Format("{0:F2}%", l2DataHitrate),
+                        FormatLargeNumber(l2DataHitBw) + "B/s",
+                        string.Format("{0:F2}%", l2PrefetchHitrate),
+                        FormatLargeNumber(l2PrefetchBw) + "B/s"};
+            }
+        }
+        public class DCMonitoringConfig : MonitoringConfig
+        {
+            private Zen2 cpu;
+            public string GetConfigName() { return "L1D Cache"; }
+            public string[] columns = new string[] { "Item", "Instructions", "IPC", "L1D Hitrate?", "L1D Hit BW?", "L2 Refill BW", "L3 Refill BW", "DRAM Refill BW", "Prefetch BW"};
+            private ulong[] lastThreadAperf;
+            private ulong[] lastThreadRetiredInstructions;
+            private long lastUpdateTime;
+
+            public DCMonitoringConfig(Zen2 amdCpu)
+            {
+                cpu = amdCpu;
+            }
+
+            public string[] GetColumns()
+            {
+                return columns;
+            }
+
+            public void Initialize()
+            {
+                cpu.EnablePerformanceCounters();
+                lastThreadAperf = new ulong[cpu.GetThreadCount()];
+                lastThreadRetiredInstructions = new ulong[cpu.GetThreadCount()];
+
+                ulong dcAccess = GetPerfCtlValue(0x40, 0, true, true, false, false, true, false, 0, 0, false, false);
+                ulong lsMabAlloc = GetPerfCtlValue(0x41, 0xB, true, true, false, false, true, false, 0, 0, false, false);
+                ulong dcRefillFromL2 = GetPerfCtlValue(0x43, 0x1, true, true, false, false, true, false, 0, 0, false, false);
+                ulong dcRefillFromL3 = GetPerfCtlValue(0x64, 0x12, true, true, false, false, true, false, 0, 0, false, false);
+                ulong dcRefillFromDram = GetPerfCtlValue(0x60, 0x48, true, true, false, false, true, false, 0, 0, false, false);
+                ulong dcHwPrefetch = GetPerfCtlValue(0x5A, 0x5B, true, true, false, false, true, false, 0, 0, false, false);
+
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    ThreadAffinity.Set(1UL << threadIdx);
+                    Ring0.WriteMsr(MSR_PERF_CTL_0, dcAccess);
+                    Ring0.WriteMsr(MSR_PERF_CTL_1, lsMabAlloc);
+                    Ring0.WriteMsr(MSR_PERF_CTL_2, dcRefillFromL2);
+                    Ring0.WriteMsr(MSR_PERF_CTL_3, dcRefillFromL3);
+                    Ring0.WriteMsr(MSR_PERF_CTL_4, dcRefillFromDram);
+                    Ring0.WriteMsr(MSR_PERF_CTL_5, dcHwPrefetch);
+
+                    // Initialize last read values
+                    Ring0.ReadMsr(MSR_APERF, out lastThreadAperf[threadIdx]);
+                    Ring0.ReadMsr(MSR_INSTR_RETIRED, out lastThreadRetiredInstructions[threadIdx]);
+                }
+
+                lastUpdateTime = DateTimeOffset.Now.ToUnixTimeMilliseconds();
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                float normalizationFactor = cpu.getNormalizationFactor(ref lastUpdateTime);
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[cpu.GetThreadCount()][];
+                ulong totalDcAccess = 0;
+                ulong totalLsMabAlloc = 0;
+                ulong totalDcRefillFromL2 = 0;
+                ulong totalDcRefillFromL3 = 0;
+                ulong totalRetiredInstructions = 0;
+                ulong totalActiveCycles = 0;
+                ulong totalDcRefillFromDram = 0;
+                ulong totalDcHwPrefetch = 0;
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    ulong retiredInstructions, activeCycles, elapsedRetiredInstr, elapsedActiveCycles;
+
+                    ThreadAffinity.Set(1UL << threadIdx);
+                    Ring0.ReadMsr(MSR_INSTR_RETIRED, out retiredInstructions);
+                    Ring0.ReadMsr(MSR_APERF, out activeCycles);
+                    ulong dcAccess = ReadAndClearMsr(MSR_PERF_CTR_0);
+                    ulong lsMabAlloc = ReadAndClearMsr(MSR_PERF_CTR_1);
+                    ulong dcRefillFromL2 = ReadAndClearMsr(MSR_PERF_CTR_2);
+                    ulong dcRefillFromL3 = ReadAndClearMsr(MSR_PERF_CTR_3);
+                    ulong dcRefillFromDram = ReadAndClearMsr(MSR_PERF_CTR_4);
+                    ulong dcHwPrefetch = ReadAndClearMsr(MSR_PERF_CTR_5);
+
+                    elapsedRetiredInstr = retiredInstructions;
+                    elapsedActiveCycles = activeCycles;
+                    if (retiredInstructions > lastThreadRetiredInstructions[threadIdx])
+                        elapsedRetiredInstr = retiredInstructions - lastThreadRetiredInstructions[threadIdx];
+                    if (activeCycles > lastThreadAperf[threadIdx])
+                        elapsedActiveCycles = activeCycles - lastThreadAperf[threadIdx];
+
+                    lastThreadRetiredInstructions[threadIdx] = retiredInstructions;
+                    lastThreadAperf[threadIdx] = activeCycles;
+
+                    totalDcAccess += dcAccess;
+                    totalLsMabAlloc += lsMabAlloc;
+                    totalDcRefillFromL2 += dcRefillFromL2;
+                    totalDcRefillFromL3 += dcRefillFromL3;
+                    totalRetiredInstructions += elapsedRetiredInstr;
+                    totalActiveCycles += elapsedActiveCycles;
+                    totalDcRefillFromDram += dcRefillFromDram;
+                    totalDcHwPrefetch += dcHwPrefetch;
+
+                    float threadIpc = (float)elapsedRetiredInstr / elapsedActiveCycles;
+                    float dcHitrate = (1 - (float)lsMabAlloc / dcAccess) * 100;
+                    float dcHitBw = (dcAccess - lsMabAlloc) * 8 * normalizationFactor; // "each increment represents an eight byte access"
+                    float l2RefillBw = dcRefillFromL2 * 64 * normalizationFactor;
+                    float l3RefillBw = dcRefillFromL3 * 64 * normalizationFactor;
+                    float dramRefillBw = dcRefillFromDram * 64 * normalizationFactor;
+                    float prefetchBw = dcHwPrefetch * 64 * normalizationFactor;
+                    results.unitMetrics[threadIdx] = new string[] { "Thread " + threadIdx,
+                        FormatLargeNumber(elapsedRetiredInstr * normalizationFactor) + "/s",
+                        string.Format("{0:F2}", threadIpc),
+                        string.Format("{0:F2}%", dcHitrate),
+                        FormatLargeNumber(dcHitBw) + "B/s",
+                        FormatLargeNumber(l2RefillBw) + "B/s",
+                        FormatLargeNumber(l3RefillBw) + "B/s",
+                        FormatLargeNumber(dramRefillBw) + "B/s",
+                        FormatLargeNumber(prefetchBw) + "B/s" };
+                }
+
+                float overallIpc = (float)totalRetiredInstructions / totalActiveCycles;
+                float overallDcHitrate = (1 - (float)totalLsMabAlloc / totalDcAccess) * 100;
+                float totaldcHitBw = (totalDcAccess - totalLsMabAlloc) * 8 * normalizationFactor; // "each increment represents an eight byte access"
+                float totall2RefillBw = totalDcRefillFromL2 * 64 * normalizationFactor;
+                float totall3RefillBw = totalDcRefillFromL3 * 64 * normalizationFactor;
+                float totaldramRefillBw = totalDcRefillFromDram * 64 * normalizationFactor;
+                float totalprefetchBw = totalDcHwPrefetch * 64 * normalizationFactor;
+                results.overallMetrics = new string[] { "Overall",
+                        FormatLargeNumber(totalRetiredInstructions * normalizationFactor) + "/s",
+                        string.Format("{0:F2}", overallIpc),
+                        string.Format("{0:F2}%", overallDcHitrate),
+                        FormatLargeNumber(totaldcHitBw) + "B/s",
+                        FormatLargeNumber(totall2RefillBw) + "B/s",
+                        FormatLargeNumber(totall3RefillBw) + "B/s",
+                        FormatLargeNumber(totaldramRefillBw) + "B/s",
+                        FormatLargeNumber(totalprefetchBw) + "B/s"  };
+                return results;
+            }
+        }
+
+        public class ICMonitoringConfig : MonitoringConfig
+        {
+            private Zen2 cpu;
+            public string GetConfigName() { return "Instruction Access"; }
+            public string[] columns = new string[] { "Item", "Instructions", "IPC", "L1i Hitrate", "L1i MPKI", "ITLB Hitrate", "L2 ITLB Hitrate", "L2 ITLB MPKI", "L2->L1i BW", "Sys->L1i BW" };
+            private ulong[] lastThreadAperf;
+            private ulong[] lastThreadRetiredInstructions;
+            private long lastUpdateTime;
+
+            public ICMonitoringConfig(Zen2 amdCpu)
+            {
+                cpu = amdCpu;
+            }
+
+            public string[] GetColumns()
+            {
+                return columns;
+            }
+
+            public void Initialize()
+            {
+                cpu.EnablePerformanceCounters();
+                lastThreadAperf = new ulong[cpu.GetThreadCount()];
+                lastThreadRetiredInstructions = new ulong[cpu.GetThreadCount()];
+
+                ulong l2CodeRequests = GetPerfCtlValue(0x64, 0x7, true, true, false, false, true, false, 0, 0, false, false);
+                ulong itlbHit = GetPerfCtlValue(0x94, 0x7, true, true, false, false, true, false, 0, 0, false, false);
+                ulong l2ItlbHit = GetPerfCtlValue(0x84, 0, true, true, false, false, true, false, 0, 0, false, false);
+                ulong l2ItlbMiss = GetPerfCtlValue(0x85, 0x7, true, true, false, false, true, false, 0, 0, false, false);
+                ulong l2IcRefill = GetPerfCtlValue(0x82, 0, true, true, false, false, true, false, 0, 0, false, false);
+                ulong sysIcRefill = GetPerfCtlValue(0x83, 0, true, true, false, false, true, false, 0, 0, false, false);
+
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    ThreadAffinity.Set(1UL << threadIdx);
+                    Ring0.WriteMsr(MSR_PERF_CTL_0, l2CodeRequests);
+                    Ring0.WriteMsr(MSR_PERF_CTL_1, itlbHit);
+                    Ring0.WriteMsr(MSR_PERF_CTL_2, l2ItlbHit);
+                    Ring0.WriteMsr(MSR_PERF_CTL_3, l2ItlbMiss);
+                    Ring0.WriteMsr(MSR_PERF_CTL_4, l2IcRefill);
+                    Ring0.WriteMsr(MSR_PERF_CTL_5, sysIcRefill);
+
+                    // Initialize last read values
+                    Ring0.ReadMsr(MSR_APERF, out lastThreadAperf[threadIdx]);
+                    Ring0.ReadMsr(MSR_INSTR_RETIRED, out lastThreadRetiredInstructions[threadIdx]);
+                }
+
+                lastUpdateTime = DateTimeOffset.Now.ToUnixTimeMilliseconds();
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                float normalizationFactor = cpu.getNormalizationFactor(ref lastUpdateTime);
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[cpu.GetThreadCount()][];
+                ulong totalL2CodeRequests = 0;
+                ulong totalItlbHits = 0;
+                ulong totalL2ItlbHits = 0;
+                ulong totalL2ItlbMisses = 0;
+                ulong totalRetiredInstructions = 0;
+                ulong totalActiveCycles = 0;
+                ulong totalL2IcRefills = 0;
+                ulong totalSysIcRefills = 0;
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    ulong retiredInstructions, activeCycles, elapsedRetiredInstr, elapsedActiveCycles;
+
+                    ThreadAffinity.Set(1UL << threadIdx);
+                    Ring0.ReadMsr(MSR_INSTR_RETIRED, out retiredInstructions);
+                    Ring0.ReadMsr(MSR_APERF, out activeCycles);
+                    ulong l2CodeRequests = ReadAndClearMsr(MSR_PERF_CTR_0);
+                    ulong itlbHits = ReadAndClearMsr(MSR_PERF_CTR_1);
+                    ulong l2ItlbHits = ReadAndClearMsr(MSR_PERF_CTR_2);
+                    ulong l2ItlbMisses = ReadAndClearMsr(MSR_PERF_CTR_3);
+                    ulong l2IcRefills = ReadAndClearMsr(MSR_PERF_CTR_4);
+                    ulong sysIcRefills = ReadAndClearMsr(MSR_PERF_CTR_5);
+
+                    elapsedRetiredInstr = retiredInstructions;
+                    elapsedActiveCycles = activeCycles;
+                    if (retiredInstructions > lastThreadRetiredInstructions[threadIdx])
+                        elapsedRetiredInstr = retiredInstructions - lastThreadRetiredInstructions[threadIdx];
+                    if (activeCycles > lastThreadAperf[threadIdx])
+                        elapsedActiveCycles = activeCycles - lastThreadAperf[threadIdx];
+
+                    lastThreadRetiredInstructions[threadIdx] = retiredInstructions;
+                    lastThreadAperf[threadIdx] = activeCycles;
+
+                    totalL2CodeRequests += l2CodeRequests;
+                    totalItlbHits += itlbHits;
+                    totalL2ItlbHits += l2ItlbHits;
+                    totalL2ItlbMisses += l2ItlbMisses;
+                    totalRetiredInstructions += elapsedRetiredInstr;
+                    totalActiveCycles += elapsedActiveCycles;
+                    totalL2IcRefills += l2IcRefills;
+                    totalSysIcRefills += sysIcRefills;
+                    results.unitMetrics[threadIdx] = computeMetrics("Thread" + threadIdx,
+                        elapsedRetiredInstr,
+                        elapsedActiveCycles,
+                        l2CodeRequests,
+                        itlbHits,
+                        l2ItlbHits,
+                        l2ItlbMisses,
+                        l2IcRefills,
+                        sysIcRefills,
+                        normalizationFactor);
+                }
+
+                results.overallMetrics = computeMetrics("Overall",
+                    totalRetiredInstructions,
+                    totalActiveCycles,
+                    totalL2CodeRequests,
+                    totalItlbHits,
+                    totalL2ItlbHits,
+                    totalL2ItlbMisses,
+                    totalL2IcRefills,
+                    totalSysIcRefills,
+                    normalizationFactor);
+                return results;
+            }
+
+            private string[] computeMetrics(string itemName, ulong instr, ulong activeCycles, 
+                ulong l2CodeRequests, ulong itlbHits, ulong l2ItlbHits, ulong l2ItlbMisses, ulong l2IcRefills, ulong sysIcRefills, float normalizationFactor)
+            {
+                float ipc = (float)instr / activeCycles;
+                float icHitrate = (1 - (float)l2CodeRequests / (itlbHits + l2ItlbHits + l2ItlbMisses)) * 100;
+                float icMpki = (float)l2CodeRequests / instr * 1000;
+                float itlbHitrate = (float)itlbHits / (itlbHits + l2ItlbHits + l2ItlbMisses) * 100;
+                float l2ItlbHitrate = (float)l2ItlbHits / (l2ItlbHits + l2ItlbMisses) * 100;
+                float l2ItlbMpki = (float)l2ItlbMisses / instr * 1000;
+                ulong l2RefillBw = l2IcRefills * 64;
+                ulong sysRefillBw = sysIcRefills * 64;
+                return new string[] { itemName,
+                        FormatLargeNumber(instr * normalizationFactor) + "/s",
+                        string.Format("{0:F2}", ipc),
+                        string.Format("{0:F2}%", icHitrate),
+                        string.Format("{0:F2}", icMpki),
+                        string.Format("{0:F2}%", itlbHitrate),
+                        string.Format("{0:F2}%", l2ItlbHitrate),
+                        string.Format("{0:F2}", l2ItlbMpki),
+                        FormatLargeNumber(l2RefillBw) + "B/s",
+                        FormatLargeNumber(sysRefillBw) + "B/s"
+                        };
             }
         }
     }
