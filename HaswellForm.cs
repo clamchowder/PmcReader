@@ -37,6 +37,10 @@ namespace PmcReader
                     {
                         coreMonitoring.monitoringArea = new Intel.SandyBridge();
                     }
+                    else if ((cpuModel & 0xF) == 0xE)
+                    {
+                        coreMonitoring.monitoringArea = new Intel.Skylake();
+                    }
                 }
             }
             else if (cpuManufacturer.Equals("AuthenticAMD"))

@@ -2,24 +2,24 @@
 
 namespace PmcReader.Intel
 {
-    public class Haswell : ModernIntelCpu
+    public class Skylake : ModernIntelCpu
     {
-        public Haswell()
+        public Skylake()
         {
             coreMonitoringConfigs = new MonitoringConfig[3];
             coreMonitoringConfigs[0] = new BpuMonitoringConfig(this);
             coreMonitoringConfigs[1] = new OpCachePerformance(this);
             coreMonitoringConfigs[2] = new ALUPortUtilization(this);
-            architectureName = "Haswell";
+            architectureName = "Skylake";
         }
 
         public class OpCachePerformance : MonitoringConfig
         {
-            private Haswell cpu;
+            private Skylake cpu;
             public string GetConfigName() { return "Op Cache Performance"; }
             public string[] columns = new string[] { "Item", "Instructions", "IPC", "Op Cache Ops/C", "Op Cache Hitrate", "Decoder Ops/C", "Op Cache Ops", "Decoder Ops" };
 
-            public OpCachePerformance(Haswell intelCpu)
+            public OpCachePerformance(Skylake intelCpu)
             {
                 cpu = intelCpu;
             }
@@ -122,11 +122,11 @@ namespace PmcReader.Intel
 
         public class ALUPortUtilization : MonitoringConfig
         {
-            private Haswell cpu;
+            private Skylake cpu;
             public string GetConfigName() { return "ALU Port Utilization"; }
             public string[] columns = new string[] { "Item", "Instructions", "IPC", "Port 0", "Port 1", "Port 5", "Port 6" };
 
-            public ALUPortUtilization(Haswell intelCpu)
+            public ALUPortUtilization(Skylake intelCpu)
             {
                 cpu = intelCpu;
             }
