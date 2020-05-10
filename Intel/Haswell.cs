@@ -1,4 +1,5 @@
 ﻿using PmcReader.Interop;
+using System;
 
 namespace PmcReader.Intel
 {
@@ -6,10 +7,11 @@ namespace PmcReader.Intel
     {
         public Haswell()
         {
-            coreMonitoringConfigs = new MonitoringConfig[3];
+            coreMonitoringConfigs = new MonitoringConfig[4];
             coreMonitoringConfigs[0] = new BpuMonitoringConfig(this);
             coreMonitoringConfigs[1] = new OpCachePerformance(this);
             coreMonitoringConfigs[2] = new ALUPortUtilization(this);
+            coreMonitoringConfigs[3] = new LSPortUtilization(this);
             architectureName = "Haswell";
         }
 
@@ -226,6 +228,130 @@ namespace PmcReader.Intel
                     string.Format("{0:F2}%", overallP5Util),
                     string.Format("{0:F2}%", overallP6Util) };
                 return results;
+            }
+        }
+
+        public class LSPortUtilization : MonitoringConfig
+        {
+            private Haswell cpu;
+            public string GetConfigName() { return "AGU/LS Port Utilization"; }
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "P2 AGU", "P3 AGU", "P4 StoreData", "P7 StoreAGU" };
+            private long lastUpdateTime;
+
+            public LSPortUtilization(Haswell intelCpu)
+            {
+                cpu = intelCpu;
+            }
+
+            public string[] GetColumns()
+            {
+                return columns;
+            }
+
+            public void Initialize()
+            {
+                cpu.EnablePerformanceCounters();
+
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    ThreadAffinity.Set(1UL << threadIdx);
+                    // Set PMC0 to cycles when uops are executed on port 2
+                    ulong p2Ops = GetPerfEvtSelRegisterValue(0xA1, 0x04, usr: true, os: true, edge: false, pc: false, interrupt: false, anyThread: false, enable: true, invert: false, cmask: 0);
+                    Ring0.WriteMsr(IA32_PERFEVTSEL0, p2Ops);
+
+                    // Set PMC1 to count ^ for port 3
+                    ulong p3Ops = GetPerfEvtSelRegisterValue(0xA1, 0x08, true, true, false, false, false, false, true, false, 0);
+                    Ring0.WriteMsr(IA32_PERFEVTSEL1, p3Ops);
+
+                    // Set PMC2 to count ^ for port 4
+                    ulong p4Ops = GetPerfEvtSelRegisterValue(0xA1, 0x10, true, true, false, false, false, false, true, false, 0);
+                    Ring0.WriteMsr(IA32_PERFEVTSEL2, p4Ops);
+
+                    // Set PMC3 to count ^ for port 7
+                    ulong p7Ops = GetPerfEvtSelRegisterValue(0xA1, 0x80, true, true, false, false, false, false, true, false, 0);
+                    Ring0.WriteMsr(IA32_PERFEVTSEL3, p7Ops);
+                }
+
+                lastUpdateTime = DateTimeOffset.Now.ToUnixTimeMilliseconds();
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                float normalizationFactor = cpu.getNormalizationFactor(ref lastUpdateTime);
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[cpu.GetThreadCount()][];
+                ulong totalP2Uops = 0;
+                ulong totalP3Uops = 0;
+                ulong totalP4Uops = 0;
+                ulong totalP7Uops = 0;
+                ulong totalRetiredInstructions = 0;
+                ulong totalActiveCycles = 0;
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    ulong p2Uops, p3Uops, p4Uops, p7Uops;
+                    ulong retiredInstructions, activeCycles;
+
+                    ThreadAffinity.Set(1UL << threadIdx);
+                    Ring0.ReadMsr(IA32_FIXED_CTR0, out retiredInstructions);
+                    Ring0.ReadMsr(IA32_FIXED_CTR1, out activeCycles);
+                    Ring0.ReadMsr(IA32_A_PMC0, out p2Uops);
+                    Ring0.ReadMsr(IA32_A_PMC1, out p3Uops);
+                    Ring0.ReadMsr(IA32_A_PMC2, out p4Uops);
+                    Ring0.ReadMsr(IA32_A_PMC3, out p7Uops);
+                    Ring0.WriteMsr(IA32_FIXED_CTR0, 0);
+                    Ring0.WriteMsr(IA32_FIXED_CTR1, 0);
+                    Ring0.WriteMsr(IA32_A_PMC0, 0);
+                    Ring0.WriteMsr(IA32_A_PMC1, 0);
+                    Ring0.WriteMsr(IA32_A_PMC2, 0);
+                    Ring0.WriteMsr(IA32_A_PMC3, 0);
+
+                    totalP2Uops += p2Uops;
+                    totalP3Uops += p3Uops;
+                    totalP4Uops += p4Uops;
+                    totalP7Uops += p7Uops;
+                    totalRetiredInstructions += retiredInstructions;
+                    totalActiveCycles += activeCycles;
+
+                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx,
+                        retiredInstructions,
+                        activeCycles,
+                        p2Uops,
+                        p3Uops,
+                        p4Uops,
+                        p7Uops,
+                        normalizationFactor);
+                }
+
+                results.overallMetrics = computeMetrics("Overall",
+                    totalRetiredInstructions,
+                    totalActiveCycles,
+                    totalP2Uops,
+                    totalP3Uops,
+                    totalP4Uops,
+                    totalP7Uops,
+                    normalizationFactor);
+
+                return results;
+            }
+
+            private string[] computeMetrics(string itemName,
+                ulong instr,
+                ulong activeCycles,
+                ulong p2Uops,
+                ulong p3Uops,
+                ulong p4Uops,
+                ulong p7Uops,
+                float normalizationFactor)
+            {
+                float ipc = (float)instr / activeCycles;
+                return new string[] { itemName,
+                    FormatLargeNumber(activeCycles * normalizationFactor) + "/s",
+                    FormatLargeNumber(instr * normalizationFactor) + "/s",
+                    string.Format("{0:F2}", ipc),
+                    string.Format("{0:F2}%", 100 * (float)p2Uops / activeCycles),
+                    string.Format("{0:F2}%", 100 * (float)p3Uops / activeCycles),
+                    string.Format("{0:F2}%", 100 * (float)p4Uops / activeCycles),
+                    string.Format("{0:F2}%", 100 * (float)p7Uops / activeCycles) };
             }
         }
     }
