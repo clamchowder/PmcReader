@@ -51,7 +51,7 @@
             this.configSelect.Location = new System.Drawing.Point(12, 34);
             this.configSelect.MultiSelect = false;
             this.configSelect.Name = "configSelect";
-            this.configSelect.Size = new System.Drawing.Size(876, 85);
+            this.configSelect.Size = new System.Drawing.Size(1023, 85);
             this.configSelect.TabIndex = 1;
             this.configSelect.UseCompatibleStateImageBehavior = false;
             this.configSelect.View = System.Windows.Forms.View.List;
@@ -72,7 +72,7 @@
             this.monitoringListView.HideSelection = false;
             this.monitoringListView.Location = new System.Drawing.Point(12, 154);
             this.monitoringListView.Name = "monitoringListView";
-            this.monitoringListView.Size = new System.Drawing.Size(876, 284);
+            this.monitoringListView.Size = new System.Drawing.Size(1023, 284);
             this.monitoringListView.TabIndex = 3;
             this.monitoringListView.UseCompatibleStateImageBehavior = false;
             this.monitoringListView.View = System.Windows.Forms.View.Details;
@@ -108,7 +108,7 @@
             this.L3ConfigSelect.HideSelection = false;
             this.L3ConfigSelect.Location = new System.Drawing.Point(13, 457);
             this.L3ConfigSelect.Name = "L3ConfigSelect";
-            this.L3ConfigSelect.Size = new System.Drawing.Size(445, 63);
+            this.L3ConfigSelect.Size = new System.Drawing.Size(512, 63);
             this.L3ConfigSelect.TabIndex = 7;
             this.L3ConfigSelect.UseCompatibleStateImageBehavior = false;
             this.L3ConfigSelect.View = System.Windows.Forms.View.List;
@@ -137,7 +137,7 @@
             this.L3MonitoringListView.HideSelection = false;
             this.L3MonitoringListView.Location = new System.Drawing.Point(12, 557);
             this.L3MonitoringListView.Name = "L3MonitoringListView";
-            this.L3MonitoringListView.Size = new System.Drawing.Size(446, 118);
+            this.L3MonitoringListView.Size = new System.Drawing.Size(513, 118);
             this.L3MonitoringListView.TabIndex = 10;
             this.L3MonitoringListView.UseCompatibleStateImageBehavior = false;
             this.L3MonitoringListView.View = System.Windows.Forms.View.Details;
@@ -145,9 +145,9 @@
             // dfConfigSelect
             // 
             this.dfConfigSelect.HideSelection = false;
-            this.dfConfigSelect.Location = new System.Drawing.Point(464, 457);
+            this.dfConfigSelect.Location = new System.Drawing.Point(531, 457);
             this.dfConfigSelect.Name = "dfConfigSelect";
-            this.dfConfigSelect.Size = new System.Drawing.Size(424, 63);
+            this.dfConfigSelect.Size = new System.Drawing.Size(504, 63);
             this.dfConfigSelect.TabIndex = 11;
             this.dfConfigSelect.UseCompatibleStateImageBehavior = false;
             this.dfConfigSelect.View = System.Windows.Forms.View.List;
@@ -155,7 +155,7 @@
             // label1
             // 
             this.label1.AutoSize = true;
-            this.label1.Location = new System.Drawing.Point(461, 441);
+            this.label1.Location = new System.Drawing.Point(528, 441);
             this.label1.Name = "label1";
             this.label1.Size = new System.Drawing.Size(211, 13);
             this.label1.TabIndex = 12;
@@ -163,7 +163,7 @@
             // 
             // button1
             // 
-            this.button1.Location = new System.Drawing.Point(464, 527);
+            this.button1.Location = new System.Drawing.Point(531, 526);
             this.button1.Name = "button1";
             this.button1.Size = new System.Drawing.Size(102, 23);
             this.button1.TabIndex = 13;
@@ -174,9 +174,9 @@
             // dfMonitoringListView
             // 
             this.dfMonitoringListView.HideSelection = false;
-            this.dfMonitoringListView.Location = new System.Drawing.Point(464, 557);
+            this.dfMonitoringListView.Location = new System.Drawing.Point(531, 555);
             this.dfMonitoringListView.Name = "dfMonitoringListView";
-            this.dfMonitoringListView.Size = new System.Drawing.Size(424, 116);
+            this.dfMonitoringListView.Size = new System.Drawing.Size(504, 116);
             this.dfMonitoringListView.TabIndex = 14;
             this.dfMonitoringListView.UseCompatibleStateImageBehavior = false;
             this.dfMonitoringListView.View = System.Windows.Forms.View.Details;
@@ -193,7 +193,7 @@
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-            this.ClientSize = new System.Drawing.Size(900, 687);
+            this.ClientSize = new System.Drawing.Size(1047, 687);
             this.Controls.Add(this.l3ErrorMessage);
             this.Controls.Add(this.dfMonitoringListView);
             this.Controls.Add(this.button1);

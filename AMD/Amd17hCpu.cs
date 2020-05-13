@@ -1,4 +1,5 @@
 ﻿using PmcReader.Interop;
+using System.Management.Instrumentation;
 
 namespace PmcReader.AMD
 {
@@ -42,9 +43,18 @@ namespace PmcReader.AMD
         public const uint MSR_DF_PERF_CTR_2 = 0xC0010245;
         public const uint MSR_DF_PERF_CTR_3 = 0xC0010247;
 
+        public ulong[] lastThreadAperf;
+        public ulong[] lastThreadRetiredInstructions;
+        public ulong[] lastThreadMperf;
+        public ulong[] lastThreadTsc;
+
         public Amd17hCpu()
         {
             architectureName = "AMD 17h Family";
+            lastThreadAperf = new ulong[GetThreadCount()];
+            lastThreadRetiredInstructions = new ulong[GetThreadCount()];
+            lastThreadMperf = new ulong[GetThreadCount()];
+            lastThreadTsc = new ulong[GetThreadCount()];
         }
 
         /// <summary>
@@ -116,8 +126,7 @@ namespace PmcReader.AMD
         }
 
         /// <summary>
-        /// Set up fixed counters and enable programmable ones. 
-        /// Works on Sandy Bridge, Haswell, and Skylake
+        /// Enable fixed instructions retired counter on Zen
         /// </summary>
         public void EnablePerformanceCounters()
         {
@@ -130,6 +139,12 @@ namespace PmcReader.AMD
                 Ring0.ReadMsr(HWCR, out hwcrValue);
                 hwcrValue |= 1UL << 30;
                 Ring0.WriteMsr(HWCR, hwcrValue);
+
+                // Initialize fixed counter values
+                Ring0.ReadMsr(MSR_APERF, out lastThreadAperf[threadIdx]);
+                Ring0.ReadMsr(MSR_INSTR_RETIRED, out lastThreadRetiredInstructions[threadIdx]);
+                Ring0.ReadMsr(MSR_TSC, out lastThreadTsc[threadIdx]);
+                Ring0.ReadMsr(MSR_MPERF, out lastThreadMperf[threadIdx]);
             }
         }
 
@@ -145,6 +160,37 @@ namespace PmcReader.AMD
 
             // linux arch/x86/kernel/cpu/cacheinfo.c:666 does this and it seems to work?
             return (int)(extendedApicId >> 3);
+        }
+
+        /// <summary>
+        /// Update fixed counters for thread, affinity must be set going in
+        /// </summary>
+        /// <param name="threadIdx">thread to update fixed counters for</param>
+        public void UpdateFixedCounters(int threadIdx, out ulong elapsedAperf, out ulong elapsedInstr, out ulong elapsedTsc, out ulong elapsedMperf)
+        {
+            ulong aperf, instr, tsc, mperf;
+            Ring0.ReadMsr(MSR_APERF, out aperf);
+            Ring0.ReadMsr(MSR_INSTR_RETIRED, out instr);
+            Ring0.ReadMsr(MSR_TSC, out tsc);
+            Ring0.ReadMsr(MSR_MPERF, out mperf);
+
+            elapsedAperf = aperf;
+            elapsedInstr = instr;
+            elapsedTsc = tsc;
+            elapsedMperf = mperf;
+            if (instr > lastThreadRetiredInstructions[threadIdx])
+                elapsedInstr = instr - lastThreadRetiredInstructions[threadIdx];
+            if (aperf > lastThreadAperf[threadIdx])
+                elapsedAperf = aperf - lastThreadAperf[threadIdx];
+            if (mperf > lastThreadMperf[threadIdx])
+                elapsedMperf = mperf - lastThreadMperf[threadIdx];
+            if (tsc > lastThreadTsc[threadIdx])
+                elapsedTsc = tsc - lastThreadTsc[threadIdx];
+
+            lastThreadAperf[threadIdx] = aperf;
+            lastThreadMperf[threadIdx] = mperf;
+            lastThreadTsc[threadIdx] = tsc;
+            lastThreadRetiredInstructions[threadIdx] = instr;
         }
     }
 }

@@ -7,7 +7,7 @@ namespace PmcReader.AMD
     {
         public Zen2()
         {
-            coreMonitoringConfigs = new MonitoringConfig[8];
+            coreMonitoringConfigs = new MonitoringConfig[9];
             coreMonitoringConfigs[0] = new OpCacheConfig(this);
             coreMonitoringConfigs[1] = new BpuMonitoringConfig(this);
             coreMonitoringConfigs[2] = new FlopsMonitoringConfig(this);
@@ -16,6 +16,7 @@ namespace PmcReader.AMD
             coreMonitoringConfigs[5] = new L2MonitoringConfig(this);
             coreMonitoringConfigs[6] = new DCMonitoringConfig(this);
             coreMonitoringConfigs[7] = new ICMonitoringConfig(this);
+            coreMonitoringConfigs[8] = new BPUMonitoringConfig1(this);
             architectureName = "Zen 2";
         }
 
@@ -288,41 +289,49 @@ namespace PmcReader.AMD
                     totalDecoderOverrides += decoderOverrides;
                     totalRetiredFusedBranches += retiredFusedBranches;
 
-                    float threadIpc = (float)elapsedRetiredInstr / elapsedActiveCycles;
-                    float bpuAccuracy = (1 - (float)retiredMispredictedBranches / retiredBranches) * 100;
-                    float branchMpki = (float)retiredMispredictedBranches / elapsedRetiredInstr * 1000;
-                    float l1BtbOverhead = (float)l1BtbOverrides / elapsedActiveCycles * 100;
-                    float l2BtbOverhead = (float)(4 * l2BtbOverrides) / elapsedActiveCycles * 100;
-                    float decoderOverridesPer1KInstr = (float)decoderOverrides / elapsedRetiredInstr * 1000;
-                    float pctBranchesFused = (float)retiredFusedBranches / retiredBranches * 100;
-                    results.unitMetrics[threadIdx] = new string[] { "Thread " + threadIdx,
-                        FormatLargeNumber(elapsedRetiredInstr * normalizationFactor) + "/s",
-                        string.Format("{0:F2}", threadIpc),
+                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx,
+                        elapsedRetiredInstr,
+                        elapsedActiveCycles,
+                        retiredBranches,
+                        retiredMispredictedBranches,
+                        l1BtbOverrides,
+                        l2BtbOverrides,
+                        decoderOverrides,
+                        retiredFusedBranches,
+                        normalizationFactor);
+                }
+
+                results.overallMetrics = computeMetrics("Overall",
+                    totalRetiredInstructions,
+                    totalActiveCycles,
+                    totalRetiredBranches,
+                    totalRetiredMispredictedBranches,
+                    totalL1BtbOverrides,
+                    totalL2BtbOverrides,
+                    totalDecoderOverrides,
+                    totalRetiredFusedBranches,
+                    normalizationFactor);
+                return results;
+            }
+
+            private string[] computeMetrics(string label, ulong instr, ulong cycles, ulong branches, ulong mispBranches, ulong l1BtbOverride, ulong l2BtbOverride, ulong decoderOverride, ulong fusedBranches, float normalizationFactor)
+            {
+                float ipc = (float)instr / cycles;
+                float bpuAccuracy = (1 - (float)mispBranches / branches) * 100;
+                float branchMpki = (float)mispBranches / instr * 1000;
+                float l1BtbOverhead = (float)l1BtbOverride / cycles * 100;
+                float l2BtbOverhead = (float)(4 * l2BtbOverride) / cycles * 100;
+                float decoderOverridesPer1KInstr = (float)decoderOverride / instr * 1000;
+                float pctBranchesFused = (float)fusedBranches / branches * 100;
+                return new string[] { label,
+                        FormatLargeNumber(instr * normalizationFactor) + "/s",
+                        string.Format("{0:F2}", ipc),
                         string.Format("{0:F2}%", bpuAccuracy),
                         string.Format("{0:F2}", branchMpki),
                         string.Format("{0:F2}%", l1BtbOverhead),
                         string.Format("{0:F2}%", l2BtbOverhead),
                         string.Format("{0:F2}", decoderOverridesPer1KInstr),
                         string.Format("{0:F2}%", pctBranchesFused) };
-                }
-
-                float overallIpc = (float)totalRetiredInstructions / totalActiveCycles;
-                float averageBpuAccuracy = (1 - (float)totalRetiredMispredictedBranches / totalRetiredBranches) * 100;
-                float averageBranchMpki = (float)totalRetiredMispredictedBranches / totalRetiredInstructions * 1000;
-                float averageL1BtbOverhead = (float)totalL1BtbOverrides / totalActiveCycles * 100;
-                float averageL2BtbOverhead = (float)(4 * totalL2BtbOverrides) / totalActiveCycles * 100;
-                float averageBpuOverridesPer1KInstr = (float)totalDecoderOverrides / totalRetiredInstructions * 1000;
-                float averagePctBranchesFused = (float)totalRetiredFusedBranches / totalRetiredBranches * 100;
-                results.overallMetrics = new string[] { "Overall",
-                        FormatLargeNumber(totalRetiredInstructions * normalizationFactor) + "/s",
-                        string.Format("{0:F2}", overallIpc),
-                        string.Format("{0:F2}%", averageBpuAccuracy),
-                        string.Format("{0:F2}", averageBranchMpki),
-                        string.Format("{0:F2}%", averageL1BtbOverhead),
-                        string.Format("{0:F2}%", averageL2BtbOverhead),
-                        string.Format("{0:F2}", averageBpuOverridesPer1KInstr),
-                        string.Format("{0:F2}%", averagePctBranchesFused) };
-                return results;
             }
         }
 
@@ -1145,6 +1154,141 @@ namespace PmcReader.AMD
                         FormatLargeNumber(l2RefillBw) + "B/s",
                         FormatLargeNumber(sysRefillBw) + "B/s"
                         };
+            }
+        }
+
+        public class BPUMonitoringConfig1 : MonitoringConfig
+        {
+            private Zen2 cpu;
+            public string GetConfigName() { return "Branch Prediction 1"; }
+            private long lastUpdateTime;
+
+            public BPUMonitoringConfig1(Zen2 amdCpu)
+            {
+                cpu = amdCpu;
+            }
+
+            public string[] GetColumns()
+            {
+                return columns;
+            }
+
+            public void Initialize()
+            {
+                cpu.EnablePerformanceCounters();
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    ThreadAffinity.Set(1UL << threadIdx);
+                    // retired branches
+                    Ring0.WriteMsr(MSR_PERF_CTL_0, GetPerfCtlValue(0xC2, 0, true, true, false, false, true, false, 0, 0, false, false));
+                    // retired taken branches
+                    Ring0.WriteMsr(MSR_PERF_CTL_1, GetPerfCtlValue(0xC4, 0, true, true, false, false, true, false, 0, 0, false, false));
+                    // dynamic indirect predictions
+                    Ring0.WriteMsr(MSR_PERF_CTL_2, GetPerfCtlValue(0x8E, 0, true, true, false, false, true, false, 0, 0, false, false));
+                    // retired mispredicted indirect branches
+                    Ring0.WriteMsr(MSR_PERF_CTL_3, GetPerfCtlValue(0xCA, 0, true, true, false, false, true, false, 0, 0, false, false));
+                    // retired near returns
+                    Ring0.WriteMsr(MSR_PERF_CTL_4, GetPerfCtlValue(0xC8, 0, true, true, false, false, true, false, 0, 0, false, false));
+                    // misp near returns
+                    Ring0.WriteMsr(MSR_PERF_CTL_5, GetPerfCtlValue(0xC9, 0, true, true, false, false, true, false, 0, 0, false, false));
+                }
+
+                lastUpdateTime = DateTimeOffset.Now.ToUnixTimeMilliseconds();
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                float normalizationFactor = cpu.GetNormalizationFactor(ref lastUpdateTime);
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[cpu.GetThreadCount()][];
+                ulong totalBranches = 0;
+                ulong totalTakenBranches = 0;
+                ulong totalIndirectPredictions = 0;
+                ulong totalMispredictedIndirectBranches = 0;
+                ulong totalRetiredInstructions = 0;
+                ulong totalActiveCycles = 0;
+                ulong totalNearReturns = 0;
+                ulong totalMispredictredNearReturns = 0;
+                ulong totalTsc = 0;
+                ulong totalMperf = 0;
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    ulong activeCycles, retiredInstr;
+                    ulong mperf, tsc;
+                    ThreadAffinity.Set(1UL << threadIdx);
+                    cpu.UpdateFixedCounters(threadIdx, out activeCycles, out retiredInstr, out mperf, out tsc);
+                    ulong retiredBranches = ReadAndClearMsr(MSR_PERF_CTR_0);
+                    ulong retiredTakenBranches = ReadAndClearMsr(MSR_PERF_CTR_1);
+                    ulong indirectPredictions = ReadAndClearMsr(MSR_PERF_CTR_2);
+                    ulong mispredictedIndirectBranches = ReadAndClearMsr(MSR_PERF_CTR_3);
+                    ulong retiredNearReturns = ReadAndClearMsr(MSR_PERF_CTR_4);
+                    ulong mispredictedNearReturns = ReadAndClearMsr(MSR_PERF_CTR_5);
+
+                    totalRetiredInstructions += retiredInstr;
+                    totalActiveCycles += activeCycles;
+                    totalTsc += tsc;
+                    totalMperf += mperf;
+                    totalBranches += retiredBranches;
+                    totalTakenBranches += retiredTakenBranches;
+                    totalIndirectPredictions += indirectPredictions;
+                    totalMispredictedIndirectBranches += mispredictedIndirectBranches;
+                    totalNearReturns += retiredNearReturns;
+                    totalMispredictredNearReturns += mispredictedNearReturns;
+                    results.unitMetrics[threadIdx] = computeMetrics("Thread" + threadIdx,
+                        retiredInstr,
+                        activeCycles,
+                        mperf,
+                        tsc,
+                        retiredBranches,
+                        retiredTakenBranches,
+                        indirectPredictions,
+                        mispredictedIndirectBranches,
+                        retiredNearReturns,
+                        mispredictedNearReturns,
+                        normalizationFactor);
+                }
+
+                results.overallMetrics = computeMetrics("Overall",
+                    totalRetiredInstructions,
+                    totalActiveCycles,
+                    totalMperf,
+                    totalTsc,
+                    totalBranches,
+                    totalTakenBranches,
+                    totalIndirectPredictions,
+                    totalMispredictedIndirectBranches,
+                    totalNearReturns,
+                    totalMispredictredNearReturns,
+                    normalizationFactor);
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "TSC", "APERF", "MPERF", "Instructions", "IPC", "% Branches", "% Branches Taken", "ITA Overhead", "Indirect Branch MPKI", "RET Predict Accuracy" };
+
+            private string[] computeMetrics(string itemName, 
+                ulong instr, 
+                ulong activeCycles, 
+                ulong mperf, 
+                ulong tsc,
+                ulong branches, 
+                ulong takenBranches, 
+                ulong indirectPredictions, 
+                ulong mispredictedIndirectBranches, 
+                ulong nearReturns, 
+                ulong mispredictedNearReturns, 
+                float normalizationFactor)
+            {
+                return new string[] { itemName,
+                        FormatLargeNumber(tsc * normalizationFactor) + "/s",
+                        FormatLargeNumber(activeCycles * normalizationFactor) + "/s",
+                        FormatLargeNumber(mperf * normalizationFactor) + "/s",
+                        FormatLargeNumber(instr * normalizationFactor) + "/s",
+                        string.Format("{0:F2}", (float)instr / activeCycles),
+                        string.Format("{0:F2}%", (float)branches / instr * 100),
+                        string.Format("{0:F2}%", (float)takenBranches / branches * 100),
+                        string.Format("{0:F2}%", (float)indirectPredictions / activeCycles * 4 * 100),
+                        string.Format("{0:F2}", (float)mispredictedIndirectBranches / instr * 1000),
+                        string.Format("{0:F2}%", (1 - (float)mispredictedNearReturns / nearReturns) * 100)};
             }
         }
     }
