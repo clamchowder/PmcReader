@@ -59,7 +59,7 @@ namespace PmcReader.AMD
 
             public MonitoringUpdateResults Update()
             {
-                float normalizationFactor = l3Cache.getNormalizationFactor(ref lastUpdateTime);
+                float normalizationFactor = l3Cache.GetNormalizationFactor(ref lastUpdateTime);
 
                 MonitoringUpdateResults results = new MonitoringUpdateResults();
                 results.unitMetrics = new string[l3Cache.ccxThreads.Count()][];

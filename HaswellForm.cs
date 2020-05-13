@@ -61,7 +61,12 @@ namespace PmcReader
             l3Monitoring.targetListView = L3MonitoringListView;
             dfMonitoring.targetListView = dfMonitoringListView;
 
-            cpuidLabel.Text = string.Format("CPU: {0} Family 0x{1:X}, Model 0x{2:X}, Stepping 0x{3:x} - {4}", cpuManufacturer, cpuFamily, cpuModel, cpuStepping, coreMonitoring.monitoringArea == null ? "Not Supported" : coreMonitoring.monitoringArea.GetArchitectureName());
+            cpuidLabel.Text = string.Format("CPU: {0} Family 0x{1:X}, Model 0x{2:X}, Stepping 0x{3:x} - {4}", 
+                cpuManufacturer, 
+                cpuFamily, 
+                cpuModel, 
+                cpuStepping, 
+                coreMonitoring.monitoringArea == null ? "Not Supported" : coreMonitoring.monitoringArea.GetArchitectureName());
 
             if (coreMonitoring.monitoringArea != null)
             {
@@ -99,7 +104,7 @@ namespace PmcReader
             }
         }
 
-        private void button1_Click(object sender, EventArgs e)
+        private void applyDfConfigButton_Click(object sender, EventArgs e)
         {
             applyMonitoringConfig(dfMonitoring, dfConfigSelect);
         }

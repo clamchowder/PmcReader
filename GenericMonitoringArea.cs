@@ -168,7 +168,7 @@ namespace PmcReader
         /// </summary>
         /// <param name="lastUpdateTime">last updated time in unix ms, will be updated</param>
         /// <returns>normalization factor</returns>
-        public float getNormalizationFactor(ref long lastUpdateTime)
+        public float GetNormalizationFactor(ref long lastUpdateTime)
         {
             long currentTime = DateTimeOffset.Now.ToUnixTimeMilliseconds();
             float timeNormalization = (currentTime - lastUpdateTime) / (float)1000;

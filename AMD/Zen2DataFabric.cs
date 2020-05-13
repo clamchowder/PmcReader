@@ -56,7 +56,7 @@ namespace PmcReader.AMD
 
             public MonitoringUpdateResults Update()
             {
-                float normalizationFactor = dataFabric.getNormalizationFactor(ref lastUpdateTime);
+                float normalizationFactor = dataFabric.GetNormalizationFactor(ref lastUpdateTime);
                 MonitoringUpdateResults results = new MonitoringUpdateResults();
                 results.unitMetrics = new string[4][];
                 ThreadAffinity.Set(1UL << monitoringThread);
@@ -112,7 +112,7 @@ namespace PmcReader.AMD
 
             public MonitoringUpdateResults Update()
             {
-                float normalizationFactor = dataFabric.getNormalizationFactor(ref lastUpdateTime);
+                float normalizationFactor = dataFabric.GetNormalizationFactor(ref lastUpdateTime);
                 MonitoringUpdateResults results = new MonitoringUpdateResults();
                 results.unitMetrics = new string[4][];
                 ThreadAffinity.Set(1UL << monitoringThread);
@@ -165,7 +165,7 @@ namespace PmcReader.AMD
 
             public MonitoringUpdateResults Update()
             {
-                float normalizationFactor = dataFabric.getNormalizationFactor(ref lastUpdateTime);
+                float normalizationFactor = dataFabric.GetNormalizationFactor(ref lastUpdateTime);
                 MonitoringUpdateResults results = new MonitoringUpdateResults();
                 results.unitMetrics = new string[4][];
                 ThreadAffinity.Set(1UL << monitoringThread);

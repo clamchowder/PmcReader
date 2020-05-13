@@ -277,7 +277,7 @@ namespace PmcReader.Intel
 
             public MonitoringUpdateResults Update()
             {
-                float normalizationFactor = cpu.getNormalizationFactor(ref lastUpdateTime);
+                float normalizationFactor = cpu.GetNormalizationFactor(ref lastUpdateTime);
                 MonitoringUpdateResults results = new MonitoringUpdateResults();
                 results.unitMetrics = new string[cpu.GetThreadCount()][];
                 ulong totalP2Uops = 0;
