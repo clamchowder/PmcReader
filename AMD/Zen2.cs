@@ -96,7 +96,7 @@ namespace PmcReader.AMD
                     string.Format("{0:F2}%", counterData.ctr3 / counterData.aperf),
                     FormatLargeNumber(counterData.ctr2),
                     string.Format("{0:F2}%", bogusOps),
-                    string.Format("{0:F2}%", counterData.ctr5 / counterData.aperf) };
+                    string.Format("{0:F2}%", 100 * counterData.ctr5 / counterData.aperf) };
             }
         }
 
@@ -810,8 +810,8 @@ namespace PmcReader.AMD
                     Ring0.WriteMsr(MSR_PERF_CTL_2, GetPerfCtlValue(0x0, 0x4, true, true, false, false, true, false, 0, 0, false, false));
                     // pipe 3
                     Ring0.WriteMsr(MSR_PERF_CTL_3, GetPerfCtlValue(0x0, 0x8, true, true, false, false, true, false, 0, 0, false, false));
-                    // zen 1 fp scheduler empty cycles
-                    Ring0.WriteMsr(MSR_PERF_CTL_4, GetPerfCtlValue(0x1, 0, true, true, false, false, true, false, 0, 0, false, false));
+                    // zen 1 page table walker alloc
+                    Ring0.WriteMsr(MSR_PERF_CTL_4, GetPerfCtlValue(0x46, 0xF, true, true, false, false, true, false, 0, 0, false, false));
                     // instr retired (event)
                     Ring0.WriteMsr(MSR_PERF_CTL_5, GetPerfCtlValue(0xC0, 0, true, true, false, false, true, false, 0, 0, false, false));
                 }
@@ -832,7 +832,7 @@ namespace PmcReader.AMD
                 return results;
             }
 
-            public string[] columns = new string[] { "Item", "TSC", "MPERF", "APERF", "Instr", "IPC", "FP0?", "FP1?", "FP2?", "FP3?", "FP Sched Empty?", "Instr Evt", "Instr Measuring Error"};
+            public string[] columns = new string[] { "Item", "TSC", "MPERF", "APERF", "Instr", "IPC", "FP0?", "FP1?", "FP2?", "FP3?", "Page Walks?", "Instr Evt", "Instr Measuring Error"};
 
             private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
             {
@@ -846,7 +846,7 @@ namespace PmcReader.AMD
                         string.Format("{0:F2}%", 100 * counterData.ctr1 / counterData.aperf),
                         string.Format("{0:F2}%", 100 * counterData.ctr2 / counterData.aperf),
                         string.Format("{0:F2}%", 100 * counterData.ctr3 / counterData.aperf),
-                        string.Format("{0:F2}%", 100 * counterData.ctr4 / counterData.aperf),
+                        FormatLargeNumber(counterData.ctr4),
                         FormatLargeNumber(counterData.ctr5),
                         string.Format("{0:F2}%", 100 * Math.Abs(counterData.instr - counterData.ctr5) / counterData.aperf) };
             }

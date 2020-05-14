@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using System.Windows.Forms.VisualStyles;
 using PmcReader.Interop;
 
 namespace PmcReader.AMD
@@ -30,7 +31,6 @@ namespace PmcReader.AMD
             private Zen2L3Cache l3Cache;
             private long lastUpdateTime;
 
-            public string[] columns = new string[] { "Item", "Hitrate", "Hit BW", "Mem Latency", "SDP Requests" };
             public HitRateLatencyConfig(Zen2L3Cache l3Cache)
             {
                 this.l3Cache = l3Cache;
@@ -79,27 +79,26 @@ namespace PmcReader.AMD
                     totalL3Misses += l3Miss;
                     totalL3MissLatency += l3MissLatency;
                     totalL3MissSdpRequests += l3MissSdpRequest;
-
-                    // event 0x90 counts "total cycles for all transactions divided by 16"
-                    float ccxL3MissLatency = (float)l3MissLatency * 16 / l3MissSdpRequest;
-                    float ccxL3Hitrate = (1 - (float)l3Miss / l3Access) * 100;
-                    float ccxL3HitBw = ((float)l3Access - l3Miss) * 64 * normalizationFactor;
-                    results.unitMetrics[ccxThread.Key] = new string[] { "CCX " + ccxThread.Key,
-                        string.Format("{0:F2}%", ccxL3Hitrate),
-                        FormatLargeNumber(ccxL3HitBw) + "B/s",
-                        string.Format("{0:F2}", ccxL3MissLatency),
-                        FormatLargeNumber(l3MissSdpRequest)};
+                    results.unitMetrics[ccxThread.Key] = computeMetrics("CCX " + ccxThread.Key, l3Access, l3Miss, l3MissLatency, l3MissSdpRequest, normalizationFactor);
                 }
 
-                float overallL3MissLatency = (float)totalL3MissLatency * 16 / totalL3MissSdpRequests;
-                float overallL3Hitrate = (1 - (float)totalL3Misses / totalL3Accesses) * 100;
-                float overallL3HitBw = ((float)totalL3Accesses - totalL3Misses) * 64 * normalizationFactor;
-                results.overallMetrics = new string[] { "Overall",
-                    string.Format("{0:F2}%", overallL3Hitrate),
-                    FormatLargeNumber(overallL3HitBw) + "B/s",
-                    string.Format("{0:F2}", overallL3MissLatency),
-                    FormatLargeNumber(totalL3MissSdpRequests)};
+                results.overallMetrics = computeMetrics("Overall", totalL3Accesses, totalL3Misses, totalL3MissLatency, totalL3MissSdpRequests, normalizationFactor);
                 return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Hitrate", "Hit BW", "Mem Latency", "SDP Requests" };
+
+            private string[] computeMetrics(string label, ulong l3Access, ulong l3Miss, ulong l3MissLatency, ulong l3MissSdpRequest, float normalizationFactor)
+            {
+                // event 0x90 counts "total cycles for all transactions divided by 16"
+                float ccxL3MissLatency = (float)l3MissLatency * 16 / l3MissSdpRequest;
+                float ccxL3Hitrate = (1 - (float)l3Miss / l3Access) * 100;
+                float ccxL3HitBw = ((float)l3Access - l3Miss) * 64 * normalizationFactor;
+                return new string[] { label,
+                        string.Format("{0:F2}%", ccxL3Hitrate),
+                        FormatLargeNumber(ccxL3HitBw) + "B/s",
+                        string.Format("{0:F1} clks", ccxL3MissLatency),
+                        FormatLargeNumber(l3MissSdpRequest)};
             }
         }
     }
