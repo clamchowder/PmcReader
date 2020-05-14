@@ -1,11 +1,4 @@
 ﻿using PmcReader.Interop;
-using System;
-using System.Collections.Generic;
-using System.Drawing.Text;
-using System.Linq;
-using System.Text;
-using System.Threading;
-using System.Windows.Forms;
 
 namespace PmcReader.Intel
 {
@@ -24,6 +17,9 @@ namespace PmcReader.Intel
         public const uint IA32_A_PMC1 = 0x4C2;
         public const uint IA32_A_PMC2 = 0x4C3;
         public const uint IA32_A_PMC3 = 0x4C4;
+
+        public NormalizedCoreCounterData[] NormalizedThreadCounts;
+        public NormalizedCoreCounterData NormalizedTotalCounts;
 
         public ModernIntelCpu()
         {
@@ -100,6 +96,86 @@ namespace PmcReader.Intel
         }
 
         /// <summary>
+        /// Reset accumulated totals for core counter data
+        /// </summary>
+        public void InitializeCoreTotals()
+        {
+            if (NormalizedTotalCounts == null)
+            {
+                NormalizedTotalCounts = new NormalizedCoreCounterData();
+            }
+
+            NormalizedTotalCounts.ActiveCycles = 0;
+            NormalizedTotalCounts.RetiredInstructions = 0;
+            NormalizedTotalCounts.RefTsc = 0;
+            NormalizedTotalCounts.Pmc0 = 0;
+            NormalizedTotalCounts.Pmc1 = 0;
+            NormalizedTotalCounts.Pmc2 = 0;
+            NormalizedTotalCounts.Pmc3 = 0;
+        }
+
+        /// <summary>
+        /// Update counter values for thread, and add to totals
+        /// Will set thread affinity
+        /// </summary>
+        /// <param name="threadIdx">thread in question</param>
+        public void UpdateThreadCoreCounterData(int threadIdx)
+        {
+            ThreadAffinity.Set(1UL << threadIdx);
+            ulong activeCycles, retiredInstructions, refTsc, pmc0, pmc1, pmc2, pmc3;
+            float normalizationFactor = GetNormalizationFactor(threadIdx);
+            retiredInstructions = ReadAndClearMsr(IA32_FIXED_CTR0);
+            activeCycles = ReadAndClearMsr(IA32_FIXED_CTR1);
+            refTsc = ReadAndClearMsr(IA32_FIXED_CTR2);
+            pmc0 = ReadAndClearMsr(IA32_A_PMC0);
+            pmc1 = ReadAndClearMsr(IA32_A_PMC1);
+            pmc2 = ReadAndClearMsr(IA32_A_PMC2);
+            pmc3 = ReadAndClearMsr(IA32_A_PMC3);
+
+            if (NormalizedThreadCounts == null)
+            {
+                NormalizedThreadCounts = new NormalizedCoreCounterData[threadCount];
+            }
+
+            if (NormalizedThreadCounts[threadIdx] == null)
+            {
+                NormalizedThreadCounts[threadIdx] = new NormalizedCoreCounterData();
+            }
+
+            NormalizedThreadCounts[threadIdx].ActiveCycles = activeCycles * normalizationFactor;
+            NormalizedThreadCounts[threadIdx].RetiredInstructions = retiredInstructions * normalizationFactor;
+            NormalizedThreadCounts[threadIdx].RefTsc = refTsc * normalizationFactor;
+            NormalizedThreadCounts[threadIdx].Pmc0 = pmc0 * normalizationFactor;
+            NormalizedThreadCounts[threadIdx].Pmc1 = pmc1 * normalizationFactor;
+            NormalizedThreadCounts[threadIdx].Pmc2 = pmc2 * normalizationFactor;
+            NormalizedThreadCounts[threadIdx].Pmc3 = pmc3 * normalizationFactor;
+            NormalizedThreadCounts[threadIdx].NormalizationFactor = normalizationFactor;
+            NormalizedTotalCounts.ActiveCycles += NormalizedThreadCounts[threadIdx].ActiveCycles;
+            NormalizedTotalCounts.RetiredInstructions += NormalizedThreadCounts[threadIdx].RetiredInstructions;
+            NormalizedTotalCounts.RefTsc += NormalizedThreadCounts[threadIdx].RefTsc;
+            NormalizedTotalCounts.Pmc0 += NormalizedThreadCounts[threadIdx].Pmc0;
+            NormalizedTotalCounts.Pmc1 += NormalizedThreadCounts[threadIdx].Pmc1;
+            NormalizedTotalCounts.Pmc2 += NormalizedThreadCounts[threadIdx].Pmc2;
+            NormalizedTotalCounts.Pmc3 += NormalizedThreadCounts[threadIdx].Pmc3;
+        }
+
+        /// <summary>
+        /// Holds performance counter, read out from the three fixed counters
+        /// and four programmable ones
+        /// </summary>
+        public class NormalizedCoreCounterData
+        {
+            public float ActiveCycles;
+            public float RetiredInstructions;
+            public float RefTsc;
+            public float Pmc0;
+            public float Pmc1;
+            public float Pmc2;
+            public float Pmc3;
+            public float NormalizationFactor;
+        }
+
+        /// <summary>
         /// Monitor branch prediction. Retired branch instructions mispredicted / retired branches
         /// are architectural events so it should be the same across modern Intel chips 
         /// not sure about baclears, but that's at least consistent across SKL/HSW/SNB
@@ -108,7 +184,6 @@ namespace PmcReader.Intel
         {
             private ModernIntelCpu cpu;
             public string GetConfigName() { return "Branch Prediction"; }
-            public string[] columns = new string[] { "Item", "Instructions", "IPC", "BPU Accuracy", "Branch MPKI", "BTB Hitrate" };
 
             public BpuMonitoringConfig(ModernIntelCpu intelCpu)
             {
@@ -149,61 +224,114 @@ namespace PmcReader.Intel
             {
                 MonitoringUpdateResults results = new MonitoringUpdateResults();
                 results.unitMetrics = new string[cpu.GetThreadCount()][];
-                ulong totalRetiredBranches = 0;
-                ulong totalMispredictedBranches = 0;
-                ulong totalBranchResteers = 0;
-                ulong totalExecutedBranches = 0;
-                ulong totalRetiredInstructions = 0;
-                ulong totalActiveCycles = 0;
+                cpu.InitializeCoreTotals();
                 for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
                 {
-                    ulong retiredBranches, mispredictedBranches, resteers, executedBranches;
-                    ulong retiredInstructions, activeCycles;
-
-                    ThreadAffinity.Set(1UL << threadIdx);
-                    Ring0.ReadMsr(IA32_FIXED_CTR0, out retiredInstructions);
-                    Ring0.ReadMsr(IA32_FIXED_CTR1, out activeCycles);
-                    Ring0.ReadMsr(IA32_A_PMC0, out retiredBranches);
-                    Ring0.ReadMsr(IA32_A_PMC1, out mispredictedBranches);
-                    Ring0.ReadMsr(IA32_A_PMC2, out resteers);
-                    Ring0.ReadMsr(IA32_A_PMC3, out executedBranches);
-                    Ring0.WriteMsr(IA32_FIXED_CTR0, 0);
-                    Ring0.WriteMsr(IA32_FIXED_CTR1, 0);
-                    Ring0.WriteMsr(IA32_A_PMC0, 0);
-                    Ring0.WriteMsr(IA32_A_PMC1, 0);
-                    Ring0.WriteMsr(IA32_A_PMC2, 0);
-                    Ring0.WriteMsr(IA32_A_PMC3, 0);
-
-                    totalRetiredBranches += retiredBranches;
-                    totalMispredictedBranches += mispredictedBranches;
-                    totalBranchResteers += resteers;
-                    totalExecutedBranches += executedBranches;
-                    totalRetiredInstructions += retiredInstructions;
-                    totalActiveCycles += activeCycles;
-
-                    float bpuAccuracy = (1 - (float)mispredictedBranches / retiredBranches) * 100;
-                    float threadIpc = (float)retiredInstructions / activeCycles;
-                    float threadBranchMpki = (float)mispredictedBranches / retiredInstructions * 1000;
-                    float threadBtbHitrate = (1 - (float)resteers / executedBranches) * 100;
-                    results.unitMetrics[threadIdx] = new string[] { "Thread " + threadIdx,
-                        FormatLargeNumber(retiredInstructions),
-                        string.Format("{0:F2}", threadIpc),
-                        string.Format("{0:F2}%", bpuAccuracy),
-                        string.Format("{0:F2}", threadBranchMpki),
-                        string.Format("{0:F2}%", threadBtbHitrate)};
+                    cpu.UpdateThreadCoreCounterData(threadIdx);
+                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
                 }
 
-                float overallBpuAccuracy = (1 - (float)totalMispredictedBranches / totalRetiredBranches) * 100;
-                float overallIpc = (float)totalRetiredInstructions / totalActiveCycles;
-                float overallBranchMpki = (float)totalMispredictedBranches / totalRetiredInstructions * 1000;
-                float overallBtbHitrate = (1 - (float)totalBranchResteers / totalExecutedBranches) * 100;
-                results.overallMetrics = new string[] { "Overall",
-                    FormatLargeNumber(totalRetiredInstructions),
-                    string.Format("{0:F2}", overallIpc),
-                    string.Format("{0:F2}%", overallBpuAccuracy),
-                    string.Format("{0:F2}", overallBranchMpki),
-                    string.Format("{0:F2}%", overallBtbHitrate)};
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
                 return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Norm", "REF_TSC", "Active Cycles", "Instructions", "IPC", "BPU Accuracy", "Branch MPKI", "BTB Hitrate", "% Branches" };
+
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
+            {
+                float bpuAccuracy = (1 - counterData.Pmc1 / counterData.Pmc0) * 100;
+                float ipc = counterData.RetiredInstructions / counterData.ActiveCycles;
+                float branchMpki = counterData.Pmc1 / counterData.RetiredInstructions * 1000;
+                float btbHitrate = (1 - counterData.Pmc2 / counterData.Pmc0) * 100;
+                float branchRate = counterData.Pmc0 / counterData.RetiredInstructions * 100;
+
+                return new string[] { label,
+                    string.Format("{0:F2}", counterData.NormalizationFactor),
+                    FormatLargeNumber(counterData.RefTsc),
+                    FormatLargeNumber(counterData.ActiveCycles),
+                    FormatLargeNumber(counterData.RetiredInstructions),
+                    string.Format("{0:F2}", ipc),
+                    string.Format("{0:F2}%", bpuAccuracy),
+                    string.Format("{0:F2}", branchMpki),
+                    string.Format("{0:F2}%", btbHitrate),
+                    string.Format("{0:F2}%", branchRate)};
+            }
+        }
+
+        /// <summary>
+        /// Op Cache, events happen to be commmon across SKL/HSW/SNB
+        /// </summary>
+        public class OpCachePerformance : MonitoringConfig
+        {
+            private ModernIntelCpu cpu;
+            public string GetConfigName() { return "Op Cache Performance"; }
+
+            public OpCachePerformance(ModernIntelCpu intelCpu)
+            {
+                cpu = intelCpu;
+            }
+
+            public string[] GetColumns()
+            {
+                return columns;
+            }
+
+            public void Initialize()
+            {
+                cpu.EnablePerformanceCounters();
+
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    ThreadAffinity.Set(1UL << threadIdx);
+                    // Set PMC0 to count DSB (decoded stream buffer = op cache) uops
+                    ulong retiredBranches = GetPerfEvtSelRegisterValue(0x79, 0x08, true, true, false, false, false, false, true, false, 0);
+                    Ring0.WriteMsr(IA32_PERFEVTSEL0, retiredBranches);
+
+                    // Set PMC1 to count cycles when the DSB's delivering to IDQ (cmask=1)
+                    ulong retiredMispredictedBranches = GetPerfEvtSelRegisterValue(0x79, 0x08, true, true, false, false, false, false, true, false, 1);
+                    Ring0.WriteMsr(IA32_PERFEVTSEL1, retiredMispredictedBranches);
+
+                    // Set PMC2 to count MITE (micro instruction translation engine = decoder) uops
+                    ulong branchResteers = GetPerfEvtSelRegisterValue(0x79, 0x04, true, true, false, false, false, false, true, false, 0);
+                    Ring0.WriteMsr(IA32_PERFEVTSEL2, branchResteers);
+
+                    // Set PMC3 to count MITE cycles (cmask=1)
+                    ulong notTakenBranches = GetPerfEvtSelRegisterValue(0x79, 0x04, true, true, false, false, false, false, true, false, 1);
+                    Ring0.WriteMsr(IA32_PERFEVTSEL3, notTakenBranches);
+                }
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[cpu.GetThreadCount()][];
+                cpu.InitializeCoreTotals();
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    cpu.UpdateThreadCoreCounterData(threadIdx);
+                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
+                }
+
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "Op$ Hitrate", "Op$ Ops/C", "DSB Active", "Decoder Ops/C", "Decoder Active", "Op$ Ops", "Decoder Ops" };
+
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
+            {
+                float ipc = counterData.RetiredInstructions / counterData.ActiveCycles;
+                return new string[] { label,
+                    FormatLargeNumber(counterData.ActiveCycles),
+                    FormatLargeNumber(counterData.RetiredInstructions),
+                    string.Format("{0:F2}", ipc),
+                    string.Format("{0:F2}%", 100 * counterData.Pmc0 / (counterData.Pmc0 + counterData.Pmc2)),
+                    string.Format("{0:F2}", counterData.Pmc0 / counterData.Pmc1),
+                    string.Format("{0:F2}%", 100 * counterData.Pmc1 / counterData.ActiveCycles),
+                    string.Format("{0:F2}", counterData.Pmc2 / counterData.Pmc3),
+                    string.Format("{0:F2}%", 100 * counterData.Pmc3 / counterData.ActiveCycles),
+                    FormatLargeNumber(counterData.Pmc0),
+                    FormatLargeNumber(counterData.Pmc2)};
             }
         }
     }

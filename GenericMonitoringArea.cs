@@ -1,4 +1,6 @@
 ﻿using System;
+using System.Collections.Generic;
+using System.Diagnostics;
 using System.Threading;
 using System.Windows.Forms;
 using PmcReader.Interop;
@@ -13,6 +15,7 @@ namespace PmcReader
         public MonitoringConfig[] coreMonitoringConfigs;
         protected int threadCount = 0;
         protected string architectureName = "Generic";
+        private Dictionary<int, Stopwatch> lastUpdateTimers;
 
         public GenericMonitoringArea()
         {
@@ -45,6 +48,7 @@ namespace PmcReader
         public void MonitoringThread(int configId, ListView listView, CancellationToken cancelToken)
         {
             MonitoringConfig selectedConfig = coreMonitoringConfigs[configId];
+            lastUpdateTimers = null;
             selectedConfig.Initialize();
             SafeSetMonitoringListViewColumns cd = new SafeSetMonitoringListViewColumns(SetMonitoringListViewColumns);
             listView.Invoke(cd, selectedConfig.GetColumns(), listView);
@@ -171,9 +175,37 @@ namespace PmcReader
         public float GetNormalizationFactor(ref long lastUpdateTime)
         {
             long currentTime = DateTimeOffset.Now.ToUnixTimeMilliseconds();
-            float timeNormalization = (currentTime - lastUpdateTime) / (float)1000;
+            float timeNormalization = (float)1000 / (currentTime - lastUpdateTime);
             lastUpdateTime = currentTime;
             return timeNormalization;
+        }
+
+        /// <summary>
+        /// Get normalization factor (for 1000 ms interval) given stopwatch index
+        /// also resets stopwatch
+        /// </summary>
+        /// <param name="index">Item index</param>
+        /// <returns>normalization factor</returns>
+        public float GetNormalizationFactor(int index)
+        {
+            if (lastUpdateTimers == null)
+            {
+                lastUpdateTimers = new Dictionary<int, Stopwatch>();
+            }
+
+            Stopwatch sw;
+            if (! lastUpdateTimers.TryGetValue(index, out sw))
+            {
+                sw = new Stopwatch();
+                sw.Start();
+                lastUpdateTimers.Add(index, sw);
+                return 1;
+            }
+
+            sw.Stop();
+            float retval = 1000 / (float)sw.ElapsedMilliseconds;
+            sw.Restart();
+            return retval;
         }
     }
 }

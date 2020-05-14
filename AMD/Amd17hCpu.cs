@@ -43,6 +43,9 @@ namespace PmcReader.AMD
         public const uint MSR_DF_PERF_CTR_2 = 0xC0010245;
         public const uint MSR_DF_PERF_CTR_3 = 0xC0010247;
 
+        public NormalizedCoreCounterData[] NormalizedThreadCounts;
+        public NormalizedCoreCounterData NormalizedTotalCounts;
+
         public ulong[] lastThreadAperf;
         public ulong[] lastThreadRetiredInstructions;
         public ulong[] lastThreadMperf;
@@ -191,6 +194,99 @@ namespace PmcReader.AMD
             lastThreadMperf[threadIdx] = mperf;
             lastThreadTsc[threadIdx] = tsc;
             lastThreadRetiredInstructions[threadIdx] = instr;
+        }
+
+        /// <summary>
+        /// initialize/reset accumulated totals for core counter data
+        /// </summary>
+        public void InitializeCoreTotals()
+        {
+            if (NormalizedTotalCounts == null)
+            {
+                NormalizedTotalCounts = new NormalizedCoreCounterData();
+            }
+
+            NormalizedTotalCounts.aperf = 0;
+            NormalizedTotalCounts.mperf = 0;
+            NormalizedTotalCounts.tsc = 0;
+            NormalizedTotalCounts.instr = 0;
+            NormalizedTotalCounts.ctr0 = 0;
+            NormalizedTotalCounts.ctr1 = 0;
+            NormalizedTotalCounts.ctr2 = 0;
+            NormalizedTotalCounts.ctr3 = 0;
+            NormalizedTotalCounts.ctr4 = 0;
+            NormalizedTotalCounts.ctr5 = 0;
+        }
+
+        /// <summary>
+        /// Update counter values for thread, and add to totals
+        /// Will set thread affinity
+        /// </summary>
+        /// <param name="threadIdx">thread in question</param>
+        public void UpdateThreadCoreCounterData(int threadIdx)
+        {
+            ThreadAffinity.Set(1UL << threadIdx);
+            float normalizationFactor = GetNormalizationFactor(threadIdx);
+            ulong aperf, mperf, tsc, instr;
+            ulong ctr0, ctr1, ctr2, ctr3, ctr4, ctr5;
+            UpdateFixedCounters(threadIdx, out aperf, out instr, out tsc, out mperf);
+            ctr0 = ReadAndClearMsr(MSR_PERF_CTR_0);
+            ctr1 = ReadAndClearMsr(MSR_PERF_CTR_1);
+            ctr2 = ReadAndClearMsr(MSR_PERF_CTR_2);
+            ctr3 = ReadAndClearMsr(MSR_PERF_CTR_3);
+            ctr4 = ReadAndClearMsr(MSR_PERF_CTR_4);
+            ctr5 = ReadAndClearMsr(MSR_PERF_CTR_5);
+
+            if (NormalizedThreadCounts == null)
+            {
+                NormalizedThreadCounts = new NormalizedCoreCounterData[threadCount];
+            }
+
+            if (NormalizedThreadCounts[threadIdx] == null)
+            {
+                NormalizedThreadCounts[threadIdx] = new NormalizedCoreCounterData();
+            }
+
+            NormalizedThreadCounts[threadIdx].aperf = aperf * normalizationFactor;
+            NormalizedThreadCounts[threadIdx].mperf = mperf * normalizationFactor;
+            NormalizedThreadCounts[threadIdx].instr = instr * normalizationFactor;
+            NormalizedThreadCounts[threadIdx].tsc = tsc * normalizationFactor;
+            NormalizedThreadCounts[threadIdx].ctr0 = ctr0 * normalizationFactor;
+            NormalizedThreadCounts[threadIdx].ctr1 = ctr1 * normalizationFactor;
+            NormalizedThreadCounts[threadIdx].ctr2 = ctr2 * normalizationFactor;
+            NormalizedThreadCounts[threadIdx].ctr3 = ctr3 * normalizationFactor;
+            NormalizedThreadCounts[threadIdx].ctr4 = ctr4 * normalizationFactor;
+            NormalizedThreadCounts[threadIdx].ctr5 = ctr5 * normalizationFactor;
+            NormalizedThreadCounts[threadIdx].NormalizationFactor = normalizationFactor;
+            NormalizedTotalCounts.aperf += NormalizedThreadCounts[threadIdx].aperf;
+            NormalizedTotalCounts.mperf += NormalizedThreadCounts[threadIdx].mperf;
+            NormalizedTotalCounts.instr += NormalizedThreadCounts[threadIdx].instr;
+            NormalizedTotalCounts.tsc += NormalizedThreadCounts[threadIdx].tsc;
+            NormalizedTotalCounts.ctr0 += NormalizedThreadCounts[threadIdx].ctr0;
+            NormalizedTotalCounts.ctr1 += NormalizedThreadCounts[threadIdx].ctr1;
+            NormalizedTotalCounts.ctr2 += NormalizedThreadCounts[threadIdx].ctr2;
+            NormalizedTotalCounts.ctr3 += NormalizedThreadCounts[threadIdx].ctr3;
+            NormalizedTotalCounts.ctr4 += NormalizedThreadCounts[threadIdx].ctr4;
+            NormalizedTotalCounts.ctr5 += NormalizedThreadCounts[threadIdx].ctr5;
+        }
+
+        /// <summary>
+        /// Holds performance counter, read out from the three fixed counters
+        /// and four programmable ones
+        /// </summary>
+        public class NormalizedCoreCounterData
+        {
+            public float aperf;
+            public float mperf;
+            public float tsc;
+            public float instr;
+            public float ctr0;
+            public float ctr1;
+            public float ctr2;
+            public float ctr3;
+            public float ctr4;
+            public float ctr5;
+            public float NormalizationFactor;
         }
     }
 }

@@ -17,125 +17,6 @@ namespace PmcReader.Intel
             architectureName = "Sandy Bridge";
         }
 
-        public class OpCachePerformance : MonitoringConfig
-        {
-            private SandyBridge cpu;
-            public string GetConfigName() { return "Op Cache Performance"; }
-            public string[] columns = new string[] { "Item", "Instructions", "IPC", "Op Cache Ops/C", "Op Cache Hitrate", "Decoder Ops/C", "Op Cache Ops", "Decoder Ops" };
-            private long lastUpdateTime;
-
-            public OpCachePerformance(SandyBridge intelCpu)
-            {
-                cpu = intelCpu;
-            }
-
-            public string[] GetColumns()
-            {
-                return columns;
-            }
-
-            public void Initialize()
-            {
-                cpu.EnablePerformanceCounters();
-
-                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
-                {
-                    ThreadAffinity.Set(1UL << threadIdx);
-                    // Set PMC0 to count DSB (decoded stream buffer = op cache) uops
-                    ulong retiredBranches = GetPerfEvtSelRegisterValue(0x79, 0x08, true, true, false, false, false, false, true, false, 0);
-                    Ring0.WriteMsr(IA32_PERFEVTSEL0, retiredBranches);
-
-                    // Set PMC1 to count cycles when the DSB's delivering to IDQ (cmask=1)
-                    ulong retiredMispredictedBranches = GetPerfEvtSelRegisterValue(0x79, 0x08, true, true, false, false, false, false, true, false, 1);
-                    Ring0.WriteMsr(IA32_PERFEVTSEL1, retiredMispredictedBranches);
-
-                    // Set PMC2 to count MITE (micro instruction translation engine = decoder) uops
-                    ulong branchResteers = GetPerfEvtSelRegisterValue(0x79, 0x04, true, true, false, false, false, false, true, false, 0);
-                    Ring0.WriteMsr(IA32_PERFEVTSEL2, branchResteers);
-
-                    // Set PMC3 to count MITE cycles (cmask=1)
-                    ulong notTakenBranches = GetPerfEvtSelRegisterValue(0x79, 0x04, true, true, false, false, false, false, true, false, 1);
-                    Ring0.WriteMsr(IA32_PERFEVTSEL3, notTakenBranches);
-                }
-
-                lastUpdateTime = DateTimeOffset.Now.ToUnixTimeMilliseconds();
-            }
-
-            public MonitoringUpdateResults Update()
-            {
-                float normalizationFactor = cpu.GetNormalizationFactor(ref lastUpdateTime);
-                MonitoringUpdateResults results = new MonitoringUpdateResults();
-                results.unitMetrics = new string[cpu.GetThreadCount()][];
-                ulong totalDsbUops = 0;
-                ulong totalDsbCycles = 0;
-                ulong totalMiteUops = 0;
-                ulong totalMiteCycles = 0;
-                ulong totalRetiredInstructions = 0;
-                ulong totalActiveCycles = 0;
-                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
-                {
-                    ulong dsbUops, dsbCycles, miteUops, miteCycles;
-                    ulong retiredInstructions, activeCycles;
-
-                    ThreadAffinity.Set(1UL << threadIdx);
-                    Ring0.ReadMsr(IA32_FIXED_CTR0, out retiredInstructions);
-                    Ring0.ReadMsr(IA32_FIXED_CTR1, out activeCycles);
-                    Ring0.ReadMsr(IA32_A_PMC0, out dsbUops);
-                    Ring0.ReadMsr(IA32_A_PMC1, out dsbCycles);
-                    Ring0.ReadMsr(IA32_A_PMC2, out miteUops);
-                    Ring0.ReadMsr(IA32_A_PMC3, out miteCycles);
-                    Ring0.WriteMsr(IA32_FIXED_CTR0, 0);
-                    Ring0.WriteMsr(IA32_FIXED_CTR1, 0);
-                    Ring0.WriteMsr(IA32_A_PMC0, 0);
-                    Ring0.WriteMsr(IA32_A_PMC1, 0);
-                    Ring0.WriteMsr(IA32_A_PMC2, 0);
-                    Ring0.WriteMsr(IA32_A_PMC3, 0);
-
-                    totalDsbUops += dsbUops;
-                    totalDsbCycles += dsbCycles;
-                    totalMiteUops += miteUops;
-                    totalMiteCycles += miteCycles;
-                    totalRetiredInstructions += retiredInstructions;
-                    totalActiveCycles += activeCycles;
-
-                    results.unitMetrics[threadIdx] = computeResults("Thread" + threadIdx,
-                        retiredInstructions,
-                        activeCycles,
-                        dsbUops,
-                        dsbCycles,
-                        miteUops,
-                        miteCycles,
-                        normalizationFactor);
-                }
-
-                results.overallMetrics = computeResults("Overall",
-                    totalRetiredInstructions,
-                    totalActiveCycles,
-                    totalDsbUops,
-                    totalDsbCycles,
-                    totalMiteUops,
-                    totalMiteCycles,
-                    normalizationFactor);
-                return results;
-            }
-
-            private string[] computeResults(string label, ulong instr, ulong activeCycles, ulong dsbUops, ulong dsbCycles, ulong miteUops, ulong miteCycles, float normalizationFactor)
-            {
-                float dsbThroughput = (float)dsbUops / dsbCycles;
-                float dsbHitrate = (float)dsbUops / (dsbUops + miteUops) * 100;
-                float miteThroughput = (float)miteUops / miteCycles;
-                float threadIpc = (float)instr / activeCycles;
-                return new string[] { label,
-                        FormatLargeNumber(instr * normalizationFactor) + "/s",
-                        string.Format("{0:F2}", threadIpc),
-                        string.Format("{0:F2}", dsbThroughput),
-                        string.Format("{0:F2}%", dsbHitrate),
-                        string.Format("{0:F2}", miteThroughput),
-                        FormatLargeNumber(dsbUops),
-                        FormatLargeNumber(miteUops)};
-            }
-        }
-
         public class ALUPortUtilization : MonitoringConfig
         {
             private SandyBridge cpu;
@@ -350,7 +231,6 @@ namespace PmcReader.Intel
         {
             private SandyBridge cpu;
             public string GetConfigName() { return "Dispatch Stalls"; }
-            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "LDQ Full", "STQ Full", "RS Full", "ROB Full" };
             private long lastUpdateTime;
 
             public DispatchStalls(SandyBridge intelCpu)
@@ -392,63 +272,31 @@ namespace PmcReader.Intel
 
             public MonitoringUpdateResults Update()
             {
-                float normalizationFactor = cpu.GetNormalizationFactor(ref lastUpdateTime);
                 MonitoringUpdateResults results = new MonitoringUpdateResults();
                 results.unitMetrics = new string[cpu.GetThreadCount()][];
-                ulong totalLbFull = 0;
-                ulong totalSbFull = 0;
-                ulong totalRsFull = 0;
-                ulong totalRobFull = 0;
-                ulong totalRetiredInstructions = 0;
-                ulong totalActiveCycles = 0;
+                cpu.InitializeCoreTotals();
                 for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
                 {
-                    ThreadAffinity.Set(1UL << threadIdx);
-                    ulong retiredInstructions = ReadAndClearMsr(IA32_FIXED_CTR0);
-                    ulong activeCycles = ReadAndClearMsr(IA32_FIXED_CTR1);
-                    ulong lbFull = ReadAndClearMsr(IA32_A_PMC0);
-                    ulong sbFull = ReadAndClearMsr(IA32_A_PMC1);
-                    ulong rsFull = ReadAndClearMsr(IA32_A_PMC2);
-                    ulong robFull = ReadAndClearMsr(IA32_A_PMC3);
-
-                    totalLbFull += lbFull;
-                    totalSbFull += sbFull;
-                    totalRsFull += rsFull;
-                    totalRobFull += robFull;
-                    totalRetiredInstructions += retiredInstructions;
-                    totalActiveCycles += activeCycles;
-
-                    results.unitMetrics[threadIdx] = computeResults("Thread " + threadIdx,
-                        retiredInstructions,
-                        activeCycles,
-                        lbFull,
-                        sbFull,
-                        rsFull,
-                        robFull,
-                        normalizationFactor);
+                    cpu.UpdateThreadCoreCounterData(threadIdx);
+                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
                 }
 
-                results.overallMetrics = computeResults("Overall",
-                    totalRetiredInstructions,
-                    totalActiveCycles,
-                    totalLbFull,
-                    totalSbFull,
-                    totalRsFull,
-                    totalRobFull,
-                    normalizationFactor);
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
                 return results;
             }
 
-            private string[] computeResults(string label, ulong instr, ulong activeCycles, ulong lbFull, ulong sbFull, ulong rsFull, ulong robFull, float normalizationfactor)
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "LDQ Full", "STQ Full", "RS Full", "ROB Full" };
+
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
             {
                 return new string[] { label,
-                        FormatLargeNumber(activeCycles * normalizationfactor) + "/s",
-                        FormatLargeNumber(instr * normalizationfactor) + "/s",
-                        string.Format("{0:F2}", (float)instr / activeCycles),
-                        string.Format("{0:F2}%", (float)lbFull / activeCycles * 100),
-                        string.Format("{0:F2}%", (float)sbFull / activeCycles * 100),
-                        string.Format("{0:F2}%", (float)rsFull / activeCycles * 100),
-                        string.Format("{0:F2}%", (float)robFull / activeCycles * 100)};
+                        FormatLargeNumber(counterData.ActiveCycles),
+                        FormatLargeNumber(counterData.RetiredInstructions),
+                        string.Format("{0:F2}", counterData.RetiredInstructions / counterData.ActiveCycles),
+                        string.Format("{0:F2}%", counterData.Pmc0 / counterData.ActiveCycles * 100),
+                        string.Format("{0:F2}%", counterData.Pmc1 / counterData.ActiveCycles * 100),
+                        string.Format("{0:F2}%", counterData.Pmc2 / counterData.ActiveCycles * 100),
+                        string.Format("{0:F2}%", counterData.Pmc3 / counterData.ActiveCycles * 100)};
             }
         }
 
@@ -456,7 +304,6 @@ namespace PmcReader.Intel
         {
             private SandyBridge cpu;
             public string GetConfigName() { return "Offcore Requests"; }
-            public string[] columns = new string[] { "Item", "REF_TSC", "Active Cycles", "Instructions", "IPC", "Offcore Data Reqs", "Cycles w/Data Req", "SQ Occupancy", "SQ Full Stall", "Offcore Req Latency" };
             private long lastUpdateTime;
 
             public OffcoreQueue(SandyBridge intelCpu)
@@ -476,7 +323,7 @@ namespace PmcReader.Intel
                 for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
                 {
                     ThreadAffinity.Set(1UL << threadIdx);
-                    // Set PMC0 to count outstanding offcore data reads
+                    // Set PMC0 to increment by number of outstanding data read requests in offcore request queue, per cycle
                     Ring0.WriteMsr(IA32_PERFEVTSEL0, GetPerfEvtSelRegisterValue(0x60, 0x8, true, true, false, false, false, false, true, false, 0));
 
                     // Set PMC1 to count data reads requests to offcore
@@ -494,78 +341,32 @@ namespace PmcReader.Intel
 
             public MonitoringUpdateResults Update()
             {
-                float normalizationFactor = cpu.GetNormalizationFactor(ref lastUpdateTime);
                 MonitoringUpdateResults results = new MonitoringUpdateResults();
                 results.unitMetrics = new string[cpu.GetThreadCount()][];
-                ulong totalOutstandingDataReads = 0;
-                ulong totalDataReads = 0;
-                ulong totalRequestBlocks = 0;
-                ulong totalRequestCycles = 0;
-                ulong totalRetiredInstructions = 0;
-                ulong totalActiveCycles = 0;
-                ulong totalTsc = 0;
+                cpu.InitializeCoreTotals();
                 for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
                 {
-                    ThreadAffinity.Set(1UL << threadIdx);
-                    ulong retiredInstructions = ReadAndClearMsr(IA32_FIXED_CTR0);
-                    ulong activeCycles = ReadAndClearMsr(IA32_FIXED_CTR1);
-                    ulong tsc = ReadAndClearMsr(IA32_FIXED_CTR2);
-                    ulong outstandingDataReads = ReadAndClearMsr(IA32_A_PMC0);
-                    ulong dataReads = ReadAndClearMsr(IA32_A_PMC1);
-                    ulong requestBlocks = ReadAndClearMsr(IA32_A_PMC2);
-                    ulong requestCycles = ReadAndClearMsr(IA32_A_PMC3);
-
-                    totalOutstandingDataReads += outstandingDataReads;
-                    totalDataReads += dataReads;
-                    totalRequestBlocks += requestBlocks;
-                    totalRequestCycles += requestCycles;
-                    totalRetiredInstructions += retiredInstructions;
-                    totalActiveCycles += activeCycles;
-                    totalTsc += tsc;
-
-                    results.unitMetrics[threadIdx] = computeResults("Thread " + threadIdx,
-                        retiredInstructions,
-                        activeCycles,
-                        tsc,
-                        outstandingDataReads,
-                        dataReads,
-                        requestBlocks,
-                        requestCycles,
-                        normalizationFactor);
+                    cpu.UpdateThreadCoreCounterData(threadIdx);
+                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
                 }
 
-                results.overallMetrics = computeResults("Overall",
-                    totalRetiredInstructions,
-                    totalActiveCycles,
-                    totalTsc,
-                    totalOutstandingDataReads,
-                    totalDataReads,
-                    totalRequestBlocks,
-                    totalRequestCycles,
-                    normalizationFactor);
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
                 return results;
             }
 
-            private string[] computeResults(string label, 
-                ulong instr, 
-                ulong activeCycles, 
-                ulong tsc, 
-                ulong outstandingDataReads, 
-                ulong dataReads, 
-                ulong requestBlocks, 
-                ulong requestCycles, 
-                float normalizationfactor)
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "Offcore Data Reqs", "Cycles w/Data Req", "SQ Occupancy", "SQ Full Stall", "Offcore Req Latency" };
+
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
             {
                 return new string[] { label,
-                        FormatLargeNumber(tsc),
-                        FormatLargeNumber(activeCycles * normalizationfactor) + "/s",
-                        FormatLargeNumber(instr * normalizationfactor) + "/s",
-                        string.Format("{0:F2}", (float)instr / activeCycles),
-                        FormatLargeNumber(dataReads),
-                        string.Format("{0:F2}%", (float)requestCycles / activeCycles * 100),
-                        string.Format("{0:F2}", (float)outstandingDataReads / requestCycles),
-                        string.Format("{0:F2}%", (float)requestBlocks / activeCycles * 100),
-                        string.Format("{0:F2}", (float)outstandingDataReads / dataReads)};
+                        FormatLargeNumber(counterData.ActiveCycles),
+                        FormatLargeNumber(counterData.RetiredInstructions),
+                        string.Format("{0:F2}", counterData.RetiredInstructions / counterData.ActiveCycles),
+                        FormatLargeNumber(counterData.Pmc1),
+                        string.Format("{0:F2}%", counterData.Pmc3 / counterData.ActiveCycles * 100),
+                        string.Format("{0:F2}", counterData.Pmc0 / counterData.Pmc3),
+                        string.Format("{0:F2}%", counterData.Pmc2 / counterData.ActiveCycles * 100),
+                        string.Format("{0:F2}", counterData.Pmc0 / counterData.Pmc1)};
             }
         }
     }

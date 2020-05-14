@@ -24,10 +24,6 @@ namespace PmcReader.AMD
         {
             private Zen2 cpu;
             public string GetConfigName() { return "Decode/Op Cache"; }
-            public string[] columns = new string[] { "Item", "Instructions", "IPC", "Ops/Instr", "Op Cache Hitrate", "Op Cache Ops/C", "Op Cache Active", "Decoder Ops/C", "Decoder Active", "Bogus Ops", "Op Queue Empty Cycles" };
-            private ulong[] lastThreadAperf;
-            private ulong[] lastThreadRetiredInstructions;
-            private long lastUpdateTime;
 
             public OpCacheConfig(Zen2 amdCpu)
             {
@@ -42,8 +38,6 @@ namespace PmcReader.AMD
             public void Initialize()
             {
                 cpu.EnablePerformanceCounters();
-                lastThreadAperf = new ulong[cpu.GetThreadCount()];
-                lastThreadRetiredInstructions = new ulong[cpu.GetThreadCount()];
                 for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
                 {
                     ThreadAffinity.Set(1UL << threadIdx);
@@ -70,117 +64,42 @@ namespace PmcReader.AMD
                     // PERF_CTR5 = micro-op queue empty cycles
                     ulong mopQueueEmptyCycles = GetPerfCtlValue(0xA9, 0, true, true, false, false, true, false, 0, 0, false, false);
                     Ring0.WriteMsr(MSR_PERF_CTL_5, mopQueueEmptyCycles);
-
-                    // Initialize last read values
-                    Ring0.ReadMsr(MSR_APERF, out lastThreadAperf[threadIdx]);
-                    Ring0.ReadMsr(MSR_INSTR_RETIRED, out lastThreadRetiredInstructions[threadIdx]);
                 }
-
-                lastUpdateTime = DateTimeOffset.Now.ToUnixTimeMilliseconds();
             }
 
             public MonitoringUpdateResults Update()
             {
-                float normalizationFactor = cpu.GetNormalizationFactor(ref lastUpdateTime);
                 MonitoringUpdateResults results = new MonitoringUpdateResults();
                 results.unitMetrics = new string[cpu.GetThreadCount()][];
-                ulong totalOpCacheOps = 0;
-                ulong totalOpCacheCycles = 0;
-                ulong totalDecoderOps = 0;
-                ulong totalDecoderCycles = 0;
-                ulong totalRetiredInstructions = 0;
-                ulong totalActiveCycles = 0;
-                ulong totalRetiredOps = 0;
-                ulong totalMopQueueEmptyCylces = 0;
+                cpu.InitializeCoreTotals();
                 for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
                 {
-                    ThreadAffinity.Set(1UL << threadIdx);
-                    ulong retiredInstructions, activeCycles, elapsedRetiredInstr, elapsedActiveCycles;
-                    Ring0.ReadMsr(MSR_INSTR_RETIRED, out retiredInstructions);
-                    Ring0.ReadMsr(MSR_APERF, out activeCycles);
-                    ulong opCacheOps = ReadAndClearMsr(MSR_PERF_CTR_0);
-                    ulong opCacheCycles = ReadAndClearMsr(MSR_PERF_CTR_1);
-                    ulong decoderOps = ReadAndClearMsr(MSR_PERF_CTR_2);
-                    ulong decoderCycles = ReadAndClearMsr(MSR_PERF_CTR_3);
-                    ulong retiredOps = ReadAndClearMsr(MSR_PERF_CTR_4);
-                    ulong mopQueueEmptyCycles = ReadAndClearMsr(MSR_PERF_CTR_5);
-
-                    elapsedRetiredInstr = retiredInstructions;
-                    elapsedActiveCycles = activeCycles;
-                    if (retiredInstructions > lastThreadRetiredInstructions[threadIdx])
-                        elapsedRetiredInstr = retiredInstructions - lastThreadRetiredInstructions[threadIdx];
-                    if (activeCycles > lastThreadAperf[threadIdx])
-                        elapsedActiveCycles = activeCycles - lastThreadAperf[threadIdx];
-
-                    lastThreadRetiredInstructions[threadIdx] = retiredInstructions;
-                    lastThreadAperf[threadIdx] = activeCycles;
-
-                    totalOpCacheOps += opCacheOps;
-                    totalOpCacheCycles += opCacheCycles;
-                    totalDecoderOps += decoderOps;
-                    totalDecoderCycles += decoderCycles;
-                    totalRetiredInstructions += elapsedRetiredInstr;
-                    totalActiveCycles += elapsedActiveCycles;
-                    totalRetiredOps += retiredOps;
-                    totalMopQueueEmptyCylces += mopQueueEmptyCycles;
-
-                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx,
-                        elapsedRetiredInstr,
-                        elapsedActiveCycles,
-                        opCacheOps,
-                        opCacheCycles,
-                        decoderOps,
-                        decoderCycles,
-                        retiredOps,
-                        mopQueueEmptyCycles,
-                        normalizationFactor);
+                    cpu.UpdateThreadCoreCounterData(threadIdx);
+                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
                 }
 
-                results.overallMetrics = computeMetrics("Overall", 
-                    totalRetiredInstructions, 
-                    totalActiveCycles, 
-                    totalOpCacheOps, 
-                    totalOpCacheCycles, 
-                    totalDecoderOps, 
-                    totalDecoderCycles, 
-                    totalRetiredOps, 
-                    totalMopQueueEmptyCylces, 
-                    normalizationFactor);
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
                 return results;
             }
 
-            private string[] computeMetrics(string itemName, 
-                ulong instr, 
-                ulong activeCycles, 
-                ulong opCacheOps, 
-                ulong opCacheCycles, 
-                ulong decoderOps, 
-                ulong decoderCycles, 
-                ulong retiredOps, 
-                ulong mopQueueEmptyCycles, 
-                float normalizationFactor)
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "Ops/C", "Op Cache Hitrate", "Op Cache Ops/C", "Op Cache Active", "Decoder Ops/C", "Decoder Active", "Bogus Ops", "Op Queue Empty Cycles" };
+
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
             {
-                float ipc = (float)instr / activeCycles;
-                float opCacheThroughput = (float)opCacheOps / opCacheCycles;
-                float opCacheHitrate = opCacheOps / ((float)opCacheOps + decoderOps) * 100;
-                float decoderThroughput = (float)decoderOps / decoderCycles;
-                float opsPerInstr = (float)retiredOps / instr;
-                float bogusOps = (float)(opCacheOps + decoderOps - retiredOps) / (opCacheOps + decoderOps) * 100;
-                float mopQueueEmpty = (float)mopQueueEmptyCycles / activeCycles * 100;
-                float opCacheActive = (float)opCacheCycles / activeCycles * 100;
-                float decoderActive = (float)decoderCycles / activeCycles * 100;
-                if (retiredOps > opCacheOps + decoderOps) bogusOps = 0;
-                return new string[] { itemName,
-                        FormatLargeNumber(instr * normalizationFactor) + "/s",
-                        string.Format("{0:F2}", ipc),
-                        string.Format("{0:F2}", opsPerInstr),
-                        string.Format("{0:F2}%", opCacheHitrate),
-                        string.Format("{0:F2}", opCacheThroughput),
-                        string.Format("{0:F2}%", opCacheActive),
-                        string.Format("{0:F2}", decoderThroughput),
-                        string.Format("{0:F2}%", decoderActive),
-                        string.Format("{0:F2}%", bogusOps),
-                        string.Format("{0:F2}%", mopQueueEmpty) };
+                float bogusOps = 100 * (counterData.ctr0 + counterData.ctr2 - counterData.ctr4) / (counterData.ctr0 + counterData.ctr2);
+                if (counterData.ctr4 > counterData.ctr0 + counterData.ctr2) bogusOps = 0;
+                return new string[] { label,
+                    FormatLargeNumber(counterData.aperf),
+                    FormatLargeNumber(counterData.instr),
+                    string.Format("{0:F2}", counterData.instr / counterData.aperf),
+                    string.Format("{0:F2}", counterData.ctr4 / counterData.aperf),
+                    string.Format("{0:F2}%", 100 * counterData.ctr0 / (counterData.ctr0 + counterData.ctr2)),
+                    string.Format("{0:F2}", counterData.ctr0 / counterData.ctr1),
+                    string.Format("{0:F2}%", 100 * counterData.ctr1 / counterData.aperf),
+                    string.Format("{0:F2}", counterData.ctr2 / counterData.ctr3),
+                    string.Format("{0:F2}%", counterData.ctr3 / counterData.aperf),
+                    string.Format("{0:F2}%", bogusOps),
+                    string.Format("{0:F2}%", counterData.ctr5 / counterData.aperf) };
             }
         }
 
