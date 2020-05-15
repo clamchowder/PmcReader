@@ -58,6 +58,8 @@
     <Compile Include="HaswellForm.Designer.cs">
       <DependentUpon>HaswellForm.cs</DependentUpon>
     </Compile>
+    <Compile Include="Intel\HaswellClientL3.cs" />
+    <Compile Include="Intel\HaswellClientUncore.cs" />
     <Compile Include="Intel\Skylake.cs" />
     <Compile Include="Intel\SandyBridge.cs" />
     <Compile Include="Intel\Haswell.cs" />

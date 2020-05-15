@@ -32,6 +32,10 @@ namespace PmcReader
                     if (cpuModel == 0x46 || cpuModel == 0x45 || cpuModel == 0x3C || cpuModel == 0x3F)
                     {
                         coreMonitoring.monitoringArea = new Intel.Haswell();
+                        if (cpuModel == 0x46 || cpuModel == 0x45 || cpuModel == 0x3C)
+                        {
+                            l3Monitoring.monitoringArea = new Intel.HaswellClientL3();
+                        }
                     }
                     else if (cpuModel == 0x2A || cpuModel == 0x2D)
                     {
