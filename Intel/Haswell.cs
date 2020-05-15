@@ -7,14 +7,14 @@ namespace PmcReader.Intel
     {
         public Haswell()
         {
-            coreMonitoringConfigs = new MonitoringConfig[7];
-            coreMonitoringConfigs[0] = new BpuMonitoringConfig(this);
-            coreMonitoringConfigs[1] = new OpCachePerformance(this);
-            coreMonitoringConfigs[2] = new ALUPortUtilization(this);
-            coreMonitoringConfigs[3] = new LSPortUtilization(this);
-            coreMonitoringConfigs[4] = new LoadDtlbConfig(this);
-            coreMonitoringConfigs[5] = new MoveElimConfig(this);
-            coreMonitoringConfigs[6] = new DispatchStalls(this);
+            monitoringConfigs = new MonitoringConfig[7];
+            monitoringConfigs[0] = new BpuMonitoringConfig(this);
+            monitoringConfigs[1] = new OpCachePerformance(this);
+            monitoringConfigs[2] = new ALUPortUtilization(this);
+            monitoringConfigs[3] = new LSPortUtilization(this);
+            monitoringConfigs[4] = new LoadDtlbConfig(this);
+            monitoringConfigs[5] = new MoveElimConfig(this);
+            monitoringConfigs[6] = new DispatchStalls(this);
             architectureName = "Haswell";
         }
 

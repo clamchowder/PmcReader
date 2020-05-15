@@ -7,15 +7,15 @@ namespace PmcReader.Intel
     {
         public SandyBridge()
         {
-            coreMonitoringConfigs = new MonitoringConfig[8];
-            coreMonitoringConfigs[0] = new BpuMonitoringConfig(this);
-            coreMonitoringConfigs[1] = new OpCachePerformance(this);
-            coreMonitoringConfigs[2] = new ALUPortUtilization(this);
-            coreMonitoringConfigs[3] = new LSPortUtilization(this);
-            coreMonitoringConfigs[4] = new DispatchStalls(this);
-            coreMonitoringConfigs[5] = new OffcoreQueue(this);
-            coreMonitoringConfigs[6] = new Fp32Flops(this);
-            coreMonitoringConfigs[7] = new Fp64Flops(this);
+            monitoringConfigs = new MonitoringConfig[8];
+            monitoringConfigs[0] = new BpuMonitoringConfig(this);
+            monitoringConfigs[1] = new OpCachePerformance(this);
+            monitoringConfigs[2] = new ALUPortUtilization(this);
+            monitoringConfigs[3] = new LSPortUtilization(this);
+            monitoringConfigs[4] = new DispatchStalls(this);
+            monitoringConfigs[5] = new OffcoreQueue(this);
+            monitoringConfigs[6] = new Fp32Flops(this);
+            monitoringConfigs[7] = new Fp64Flops(this);
             architectureName = "Sandy Bridge";
         }
 

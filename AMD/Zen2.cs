@@ -7,17 +7,18 @@ namespace PmcReader.AMD
     {
         public Zen2()
         {
-            coreMonitoringConfigs = new MonitoringConfig[10];
-            coreMonitoringConfigs[0] = new OpCacheConfig(this);
-            coreMonitoringConfigs[1] = new BpuMonitoringConfig(this);
-            coreMonitoringConfigs[2] = new FlopsMonitoringConfig(this);
-            coreMonitoringConfigs[3] = new ResourceStallMontitoringConfig(this);
-            coreMonitoringConfigs[4] = new IntSchedulerMonitoringConfig(this);
-            coreMonitoringConfigs[5] = new L2MonitoringConfig(this);
-            coreMonitoringConfigs[6] = new DCMonitoringConfig(this);
-            coreMonitoringConfigs[7] = new ICMonitoringConfig(this);
-            coreMonitoringConfigs[8] = new BPUMonitoringConfig1(this);
-            coreMonitoringConfigs[9] = new TestConfig(this);
+            monitoringConfigs = new MonitoringConfig[11];
+            monitoringConfigs[0] = new OpCacheConfig(this);
+            monitoringConfigs[1] = new BpuMonitoringConfig(this);
+            monitoringConfigs[2] = new BPUMonitoringConfig1(this);
+            monitoringConfigs[3] = new ResourceStallMontitoringConfig(this);
+            monitoringConfigs[4] = new IntSchedulerMonitoringConfig(this);
+            monitoringConfigs[5] = new L2MonitoringConfig(this);
+            monitoringConfigs[6] = new DCMonitoringConfig(this);
+            monitoringConfigs[7] = new ICMonitoringConfig(this);
+            monitoringConfigs[8] = new FlopsMonitoringConfig(this);
+            monitoringConfigs[9] = new RetireConfig(this);
+            monitoringConfigs[10] = new TestConfig(this);
             architectureName = "Zen 2";
         }
 
@@ -849,6 +850,75 @@ namespace PmcReader.AMD
                         FormatLargeNumber(counterData.ctr4),
                         FormatLargeNumber(counterData.ctr5),
                         string.Format("{0:F2}%", 100 * Math.Abs(counterData.instr - counterData.ctr5) / counterData.aperf) };
+            }
+        }
+
+        public class RetireConfig : MonitoringConfig
+        {
+            private Zen2 cpu;
+            public string GetConfigName() { return "Retire"; }
+
+            public RetireConfig(Zen2 amdCpu)
+            {
+                cpu = amdCpu;
+            }
+
+            public string[] GetColumns()
+            {
+                return columns;
+            }
+
+            public void Initialize()
+            {
+                cpu.EnablePerformanceCounters();
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    ThreadAffinity.Set(1UL << threadIdx);
+                    // ret uops, cmask 1
+                    Ring0.WriteMsr(MSR_PERF_CTL_0, GetPerfCtlValue(0xC1, 0, true, true, false, false, true, false, cmask: 1, 0, false, false));
+                    // ret uops, cmask 2
+                    Ring0.WriteMsr(MSR_PERF_CTL_1, GetPerfCtlValue(0xC1, 0, true, true, false, false, true, false, cmask: 2, 0, false, false));
+                    // ^^ cmask 3
+                    Ring0.WriteMsr(MSR_PERF_CTL_2, GetPerfCtlValue(0xC1, 0, true, true, false, false, true, false, cmask: 3, 0, false, false));
+                    // ^^ cmask 4
+                    Ring0.WriteMsr(MSR_PERF_CTL_3, GetPerfCtlValue(0xC1, 0, true, true, false, false, true, false, cmask: 4, 0, false, false));
+                    // ^^ cmask 5
+                    Ring0.WriteMsr(MSR_PERF_CTL_4, GetPerfCtlValue(0xC1, 0, true, true, false, false, true, false, cmask: 5, 0, false, false));
+                    // ^^ cmask 6
+                    Ring0.WriteMsr(MSR_PERF_CTL_5, GetPerfCtlValue(0xC1, 0, true, true, false, false, true, false, cmask: 6, 0, false, false));
+                }
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[cpu.GetThreadCount()][];
+                cpu.InitializeCoreTotals();
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    cpu.UpdateThreadCoreCounterData(threadIdx);
+                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
+                }
+
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "Retire Stall", "1 op", "2 ops", "3 ops", "4 ops", "5 ops", "6 or more ops" };
+
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
+            {
+                return new string[] { label,
+                        FormatLargeNumber(counterData.aperf) + "/s",
+                        FormatLargeNumber(counterData.instr) + "/s",
+                        string.Format("{0:F2}", counterData.instr / counterData.aperf),
+                        string.Format("{0:F2}%", 100 * (counterData.aperf - counterData.ctr0) / counterData.aperf),
+                        string.Format("{0:F2}%", 100 * (counterData.ctr0 - counterData.ctr1) / counterData.aperf),
+                        string.Format("{0:F2}%", 100 * (counterData.ctr1 - counterData.ctr2) / counterData.aperf),
+                        string.Format("{0:F2}%", 100 * (counterData.ctr2 - counterData.ctr3) / counterData.aperf),
+                        string.Format("{0:F2}%", 100 * (counterData.ctr3 - counterData.ctr4) / counterData.aperf),
+                        string.Format("{0:F2}%", 100 * (counterData.ctr4 - counterData.ctr5) / counterData.aperf),
+                        string.Format("{0:F2}%", 100 * counterData.ctr5 / counterData.aperf) };
             }
         }
     }

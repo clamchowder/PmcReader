@@ -8,10 +8,10 @@ namespace PmcReader.AMD
         public Zen2DataFabric()
         {
             architectureName = "Zen 2 Data Fabric";
-            coreMonitoringConfigs = new MonitoringConfig[3];
-            coreMonitoringConfigs[0] = new DramBwConfig(this);
-            coreMonitoringConfigs[1] = new DramBw1Config(this);
-            coreMonitoringConfigs[2] = new OutboundDataConfig(this);
+            monitoringConfigs = new MonitoringConfig[3];
+            monitoringConfigs[0] = new DramBwConfig(this);
+            monitoringConfigs[1] = new DramBw1Config(this);
+            monitoringConfigs[2] = new OutboundDataConfig(this);
         }
 
         public class DramBwConfig : MonitoringConfig

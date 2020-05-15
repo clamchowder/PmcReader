@@ -6,10 +6,10 @@ namespace PmcReader.Intel
     {
         public Skylake()
         {
-            coreMonitoringConfigs = new MonitoringConfig[3];
-            coreMonitoringConfigs[0] = new BpuMonitoringConfig(this);
-            coreMonitoringConfigs[1] = new OpCachePerformance(this);
-            coreMonitoringConfigs[2] = new ALUPortUtilization(this);
+            monitoringConfigs = new MonitoringConfig[3];
+            monitoringConfigs[0] = new BpuMonitoringConfig(this);
+            monitoringConfigs[1] = new OpCachePerformance(this);
+            monitoringConfigs[2] = new ALUPortUtilization(this);
             architectureName = "Skylake";
         }
 

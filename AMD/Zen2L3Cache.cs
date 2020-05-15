@@ -1,9 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using System.Windows.Forms.VisualStyles;
 using PmcReader.Interop;
 
 namespace PmcReader.AMD
@@ -12,6 +9,8 @@ namespace PmcReader.AMD
     {
         // ccx -> thread id mapping. Just need one thread per ccx - we'll always sample using that thread
         protected Dictionary<int, int> ccxThreads;
+        public L3CounterData[] ccxCounterData;
+        public L3CounterData ccxTotals;
 
         public Zen2L3Cache()
         {
@@ -22,8 +21,59 @@ namespace PmcReader.AMD
                 ccxThreads[GetCcxId(threadIdx)] = threadIdx;
             }
 
-            coreMonitoringConfigs = new MonitoringConfig[1];
-            coreMonitoringConfigs[0] = new HitRateLatencyConfig(this);
+            monitoringConfigs = new MonitoringConfig[3];
+            monitoringConfigs[0] = new HitRateLatencyConfig(this);
+            monitoringConfigs[1] = new SliceConfig(this);
+            monitoringConfigs[2] = new TestConfig(this);
+
+            ccxCounterData = new L3CounterData[ccxThreads.Count()];
+            ccxTotals = new L3CounterData();
+        }
+
+        public class L3CounterData
+        {
+            public float ctr0;
+            public float ctr1;
+            public float ctr2;
+            public float ctr3;
+            public float ctr4;
+            public float ctr5;
+        }
+
+        public void ClearTotals()
+        {
+            ccxTotals.ctr0 = 0;
+            ccxTotals.ctr1 = 0;
+            ccxTotals.ctr2 = 0;
+            ccxTotals.ctr3 = 0;
+            ccxTotals.ctr4 = 0;
+            ccxTotals.ctr5 = 0;
+        }
+
+        public void UpdateCcxL3CounterData(int ccxIdx, int threadIdx)
+        {
+            ThreadAffinity.Set(1UL << threadIdx);
+            float normalizationFactor = GetNormalizationFactor(threadIdx);
+            ulong ctr0 = ReadAndClearMsr(MSR_L3_PERF_CTR_0);
+            ulong ctr1 = ReadAndClearMsr(MSR_L3_PERF_CTR_1);
+            ulong ctr2 = ReadAndClearMsr(MSR_L3_PERF_CTR_2);
+            ulong ctr3 = ReadAndClearMsr(MSR_L3_PERF_CTR_3);
+            ulong ctr4 = ReadAndClearMsr(MSR_L3_PERF_CTR_4);
+            ulong ctr5 = ReadAndClearMsr(MSR_L3_PERF_CTR_5);
+
+            if (ccxCounterData[ccxIdx] == null) ccxCounterData[ccxIdx] = new L3CounterData();
+            ccxCounterData[ccxIdx].ctr0 = ctr0 * normalizationFactor;
+            ccxCounterData[ccxIdx].ctr1 = ctr1 * normalizationFactor;
+            ccxCounterData[ccxIdx].ctr2 = ctr2 * normalizationFactor;
+            ccxCounterData[ccxIdx].ctr3 = ctr3 * normalizationFactor;
+            ccxCounterData[ccxIdx].ctr4 = ctr4 * normalizationFactor;
+            ccxCounterData[ccxIdx].ctr5 = ctr5 * normalizationFactor;
+            ccxTotals.ctr0 += ccxCounterData[ccxIdx].ctr0;
+            ccxTotals.ctr1 += ccxCounterData[ccxIdx].ctr1;
+            ccxTotals.ctr2 += ccxCounterData[ccxIdx].ctr2;
+            ccxTotals.ctr3 += ccxCounterData[ccxIdx].ctr3;
+            ccxTotals.ctr4 += ccxCounterData[ccxIdx].ctr4;
+            ccxTotals.ctr5 += ccxCounterData[ccxIdx].ctr5;
         }
 
         public class HitRateLatencyConfig : MonitoringConfig
@@ -99,6 +149,138 @@ namespace PmcReader.AMD
                         FormatLargeNumber(ccxL3HitBw) + "B/s",
                         string.Format("{0:F1} clks", ccxL3MissLatency),
                         FormatLargeNumber(l3MissSdpRequest)};
+            }
+        }
+
+        public class SliceConfig : MonitoringConfig
+        {
+            private Zen2L3Cache l3Cache;
+
+            public SliceConfig(Zen2L3Cache l3Cache)
+            {
+                this.l3Cache = l3Cache;
+            }
+
+            public string GetConfigName() { return "By the Slice"; }
+            public string[] GetColumns() { return columns; }
+            public void Initialize()
+            {
+                ulong L3AccessPerfCtl = GetL3PerfCtlValue(0x04, 0xFF, true, 0xF, 0xFF);
+                ulong L3MissPerfCtl = GetL3PerfCtlValue(0x04, 0x01, true, 0xF, 0xFF);
+                ulong slice0Lookups = GetL3PerfCtlValue(0x04, 0xFF, true, 0x1, 0xFF);
+                ulong slice1Lookups = GetL3PerfCtlValue(0x04, 0xFF, true, 0x2, 0xFF);
+                ulong slice2Lookups = GetL3PerfCtlValue(0x04, 0xFF, true, 0x4, 0xFF);
+                ulong slice3Lookups = GetL3PerfCtlValue(0x04, 0xFF, true, 0x8, 0xFF);
+
+                foreach (KeyValuePair<int, int> ccxThread in l3Cache.ccxThreads)
+                {
+                    ThreadAffinity.Set(1UL << ccxThread.Value);
+                    Ring0.WriteMsr(MSR_L3_PERF_CTL_0, L3AccessPerfCtl);
+                    Ring0.WriteMsr(MSR_L3_PERF_CTL_1, L3MissPerfCtl);
+                    Ring0.WriteMsr(MSR_L3_PERF_CTL_2, slice0Lookups);
+                    Ring0.WriteMsr(MSR_L3_PERF_CTL_3, slice1Lookups);
+                    Ring0.WriteMsr(MSR_L3_PERF_CTL_4, slice2Lookups);
+                    Ring0.WriteMsr(MSR_L3_PERF_CTL_5, slice3Lookups);
+                }
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[l3Cache.ccxThreads.Count()][];
+                l3Cache.ClearTotals();
+                foreach (KeyValuePair<int, int> ccxThread in l3Cache.ccxThreads)
+                {
+                    l3Cache.UpdateCcxL3CounterData(ccxThread.Key, ccxThread.Value);
+                    results.unitMetrics[ccxThread.Key] = computeMetrics("CCX " + ccxThread.Key, l3Cache.ccxCounterData[ccxThread.Key]);
+                }
+
+                results.overallMetrics = computeMetrics("Overall", l3Cache.ccxTotals);
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Hitrate", "Hit BW", "Slice 0", "Slice 1", "Slice 2", "Slice 3" };
+
+            private string[] computeMetrics(string label, L3CounterData counterData)
+            {
+                // event 0x90 counts "total cycles for all transactions divided by 16"
+                float ccxL3Hitrate = (1 - counterData.ctr1 / counterData.ctr0) * 100;
+                float ccxL3HitBw = (counterData.ctr0 - counterData.ctr1) * 64;
+                return new string[] { label,
+                        string.Format("{0:F2}%", ccxL3Hitrate),
+                        FormatLargeNumber(ccxL3HitBw) + "B/s",
+                        string.Format("{0:F2}%", 100 * counterData.ctr2 / counterData.ctr1),
+                        string.Format("{0:F2}%", 100 * counterData.ctr3 / counterData.ctr1),
+                        string.Format("{0:F2}%", 100 * counterData.ctr4 / counterData.ctr1),
+                        string.Format("{0:F2}%", 100 * counterData.ctr5 / counterData.ctr1)};
+            }
+        }
+
+        public class TestConfig : MonitoringConfig
+        {
+            private Zen2L3Cache l3Cache;
+
+            public TestConfig(Zen2L3Cache l3Cache)
+            {
+                this.l3Cache = l3Cache;
+            }
+
+            public string GetConfigName() { return "L3 Lookup Test"; }
+            public string[] GetColumns() { return columns; }
+            public void Initialize()
+            {
+                ulong L3MissPerfCtl = GetL3PerfCtlValue(0x04, 0x01, true, 0xF, 0xFF);
+                ulong L3Access2 = GetL3PerfCtlValue(0x04, 0x02, true, 0xF, 0xFF);
+                ulong L3Access4 = GetL3PerfCtlValue(0x04, 0x04, true, 0xF, 0xFF);
+                ulong L3Access8 = GetL3PerfCtlValue(0x04, 0x08, true, 0xF, 0xFF);
+                ulong L3Access10 = GetL3PerfCtlValue(0x04, 0x10, true, 0xF, 0xFF);
+                ulong L3AccessE0 = GetL3PerfCtlValue(0x04, 0xE0, true, 0xF, 0xFF);
+
+                foreach (KeyValuePair<int, int> ccxThread in l3Cache.ccxThreads)
+                {
+                    ThreadAffinity.Set(1UL << ccxThread.Value);
+                    Ring0.WriteMsr(MSR_L3_PERF_CTL_0, L3MissPerfCtl);
+                    Ring0.WriteMsr(MSR_L3_PERF_CTL_1, L3Access2);
+                    Ring0.WriteMsr(MSR_L3_PERF_CTL_2, L3Access4);
+                    Ring0.WriteMsr(MSR_L3_PERF_CTL_3, L3Access8);
+                    Ring0.WriteMsr(MSR_L3_PERF_CTL_4, L3Access10);
+                    Ring0.WriteMsr(MSR_L3_PERF_CTL_5, L3AccessE0);
+                }
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[l3Cache.ccxThreads.Count()][];
+                l3Cache.ClearTotals();
+                foreach (KeyValuePair<int, int> ccxThread in l3Cache.ccxThreads)
+                {
+                    l3Cache.UpdateCcxL3CounterData(ccxThread.Key, ccxThread.Value);
+                    results.unitMetrics[ccxThread.Key] = computeMetrics("CCX " + ccxThread.Key, l3Cache.ccxCounterData[ccxThread.Key]);
+                }
+
+                results.overallMetrics = computeMetrics("Overall", l3Cache.ccxTotals);
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Hitrate", "Hit BW", "Lookup 0x1 (Miss)", "Lookup 0x2", "Lookup 0x4", "Lookup 0x8", "Lookup 0x10", "Lookup 0xE0" };
+
+            private string[] computeMetrics(string label, L3CounterData counterData)
+            {
+                // event 0x90 counts "total cycles for all transactions divided by 16"
+                float l3Access = counterData.ctr0 + counterData.ctr1 + counterData.ctr2 + counterData.ctr3 + counterData.ctr4 + counterData.ctr5;
+                float l3Miss = counterData.ctr0;
+                float ccxL3Hitrate = (1 - l3Miss / l3Access) * 100;
+                float ccxL3HitBw = (l3Access - l3Miss) * 64;
+                return new string[] { label,
+                        string.Format("{0:F2}%", ccxL3Hitrate),
+                        FormatLargeNumber(ccxL3HitBw) + "B/s",
+                        FormatLargeNumber(counterData.ctr0),
+                        FormatLargeNumber(counterData.ctr1),
+                        FormatLargeNumber(counterData.ctr2),
+                        FormatLargeNumber(counterData.ctr3),
+                        FormatLargeNumber(counterData.ctr4),
+                        FormatLargeNumber(counterData.ctr5)};
             }
         }
     }

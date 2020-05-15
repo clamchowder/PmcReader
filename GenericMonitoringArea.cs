@@ -12,7 +12,7 @@ namespace PmcReader
         private delegate void SafeSetMonitoringListViewItems(MonitoringUpdateResults results, ListView monitoringListView);
         private delegate void SafeSetMonitoringListViewColumns(string[] columns, ListView monitoringListView);
 
-        public MonitoringConfig[] coreMonitoringConfigs;
+        public MonitoringConfig[] monitoringConfigs;
         protected int threadCount = 0;
         protected string architectureName = "Generic";
         private Dictionary<int, Stopwatch> lastUpdateTimers;
@@ -29,7 +29,7 @@ namespace PmcReader
 
         public MonitoringConfig[] GetMonitoringConfigs()
         {
-            return coreMonitoringConfigs;
+            return monitoringConfigs;
         }
 
         public string GetArchitectureName()
@@ -47,7 +47,7 @@ namespace PmcReader
         /// this thread has to be cancelled before one for a new config is started</param>
         public void MonitoringThread(int configId, ListView listView, CancellationToken cancelToken)
         {
-            MonitoringConfig selectedConfig = coreMonitoringConfigs[configId];
+            MonitoringConfig selectedConfig = monitoringConfigs[configId];
             lastUpdateTimers = null;
             selectedConfig.Initialize();
             SafeSetMonitoringListViewColumns cd = new SafeSetMonitoringListViewColumns(SetMonitoringListViewColumns);
