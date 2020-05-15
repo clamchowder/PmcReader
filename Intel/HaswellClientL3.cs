@@ -44,11 +44,11 @@ namespace PmcReader.Intel
             cboTotals.ctr1 = 0;
         }
 
-        public void UpdateCboCounterData(int cboIdx)
+        public void UpdateCboCounterData(uint cboIdx)
         {
-            float normalizationFactor = GetNormalizationFactor(cboIdx);
-            ulong ctr0 = ReadAndClearMsr(MSR_UNC_ARB_PERFCTR0);
-            ulong ctr1 = ReadAndClearMsr(MSR_UNC_ARB_PERFCTR1);
+            float normalizationFactor = GetNormalizationFactor((int)cboIdx);
+            ulong ctr0 = ReadAndClearMsr(MSR_UNC_CBO_PERFCTR0_base + MSR_UNC_CBO_increment * cboIdx);
+            ulong ctr1 = ReadAndClearMsr(MSR_UNC_CBO_PERFCTR1_base + MSR_UNC_CBO_increment * cboIdx);
 
             if (cboData[cboIdx] == null)
             {
@@ -78,6 +78,7 @@ namespace PmcReader.Intel
 
             public void Initialize()
             {
+                ThreadAffinity.Set(0x1);
                 cpu.EnableUncoreCounters();
                 for (uint cboIdx = 0; cboIdx < cpu.CboCount; cboIdx++)
                 {
@@ -95,8 +96,10 @@ namespace PmcReader.Intel
             public MonitoringUpdateResults Update()
             {
                 MonitoringUpdateResults results = new MonitoringUpdateResults();
-                results.unitMetrics = new string[cpu.GetThreadCount()][];
-                for (int cboIdx = 0; cboIdx < cpu.CboCount; cboIdx++)
+                results.unitMetrics = new string[cpu.CboCount][];
+                cpu.InitializeCboTotals();
+                ThreadAffinity.Set(0x1);
+                for (uint cboIdx = 0; cboIdx < cpu.CboCount; cboIdx++)
                 {
                     cpu.UpdateCboCounterData(cboIdx);
                     results.unitMetrics[cboIdx] = computeMetrics("CBo " + cboIdx, cpu.cboData[cboIdx]);
