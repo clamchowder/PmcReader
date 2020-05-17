@@ -40,6 +40,10 @@ namespace PmcReader
                     else if (cpuModel == 0x2A || cpuModel == 0x2D)
                     {
                         coreMonitoring.monitoringArea = new Intel.SandyBridge();
+                        if (cpuModel == 0x2D)
+                        {
+                            l3Monitoring.monitoringArea = new Intel.SandyBridgeEL3();
+                        }
                     }
                     else if ((cpuModel & 0xF) == 0xE)
                     {

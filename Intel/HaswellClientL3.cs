@@ -23,8 +23,10 @@ namespace PmcReader.Intel
             CboCount = (int)((cboConfig & 0x7) - 1);
             cboData = new NormalizedCboCounterData[CboCount];
 
-            monitoringConfigs = new MonitoringConfig[1];
+            monitoringConfigs = new MonitoringConfig[3];
             monitoringConfigs[0] = new HitrateConfig(this);
+            monitoringConfigs[1] = new SnoopHitConfig(this);
+            monitoringConfigs[2] = new SnoopInvalidateConfig(this);
         }
 
         public class NormalizedCboCounterData
@@ -64,7 +66,7 @@ namespace PmcReader.Intel
         public class HitrateConfig : MonitoringConfig
         {
             private HaswellClientL3 cpu;
-            public string GetConfigName() { return "Hitrate"; }
+            public string GetConfigName() { return "L3 Hitrate"; }
 
             public HitrateConfig(HaswellClientL3 intelCpu)
             {
@@ -78,7 +80,6 @@ namespace PmcReader.Intel
 
             public void Initialize()
             {
-                ThreadAffinity.Set(0x1);
                 cpu.EnableUncoreCounters();
                 for (uint cboIdx = 0; cboIdx < cpu.CboCount; cboIdx++)
                 {
@@ -98,7 +99,6 @@ namespace PmcReader.Intel
                 MonitoringUpdateResults results = new MonitoringUpdateResults();
                 results.unitMetrics = new string[cpu.CboCount][];
                 cpu.InitializeCboTotals();
-                ThreadAffinity.Set(0x1);
                 for (uint cboIdx = 0; cboIdx < cpu.CboCount; cboIdx++)
                 {
                     cpu.UpdateCboCounterData(cboIdx);
@@ -116,6 +116,126 @@ namespace PmcReader.Intel
                 return new string[] { label,
                     string.Format("{0:F2}%", 100 * (1 - counterData.ctr1 / counterData.ctr0)),
                     FormatLargeNumber((counterData.ctr0 - counterData.ctr1) * 64) + "B/s",
+                    FormatLargeNumber(counterData.ctr0),
+                    FormatLargeNumber(counterData.ctr1)};
+            }
+        }
+
+        public class SnoopInvalidateConfig : MonitoringConfig
+        {
+            private HaswellClientL3 cpu;
+            public string GetConfigName() { return "Snoop Invalidations"; }
+
+            public SnoopInvalidateConfig(HaswellClientL3 intelCpu)
+            {
+                cpu = intelCpu;
+            }
+
+            public string[] GetColumns()
+            {
+                return columns;
+            }
+
+            public void Initialize()
+            {
+                ThreadAffinity.Set(0x1);
+                cpu.EnableUncoreCounters();
+                for (uint cboIdx = 0; cboIdx < cpu.CboCount; cboIdx++)
+                {
+                    // 0x22 = Snoop response, 0xFF = all responses
+                    Ring0.WriteMsr(MSR_UNC_CBO_PERFEVTSEL0_base + MSR_UNC_CBO_increment * cboIdx,
+                        GetUncorePerfEvtSelRegisterValue(0x22, 0xFF, false, false, true, false, 0));
+
+                    // 0x22 = Snoop response, umask 0x2 = non-modified line invalidated, umask 0x10 = modified line invalidated
+                    // high 3 bits of umask = filter. 0x20 = external snoop, 0x40 = core memory request, 0x80 = L3 eviction
+                    Ring0.WriteMsr(MSR_UNC_CBO_PERFEVTSEL1_base + MSR_UNC_CBO_increment * cboIdx,
+                        GetUncorePerfEvtSelRegisterValue(0x22, 0x12 | 0x20 | 0x40 | 0x80, false, false, true, false, 0));
+                }
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[cpu.CboCount][];
+                cpu.InitializeCboTotals();
+                ThreadAffinity.Set(0x1);
+                for (uint cboIdx = 0; cboIdx < cpu.CboCount; cboIdx++)
+                {
+                    cpu.UpdateCboCounterData(cboIdx);
+                    results.unitMetrics[cboIdx] = computeMetrics("CBo " + cboIdx, cpu.cboData[cboIdx]);
+                }
+
+                results.overallMetrics = computeMetrics("Overall", cpu.cboTotals);
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Invalidate Resp %", "Invalidate BW", "All Snoop Responses", "Core Cache Lines Invalidated" };
+
+            private string[] computeMetrics(string label, NormalizedCboCounterData counterData)
+            {
+                return new string[] { label,
+                    string.Format("{0:F2}%", 100 * (counterData.ctr1 / counterData.ctr0)),
+                    FormatLargeNumber(counterData.ctr1 * 64) + "B/s",
+                    FormatLargeNumber(counterData.ctr0),
+                    FormatLargeNumber(counterData.ctr1)};
+            }
+        }
+
+        public class SnoopHitConfig : MonitoringConfig
+        {
+            private HaswellClientL3 cpu;
+            public string GetConfigName() { return "Snoop Hits"; }
+
+            public SnoopHitConfig(HaswellClientL3 intelCpu)
+            {
+                cpu = intelCpu;
+            }
+
+            public string[] GetColumns()
+            {
+                return columns;
+            }
+
+            public void Initialize()
+            {
+                ThreadAffinity.Set(0x1);
+                cpu.EnableUncoreCounters();
+                for (uint cboIdx = 0; cboIdx < cpu.CboCount; cboIdx++)
+                {
+                    // 0x22 = Snoop response, 0xFF = all responses
+                    Ring0.WriteMsr(MSR_UNC_CBO_PERFEVTSEL0_base + MSR_UNC_CBO_increment * cboIdx,
+                        GetUncorePerfEvtSelRegisterValue(0x22, 0xFF, false, false, true, false, 0));
+
+                    // 0x22 = Snoop response, umask 0x4 = non-modified line hit, umask 0x8 = modified line hit
+                    // high 3 bits of umask = filter. 0x20 = external snoop, 0x40 = core memory request, 0x80 = L3 eviction
+                    Ring0.WriteMsr(MSR_UNC_CBO_PERFEVTSEL1_base + MSR_UNC_CBO_increment * cboIdx,
+                        GetUncorePerfEvtSelRegisterValue(0x22, 0x4 | 0x8 | 0x20 | 0x40 | 0x80, false, false, true, false, 0));
+                }
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[cpu.CboCount][];
+                cpu.InitializeCboTotals();
+                ThreadAffinity.Set(0x1);
+                for (uint cboIdx = 0; cboIdx < cpu.CboCount; cboIdx++)
+                {
+                    cpu.UpdateCboCounterData(cboIdx);
+                    results.unitMetrics[cboIdx] = computeMetrics("CBo " + cboIdx, cpu.cboData[cboIdx]);
+                }
+
+                results.overallMetrics = computeMetrics("Overall", cpu.cboTotals);
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Snoop Hitrate", "Snoop Hit BW", "All Snoop Responses", "Snoop Hits" };
+
+            private string[] computeMetrics(string label, NormalizedCboCounterData counterData)
+            {
+                return new string[] { label,
+                    string.Format("{0:F2}%", 100 * (counterData.ctr1 / counterData.ctr0)),
+                    FormatLargeNumber(counterData.ctr1 * 64) + "B/s",
                     FormatLargeNumber(counterData.ctr0),
                     FormatLargeNumber(counterData.ctr1)};
             }

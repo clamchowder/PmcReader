@@ -316,7 +316,7 @@ namespace PmcReader.Intel
                 return results;
             }
 
-            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "Op$ Hitrate", "Op$ Ops/C", "DSB Active", "Decoder Ops/C", "Decoder Active", "Op$ Ops", "Decoder Ops" };
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "Op$ Hitrate", "Op$ Ops/C", "Op$ Active", "Decoder Ops/C", "Decoder Active", "Op$ Ops", "Decoder Ops" };
 
             private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
             {
