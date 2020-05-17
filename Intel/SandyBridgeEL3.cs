@@ -3,13 +3,17 @@ using System;
 
 namespace PmcReader.Intel
 {
+    /// <summary>
+    /// The uncore from hell?
+    /// </summary>
     public class SandyBridgeEL3 : ModernIntelCpu
     {
         // Sandy Bridge server uncore always has 8 CBos.
         // Even if some cache slices are disabled, the CBos are still 
         // active and take ring traffic (even if lookups/snoops count 0)
         // ok this manual is bs, those two disabled CBos give batshit insane counts
-        public const uint CboCount = 6;
+        public const uint CboCount = 6; // set to real number of CBos
+
         public const uint MSR_UNC_CBO_increment = 0x20;
         public const uint C0_MSR_PMON_CTR0 = 0xD16;
         public const uint C0_MSR_PMON_CTR1 = 0xD17;
@@ -36,8 +40,10 @@ namespace PmcReader.Intel
             architectureName = "Sandy Bridge E Uncore";
             cboTotals = new NormalizedCboCounterData();
             cboData = new NormalizedCboCounterData[CboCount];
-            monitoringConfigs = new MonitoringConfig[1];
+            monitoringConfigs = new MonitoringConfig[3];
             monitoringConfigs[0] = new HitsConfig(this);
+            monitoringConfigs[1] = new RxRConfig(this);
+            monitoringConfigs[2] = new DataReadMissLatency(this);
         }
 
         public class NormalizedCboCounterData
@@ -185,7 +191,7 @@ namespace PmcReader.Intel
         public static ulong GetUncoreFilterRegisterValue(byte tid,
             byte nodeId,
             byte state,
-            byte opcode)
+            uint opcode)
         {
             return tid |
                 (ulong)nodeId << 10 |
@@ -235,12 +241,12 @@ namespace PmcReader.Intel
                 ulong llcLookup = GetUncorePerfEvtSelRegisterValue(0x34, 0xF, false, false, false, true, false, 0);
                 // LLC victim in M (modified) state = 64B writeback. ctr0 or ctr1
                 ulong llcWbVictims = GetUncorePerfEvtSelRegisterValue(0x37, 1, false, false, false, true, false, 0);
-                // 0x1D = BL ring used cycles, 0b1 = up direction even polarity. 0b10 = up direction odd polarity. must go in ctr2 or ctr3
+                // 0x1D = BL ring (block/data ring) used cycles, 0b1 = up direction even polarity. 0b10 = up direction odd polarity. must go in ctr2 or ctr3
                 ulong blRingUp = GetUncorePerfEvtSelRegisterValue(0x1D, 0b11, false, false, false, true, false, 0);
                 // 0b100 = down direction even polarity, 0b1000 = down direction odd polarity
                 ulong blRingDn = GetUncorePerfEvtSelRegisterValue(0x1D, 0b1100, false, false, false, true, false, 0);
                 ulong filter = GetUncoreFilterRegisterValue(0, 0x1, LLC_LOOKUP_E | LLC_LOOKUP_F | LLC_LOOKUP_M | LLC_LOOKUP_S, 0);
-                cpu.SetupMonitoringSession(clockticks, llcLookup, blRingUp, blRingDn, filter);
+                cpu.SetupMonitoringSession(llcWbVictims, llcLookup, blRingUp, blRingDn, filter);
             }
 
             public MonitoringUpdateResults Update()
@@ -258,17 +264,135 @@ namespace PmcReader.Intel
                 return results;
             }
 
-            public string[] columns = new string[] { "Item", "Clk", "Hit BW", "MESF state", "Ring Stop Traffic", "BL Up", "BL Dn" };
+            public string[] columns = new string[] { "Item", "Hit BW", "MESF state", "Ring Stop Traffic", "BL Up", "BL Dn", "Writeback BW" };
 
             private string[] computeMetrics(string label, NormalizedCboCounterData counterData)
             {
                 return new string[] { label,
-                    FormatLargeNumber(counterData.ctr0),
                     FormatLargeNumber(counterData.ctr1 * 64) + "B/s",
                     FormatLargeNumber(counterData.ctr1),
                     FormatLargeNumber((counterData.ctr2 + counterData.ctr3) * 32) + "B/s", 
                     FormatLargeNumber(counterData.ctr2),
-                    FormatLargeNumber(counterData.ctr3)
+                    FormatLargeNumber(counterData.ctr3),
+                    FormatLargeNumber(counterData.ctr0 * 64) + "B/s"
+                };
+            }
+        }
+
+        public class RxRConfig : MonitoringConfig
+        {
+            private SandyBridgeEL3 cpu;
+            public string GetConfigName() { return "Ingress Queue"; }
+
+            public RxRConfig(SandyBridgeEL3 intelCpu)
+            {
+                cpu = intelCpu;
+            }
+
+            public string[] GetColumns()
+            {
+                return columns;
+            }
+
+            public void Initialize()
+            {
+                // no counter restrictions for clockticks
+                ulong clockticks = GetUncorePerfEvtSelRegisterValue(0, 0, false, false, false, true, false, 0);
+                // 0x11 = ingress occupancy. umask 1 = ingress request queue (core requests). must be in ctr0
+                ulong rxrOccupancy = GetUncorePerfEvtSelRegisterValue(0x11, 1, false, false, false, true, false, 0);
+                // 0x13 = ingress allocations. umask = 1 = irq (Ingress Request Queue = core requests). must be in ctr0 or ctr1
+                ulong rxrInserts = GetUncorePerfEvtSelRegisterValue(0x13, 1, false, false, false, true, false, 0);
+                // 0x1F = counter 0 occupancy. cmask = 1 to count cycles when ingress queue isn't empty
+                ulong rxrEntryPresent = GetUncorePerfEvtSelRegisterValue(0x1D, 0xFF, false, false, false, true, false, 1);
+                ulong filter = GetUncoreFilterRegisterValue(0, 0x1, LLC_LOOKUP_E | LLC_LOOKUP_F | LLC_LOOKUP_M | LLC_LOOKUP_S, 0);
+                cpu.SetupMonitoringSession(rxrOccupancy, rxrInserts, clockticks, rxrEntryPresent, filter);
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[SandyBridgeEL3.CboCount][];
+                cpu.InitializeCboTotals();
+                for (uint cboIdx = 0; cboIdx < SandyBridgeEL3.CboCount; cboIdx++)
+                {
+                    cpu.UpdateCboCounterData(cboIdx);
+                    results.unitMetrics[cboIdx] = computeMetrics("CBo " + cboIdx, cpu.cboData[cboIdx]);
+                }
+
+                results.overallMetrics = computeMetrics("Overall", cpu.cboTotals);
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Clk", "IngressQ Occupancy", "IngressQ Alloc", "IngressQ Latency", "IngressQ not empty" };
+
+            private string[] computeMetrics(string label, NormalizedCboCounterData counterData)
+            {
+                return new string[] { label,
+                    FormatLargeNumber(counterData.ctr2),
+                    string.Format("{0:F2}", counterData.ctr0 / counterData.ctr3),
+                    FormatLargeNumber(counterData.ctr1),
+                    string.Format("{0:F2} clk", counterData.ctr0 / counterData.ctr1),
+                    string.Format("{0:F2}%", 100 * counterData.ctr3 / counterData.ctr2)
+                };
+            }
+        }
+
+        public class DataReadMissLatency : MonitoringConfig
+        {
+            private SandyBridgeEL3 cpu;
+            public string GetConfigName() { return "Data Read Miss Latency"; }
+
+            public DataReadMissLatency(SandyBridgeEL3 intelCpu)
+            {
+                cpu = intelCpu;
+            }
+
+            public string[] GetColumns()
+            {
+                return columns;
+            }
+
+            public void Initialize()
+            {
+                // no counter restrictions for clockticks
+                ulong clockticks = GetUncorePerfEvtSelRegisterValue(0, 0, false, false, false, true, false, 0);
+                // 0x36 = tor occupancy, 0x1 = use opcode filter. 
+                ulong torOccupancy = GetUncorePerfEvtSelRegisterValue(0x36, 1, false, false, false, true, false, 0);
+                // 0x35 = tor inserts, 0x1 = use opcode filter
+                ulong torInserts = GetUncorePerfEvtSelRegisterValue(0x35, 1, false, false, false, true, false, 0);
+                // 0x1F = counter 0 occupancy. cmask = 1 to count cycles when data read is present
+                ulong missPresent = GetUncorePerfEvtSelRegisterValue(0x1D, 0xFF, false, false, false, true, false, 1);
+                // opcode 0x182 = demand data read, but opcode field is only 8 bits wide. wtf.
+                // try with just lower 8 bits
+                ulong filter = GetUncoreFilterRegisterValue(0, 0x1, LLC_LOOKUP_E | LLC_LOOKUP_F | LLC_LOOKUP_M | LLC_LOOKUP_S, 0x182);
+                cpu.SetupMonitoringSession(torOccupancy, torInserts, clockticks, missPresent, filter);
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[SandyBridgeEL3.CboCount][];
+                cpu.InitializeCboTotals();
+                for (uint cboIdx = 0; cboIdx < SandyBridgeEL3.CboCount; cboIdx++)
+                {
+                    cpu.UpdateCboCounterData(cboIdx);
+                    results.unitMetrics[cboIdx] = computeMetrics("CBo " + cboIdx, cpu.cboData[cboIdx]);
+                }
+
+                results.overallMetrics = computeMetrics("Overall", cpu.cboTotals);
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Clk", "ToR DRD Occupancy", "DRD Miss Latency", "DRD Miss Present", "DRD ToR Insert" };
+
+            private string[] computeMetrics(string label, NormalizedCboCounterData counterData)
+            {
+                return new string[] { label,
+                    FormatLargeNumber(counterData.ctr2),
+                    string.Format("{0:F2}", counterData.ctr0 / counterData.ctr3),
+                    string.Format("{0:F2} clk", counterData.ctr0 / counterData.ctr1),
+                    string.Format("{0:F2}%", 100 * counterData.ctr3 / counterData.ctr2),
+                    FormatLargeNumber(counterData.ctr1)
                 };
             }
         }
