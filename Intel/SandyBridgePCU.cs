@@ -235,12 +235,12 @@ namespace PmcReader.Intel
                     FormatLargeNumber(counterData.ctr0),
                     FormatLargeNumber(counterData.ctr1),
                     string.Format("{0:F1} clk", increaseLatency),
-                    string.Format("{0:F1} ms", increaseLatency * (1000000 / (float)PcuFrequency))};
+                    string.Format("{0:F2} ms", increaseLatency * (1000 / (float)PcuFrequency))};
                 results.unitMetrics[0] = new string[] { "Voltage Decrease",
                     FormatLargeNumber(counterData.ctr2),
                     FormatLargeNumber(counterData.ctr3),
                     string.Format("{0:F1} clk", decreaseLatency),
-                    string.Format("{0:F1} ms", increaseLatency * (1000000 / (float)PcuFrequency))};
+                    string.Format("{0:F2} ms", increaseLatency * (1000 / (float)PcuFrequency))};
                 return results;
             }
 
