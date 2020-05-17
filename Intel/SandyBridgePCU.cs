@@ -27,11 +27,15 @@ namespace PmcReader.Intel
         public const byte C3_OCCUPANCY = 0b10;
         public const byte C6_OCCUPANCY = 0b11;
 
+        // PCU runs at fixed 800 MHz
+        public const ulong PcuFrequency = 8000000;
+
         public SandyBridgePCU()
         {
             architectureName = "Sandy Bridge E Power Control Unit";
-            monitoringConfigs = new MonitoringConfig[1];
+            monitoringConfigs = new MonitoringConfig[2];
             monitoringConfigs[0] = new VoltageTransitions(this);
+            monitoringConfigs[1] = new Limits(this);
         }
 
         /// <summary>
@@ -223,19 +227,66 @@ namespace PmcReader.Intel
                 results.unitMetrics = new string[1][];
                 PcuCounterData counterData = cpu.ReadPcuCounterData();
 
+                float increaseLatency = counterData.ctr0 / counterData.ctr1;
+                float decreaseLatency = counterData.ctr2 / counterData.ctr3;
+
                 // abuse the form code because there's only one unit and uh, there's vertical space
                 results.overallMetrics = new string[] { "Voltage Increase",
                     FormatLargeNumber(counterData.ctr0),
                     FormatLargeNumber(counterData.ctr1),
-                    string.Format("{0:F2} clk", (float)counterData.ctr0 / counterData.ctr1)};
+                    string.Format("{0:F1} clk", increaseLatency),
+                    string.Format("{0:F1} ms", increaseLatency * (1000000 / (float)PcuFrequency))};
                 results.unitMetrics[0] = new string[] { "Voltage Decrease",
                     FormatLargeNumber(counterData.ctr2),
                     FormatLargeNumber(counterData.ctr3),
-                    string.Format("{0:F2} clk", (float)counterData.ctr2 / counterData.ctr3)};
+                    string.Format("{0:F1} clk", decreaseLatency),
+                    string.Format("{0:F1} ms", increaseLatency * (1000000 / (float)PcuFrequency))};
                 return results;
             }
 
-            public string[] columns = new string[] { "Item", "Cycles", "Count", "Latency" };
+            public string[] columns = new string[] { "Item", "Cycles", "Count", "Latency", "Latency" };
+        }
+
+        public class Limits : MonitoringConfig
+        {
+            private SandyBridgePCU cpu;
+            public string GetConfigName() { return "Limits"; }
+
+            public Limits(SandyBridgePCU intelCpu)
+            {
+                cpu = intelCpu;
+            }
+
+            public string[] GetColumns()
+            {
+                return columns;
+            }
+
+            public void Initialize()
+            {
+                ulong thermalLimitCycles = GetPCUPerfEvtSelRegisterValue(0x4, 0, false, false, true, false, 0, false, false);
+                ulong currentLimitCycles = GetPCUPerfEvtSelRegisterValue(0x7, 0, false, false, true, false, 0, false, false);
+                ulong osLimitCycles = GetPCUPerfEvtSelRegisterValue(0x6, 0, false, false, true, false, 0, false, false);
+                ulong powerLimitCycles = GetPCUPerfEvtSelRegisterValue(0x5, 0, false, false, true, false, 0, false, false);
+                ulong filter = 0;
+                cpu.SetupMonitoringSession(thermalLimitCycles, currentLimitCycles, osLimitCycles, powerLimitCycles, filter);
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[3][];
+                PcuCounterData counterData = cpu.ReadPcuCounterData();
+
+                // abuse the form code because there's only one unit and uh, there's vertical space
+                results.overallMetrics = new string[] { "Thermal", string.Format("{0:F2}%", counterData.ctr0 / PcuFrequency) };
+                results.unitMetrics[0] = new string[] { "Current", string.Format("{0:F2}%", counterData.ctr1 / PcuFrequency) };
+                results.unitMetrics[1] = new string[] { "OS", string.Format("{0:F2}%", counterData.ctr2 / PcuFrequency) };
+                results.unitMetrics[2] = new string[] { "Power", string.Format("{0:F2}%", counterData.ctr3 / PcuFrequency) };
+                return results;
+            }
+
+            public string[] columns = new string[] { "Freq Limit", "Cycles" };
         }
     }
 }
