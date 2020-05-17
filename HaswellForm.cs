@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Drawing.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -25,6 +26,10 @@ namespace PmcReader
             l3Monitoring = new MonitoringSetup();
             dfMonitoring = new MonitoringSetup();
 
+            // Override the "data fabric" label since I want to monitor different
+            // things on different CPUs, and 'uncore' architectures vary a lot
+            string dfLabelOverride = null;
+
             if (cpuManufacturer.Equals("GenuineIntel"))
             {
                 if (cpuFamily == 0x6)
@@ -35,6 +40,7 @@ namespace PmcReader
                         if (cpuModel == 0x46 || cpuModel == 0x45 || cpuModel == 0x3C)
                         {
                             l3Monitoring.monitoringArea = new Intel.HaswellClientL3();
+                            dfLabelOverride = "System Agent Monitoring Configs (pick one):";
                         }
                     }
                     else if (cpuModel == 0x2A || cpuModel == 0x2D)
@@ -43,6 +49,8 @@ namespace PmcReader
                         if (cpuModel == 0x2D)
                         {
                             l3Monitoring.monitoringArea = new Intel.SandyBridgeEL3();
+                            dfMonitoring.monitoringArea = new Intel.SandyBridgePCU();
+                            dfLabelOverride = "Power Control Unit Monitoring Configs (pick one):";
                         }
                     }
                     else if ((cpuModel & 0xF) == 0xE)
@@ -68,6 +76,7 @@ namespace PmcReader
             coreMonitoring.targetListView = monitoringListView;
             l3Monitoring.targetListView = L3MonitoringListView;
             dfMonitoring.targetListView = dfMonitoringListView;
+            if (dfLabelOverride != null) DataFabricConfigLabel.Text = dfLabelOverride;
 
             cpuidLabel.Text = string.Format("CPU: {0} Family 0x{1:X}, Model 0x{2:X}, Stepping 0x{3:x} - {4}", 
                 cpuManufacturer, 

@@ -1,5 +1,6 @@
 ﻿using PmcReader.Interop;
 using System;
+using System.Threading;
 
 namespace PmcReader.Intel
 {
@@ -26,24 +27,68 @@ namespace PmcReader.Intel
         public const uint C0_MSR_PMON_CTL3 = 0xD13;
         public const uint C0_MSR_PMON_BOX_CTL = 0xD04;
 
+        // Constants for box filter register
+        /// <summary>
+        /// LLC lookup, line found in Invalid state (miss)
+        /// </summary>
         public const byte LLC_LOOKUP_I = 0b00001;
+
+        /// <summary>
+        /// LLC lookup, line found in Shared state
+        /// </summary>
         public const byte LLC_LOOKUP_S = 0b00010;
+
+        /// <summary>
+        /// LLC lookup, line found in Exclusive state
+        /// </summary>
         public const byte LLC_LOOKUP_E = 0b00100;
+
+        /// <summary>
+        /// LLC lookup, line found in Modified state
+        /// </summary>
         public const byte LLC_LOOKUP_M = 0b01000;
+
+        /// <summary>
+        /// LLC lookup, line found in Forward state
+        /// </summary>
         public const byte LLC_LOOKUP_F = 0b10000;
+
+        // Constants for ring counter umasks
+        /// <summary>
+        /// Traffic on up ring, even polarity
+        /// </summary>
+        public const byte RING_UP_EVEN = 0b0001;
+
+        /// <summary>
+        /// Traffic on up ring, odd polarity
+        /// </summary>
+        public const byte RING_UP_ODD  = 0b0010;
+
+        /// <summary>
+        /// Traffic on down ring, even polarity
+        /// </summary>
+        public const byte RING_DN_EVEN = 0b0100;
+
+        /// <summary>
+        /// Traffic on down ring, odd polarity
+        /// </summary>
+        public const byte RING_DN_ODD  = 0b1000;
 
         public NormalizedCboCounterData[] cboData;
         public NormalizedCboCounterData cboTotals;
 
         public SandyBridgeEL3()
         {
-            architectureName = "Sandy Bridge E Uncore";
+            architectureName = "Sandy Bridge E L3 Cache";
             cboTotals = new NormalizedCboCounterData();
             cboData = new NormalizedCboCounterData[CboCount];
-            monitoringConfigs = new MonitoringConfig[3];
-            monitoringConfigs[0] = new HitsConfig(this);
+            monitoringConfigs = new MonitoringConfig[6];
+            monitoringConfigs[0] = new HitsBlConfig(this);
             monitoringConfigs[1] = new RxRConfig(this);
             monitoringConfigs[2] = new DataReadMissLatency(this);
+            monitoringConfigs[3] = new MissesAdConfig(this);
+            monitoringConfigs[4] = new LLCVictimsAndIvRing(this);
+            monitoringConfigs[5] = new BouncesAndAkRing(this);
         }
 
         public class NormalizedCboCounterData
@@ -218,12 +263,12 @@ namespace PmcReader.Intel
                 (freezeEnable ? 1UL : 0UL) << 16;
         }
 
-        public class HitsConfig : MonitoringConfig
+        public class HitsBlConfig : MonitoringConfig
         {
             private SandyBridgeEL3 cpu;
             public string GetConfigName() { return "L3 Hits and Data Ring"; }
 
-            public HitsConfig(SandyBridgeEL3 intelCpu)
+            public HitsBlConfig(SandyBridgeEL3 intelCpu)
             {
                 cpu = intelCpu;
             }
@@ -235,26 +280,23 @@ namespace PmcReader.Intel
 
             public void Initialize()
             {
-                // no counter restrictions for clockticks
-                ulong clockticks = GetUncorePerfEvtSelRegisterValue(0, 0, false, false, false, true, false, 0);
                 // umask 0b1 = filter (mandatory), 0b10 = data read, 0b100 = write, 0b1000 = remote snoop. LLC lookup must go in ctr0 or ctr1
+                ulong clockticks = GetUncorePerfEvtSelRegisterValue(0, 0, false, false, false, true, false, 0);
                 ulong llcLookup = GetUncorePerfEvtSelRegisterValue(0x34, 0xF, false, false, false, true, false, 0);
-                // LLC victim in M (modified) state = 64B writeback. ctr0 or ctr1
-                ulong llcWbVictims = GetUncorePerfEvtSelRegisterValue(0x37, 1, false, false, false, true, false, 0);
                 // 0x1D = BL ring (block/data ring) used cycles, 0b1 = up direction even polarity. 0b10 = up direction odd polarity. must go in ctr2 or ctr3
-                ulong blRingUp = GetUncorePerfEvtSelRegisterValue(0x1D, 0b11, false, false, false, true, false, 0);
+                ulong blRingUp = GetUncorePerfEvtSelRegisterValue(0x1D, RING_UP_EVEN | RING_UP_ODD, false, false, false, true, false, 0);
                 // 0b100 = down direction even polarity, 0b1000 = down direction odd polarity
-                ulong blRingDn = GetUncorePerfEvtSelRegisterValue(0x1D, 0b1100, false, false, false, true, false, 0);
+                ulong blRingDn = GetUncorePerfEvtSelRegisterValue(0x1D, RING_DN_EVEN | RING_DN_ODD, false, false, false, true, false, 0);
                 ulong filter = GetUncoreFilterRegisterValue(0, 0x1, LLC_LOOKUP_E | LLC_LOOKUP_F | LLC_LOOKUP_M | LLC_LOOKUP_S, 0);
-                cpu.SetupMonitoringSession(llcWbVictims, llcLookup, blRingUp, blRingDn, filter);
+                cpu.SetupMonitoringSession(clockticks, llcLookup, blRingUp, blRingDn, filter);
             }
 
             public MonitoringUpdateResults Update()
             {
                 MonitoringUpdateResults results = new MonitoringUpdateResults();
-                results.unitMetrics = new string[SandyBridgeEL3.CboCount][];
+                results.unitMetrics = new string[CboCount][];
                 cpu.InitializeCboTotals();
-                for (uint cboIdx = 0; cboIdx < SandyBridgeEL3.CboCount; cboIdx++)
+                for (uint cboIdx = 0; cboIdx < CboCount; cboIdx++)
                 {
                     cpu.UpdateCboCounterData(cboIdx);
                     results.unitMetrics[cboIdx] = computeMetrics("CBo " + cboIdx, cpu.cboData[cboIdx]);
@@ -264,17 +306,17 @@ namespace PmcReader.Intel
                 return results;
             }
 
-            public string[] columns = new string[] { "Item", "Hit BW", "MESF state", "Ring Stop Traffic", "BL Up", "BL Dn", "Writeback BW" };
+            public string[] columns = new string[] { "Item", "Clk", "Hit BW", "MESF state", "Ring Stop Traffic", "BL Up Cycles", "BL Dn Cycles" };
 
             private string[] computeMetrics(string label, NormalizedCboCounterData counterData)
             {
                 return new string[] { label,
+                    FormatLargeNumber(counterData.ctr0),
                     FormatLargeNumber(counterData.ctr1 * 64) + "B/s",
                     FormatLargeNumber(counterData.ctr1),
                     FormatLargeNumber((counterData.ctr2 + counterData.ctr3) * 32) + "B/s", 
-                    FormatLargeNumber(counterData.ctr2),
-                    FormatLargeNumber(counterData.ctr3),
-                    FormatLargeNumber(counterData.ctr0 * 64) + "B/s"
+                    string.Format("{0:F2}%", 100* counterData.ctr2 / counterData.ctr0),
+                    string.Format("{0:F2}%", 100* counterData.ctr3 / counterData.ctr0),
                 };
             }
         }
@@ -311,9 +353,9 @@ namespace PmcReader.Intel
             public MonitoringUpdateResults Update()
             {
                 MonitoringUpdateResults results = new MonitoringUpdateResults();
-                results.unitMetrics = new string[SandyBridgeEL3.CboCount][];
+                results.unitMetrics = new string[CboCount][];
                 cpu.InitializeCboTotals();
-                for (uint cboIdx = 0; cboIdx < SandyBridgeEL3.CboCount; cboIdx++)
+                for (uint cboIdx = 0; cboIdx < CboCount; cboIdx++)
                 {
                     cpu.UpdateCboCounterData(cboIdx);
                     results.unitMetrics[cboIdx] = computeMetrics("CBo " + cboIdx, cpu.cboData[cboIdx]);
@@ -371,9 +413,9 @@ namespace PmcReader.Intel
             public MonitoringUpdateResults Update()
             {
                 MonitoringUpdateResults results = new MonitoringUpdateResults();
-                results.unitMetrics = new string[SandyBridgeEL3.CboCount][];
+                results.unitMetrics = new string[CboCount][];
                 cpu.InitializeCboTotals();
-                for (uint cboIdx = 0; cboIdx < SandyBridgeEL3.CboCount; cboIdx++)
+                for (uint cboIdx = 0; cboIdx < CboCount; cboIdx++)
                 {
                     cpu.UpdateCboCounterData(cboIdx);
                     results.unitMetrics[cboIdx] = computeMetrics("CBo " + cboIdx, cpu.cboData[cboIdx]);
@@ -383,7 +425,7 @@ namespace PmcReader.Intel
                 return results;
             }
 
-            public string[] columns = new string[] { "Item", "Clk", "ToR DRD Occupancy", "DRD Miss Latency", "DRD Miss Present", "DRD ToR Insert" };
+            public string[] columns = new string[] { "Item", "Clk", "ToR DRD Occupancy", "DRD Miss Latency?", "DRD Miss Present", "DRD ToR Insert" };
 
             private string[] computeMetrics(string label, NormalizedCboCounterData counterData)
             {
@@ -393,6 +435,175 @@ namespace PmcReader.Intel
                     string.Format("{0:F2} clk", counterData.ctr0 / counterData.ctr1),
                     string.Format("{0:F2}%", 100 * counterData.ctr3 / counterData.ctr2),
                     FormatLargeNumber(counterData.ctr1)
+                };
+            }
+        }
+
+        public class MissesAdConfig : MonitoringConfig
+        {
+            private SandyBridgeEL3 cpu;
+            public string GetConfigName() { return "L3 Miss and Address Ring"; }
+
+            public MissesAdConfig(SandyBridgeEL3 intelCpu)
+            {
+                cpu = intelCpu;
+            }
+
+            public string[] GetColumns()
+            {
+                return columns;
+            }
+
+            public void Initialize()
+            {
+                ulong clockticks = GetUncorePerfEvtSelRegisterValue(0, 0, false, false, false, true, false, 0);
+                ulong llcLookup = GetUncorePerfEvtSelRegisterValue(0x34, 0xF, false, false, false, true, false, 0);
+                // event 0x1B = AD ring
+                ulong adRingUp = GetUncorePerfEvtSelRegisterValue(0x1B, RING_UP_EVEN | RING_UP_ODD, false, false, false, true, false, 0);
+                ulong adRingDn = GetUncorePerfEvtSelRegisterValue(0x1B, RING_DN_EVEN | RING_DN_ODD, false, false, false, true, false, 0);
+                ulong filter = GetUncoreFilterRegisterValue(0, 0x1, LLC_LOOKUP_I, 0);
+                cpu.SetupMonitoringSession(llcLookup, clockticks, adRingUp, adRingDn, filter);
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[CboCount][];
+                cpu.InitializeCboTotals();
+                for (uint cboIdx = 0; cboIdx < CboCount; cboIdx++)
+                {
+                    cpu.UpdateCboCounterData(cboIdx);
+                    results.unitMetrics[cboIdx] = computeMetrics("CBo " + cboIdx, cpu.cboData[cboIdx]);
+                }
+
+                results.overallMetrics = computeMetrics("Overall", cpu.cboTotals);
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Clk", "L3 Miss BW", "I State", "AD Ring Total", "AD Up Cycles", "AD Dn Cycles" };
+
+            private string[] computeMetrics(string label, NormalizedCboCounterData counterData)
+            {
+                return new string[] { label,
+                    FormatLargeNumber(counterData.ctr1),
+                    FormatLargeNumber(counterData.ctr0 * 64) + "B/s",
+                    FormatLargeNumber(counterData.ctr0),
+                    FormatLargeNumber(counterData.ctr2 + counterData.ctr3),
+                    string.Format("{0:F2}%", 100 * counterData.ctr2 / counterData.ctr1),
+                    string.Format("{0:F2}%", 100 * counterData.ctr3 / counterData.ctr1)
+                };
+            }
+        }
+
+        public class LLCVictimsAndIvRing : MonitoringConfig
+        {
+            private SandyBridgeEL3 cpu;
+            public string GetConfigName() { return "LLC Writebacks and Invalidate Ring"; }
+
+            public LLCVictimsAndIvRing(SandyBridgeEL3 intelCpu)
+            {
+                cpu = intelCpu;
+            }
+
+            public string[] GetColumns()
+            {
+                return columns;
+            }
+
+            public void Initialize()
+            {
+                ulong clockticks = GetUncorePerfEvtSelRegisterValue(0, 0, false, false, false, true, false, 0);
+                // LLC victim in M (modified) state = 64B writeback. ctr0 or ctr1
+                ulong llcWbVictims = GetUncorePerfEvtSelRegisterValue(0x37, 1, false, false, false, true, false, 0); ;
+                // event 0x1E = IV ring
+                ulong ivRingOdd = GetUncorePerfEvtSelRegisterValue(0x1E, RING_UP_ODD | RING_DN_ODD, false, false, false, true, false, 0);
+                ulong ivRingEven = GetUncorePerfEvtSelRegisterValue(0x1E, RING_UP_EVEN | RING_DN_ODD, false, false, false, true, false, 0);
+                ulong filter = GetUncoreFilterRegisterValue(0, 0x1, LLC_LOOKUP_I, 0); // doesn't matter
+                cpu.SetupMonitoringSession(llcWbVictims, clockticks, ivRingOdd, ivRingEven, filter);
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[CboCount][];
+                cpu.InitializeCboTotals();
+                for (uint cboIdx = 0; cboIdx < CboCount; cboIdx++)
+                {
+                    cpu.UpdateCboCounterData(cboIdx);
+                    results.unitMetrics[cboIdx] = computeMetrics("CBo " + cboIdx, cpu.cboData[cboIdx]);
+                }
+
+                results.overallMetrics = computeMetrics("Overall", cpu.cboTotals);
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Clk", "L3 Writeback BW", "L3 Writebacks", "IV Ring Total", "IV Odd Polarity", "IV Even Polarity" };
+
+            private string[] computeMetrics(string label, NormalizedCboCounterData counterData)
+            {
+                return new string[] { label,
+                    FormatLargeNumber(counterData.ctr1),
+                    FormatLargeNumber(counterData.ctr0 * 64) + "B/s",
+                    FormatLargeNumber(counterData.ctr0),
+                    FormatLargeNumber(counterData.ctr2 + counterData.ctr3),
+                    string.Format("{0:F2}%", 100 * counterData.ctr2 / counterData.ctr1),
+                    string.Format("{0:F2}%", 100 * counterData.ctr3 / counterData.ctr1)
+                };
+            }
+        }
+
+        public class BouncesAndAkRing : MonitoringConfig
+        {
+            private SandyBridgeEL3 cpu;
+            public string GetConfigName() { return "Bounces and Acknowledge Ring"; }
+
+            public BouncesAndAkRing(SandyBridgeEL3 intelCpu)
+            {
+                cpu = intelCpu;
+            }
+
+            public string[] GetColumns()
+            {
+                return columns;
+            }
+
+            public void Initialize()
+            {
+                ulong clockticks = GetUncorePerfEvtSelRegisterValue(0, 0, false, false, false, true, false, 0);
+                // Ring response bounces, include AK/BL/IV
+                ulong bounces = GetUncorePerfEvtSelRegisterValue(0x5, 0b111, false, false, false, true, false, 0); ;
+                // event 0x1C = AK ring
+                ulong akRingUp = GetUncorePerfEvtSelRegisterValue(0x1C, RING_UP_EVEN | RING_UP_ODD, false, false, false, true, false, 0);
+                ulong akRingDn = GetUncorePerfEvtSelRegisterValue(0x1C, RING_DN_EVEN | RING_DN_ODD, false, false, false, true, false, 0);
+                ulong filter = GetUncoreFilterRegisterValue(0, 0x1, 0x1F, 0); // doesn't matter
+                cpu.SetupMonitoringSession(bounces, clockticks, akRingUp, akRingDn, filter);
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[CboCount][];
+                cpu.InitializeCboTotals();
+                for (uint cboIdx = 0; cboIdx < CboCount; cboIdx++)
+                {
+                    cpu.UpdateCboCounterData(cboIdx);
+                    results.unitMetrics[cboIdx] = computeMetrics("CBo " + cboIdx, cpu.cboData[cboIdx]);
+                }
+
+                results.overallMetrics = computeMetrics("Overall", cpu.cboTotals);
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Clk", "Response Bounces", "AK Ring Total", "AK Up Cycles", "AK Dn Cycles" };
+
+            private string[] computeMetrics(string label, NormalizedCboCounterData counterData)
+            {
+                return new string[] { label,
+                    FormatLargeNumber(counterData.ctr1),
+                    FormatLargeNumber(counterData.ctr0),
+                    FormatLargeNumber(counterData.ctr2 + counterData.ctr3),
+                    string.Format("{0:F2}%", 100 * counterData.ctr2 / counterData.ctr1),
+                    string.Format("{0:F2}%", 100 * counterData.ctr3 / counterData.ctr1)
                 };
             }
         }

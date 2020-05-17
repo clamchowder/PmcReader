@@ -39,7 +39,7 @@
             this.applyL3ConfigButton = new System.Windows.Forms.Button();
             this.L3MonitoringListView = new System.Windows.Forms.ListView();
             this.dfConfigSelect = new System.Windows.Forms.ListView();
-            this.label1 = new System.Windows.Forms.Label();
+            this.DataFabricConfigLabel = new System.Windows.Forms.Label();
             this.button1 = new System.Windows.Forms.Button();
             this.dfMonitoringListView = new System.Windows.Forms.ListView();
             this.l3ErrorMessage = new System.Windows.Forms.Label();
@@ -152,14 +152,14 @@
             this.dfConfigSelect.UseCompatibleStateImageBehavior = false;
             this.dfConfigSelect.View = System.Windows.Forms.View.List;
             // 
-            // label1
+            // DataFabricConfigLabel
             // 
-            this.label1.AutoSize = true;
-            this.label1.Location = new System.Drawing.Point(697, 441);
-            this.label1.Name = "label1";
-            this.label1.Size = new System.Drawing.Size(211, 13);
-            this.label1.TabIndex = 12;
-            this.label1.Text = "Data Fabric PMC Configurations (pick one):";
+            this.DataFabricConfigLabel.AutoSize = true;
+            this.DataFabricConfigLabel.Location = new System.Drawing.Point(697, 441);
+            this.DataFabricConfigLabel.Name = "DataFabricConfigLabel";
+            this.DataFabricConfigLabel.Size = new System.Drawing.Size(211, 13);
+            this.DataFabricConfigLabel.TabIndex = 12;
+            this.DataFabricConfigLabel.Text = "Data Fabric PMC Configurations (pick one):";
             // 
             // button1
             // 
@@ -197,7 +197,7 @@
             this.Controls.Add(this.l3ErrorMessage);
             this.Controls.Add(this.dfMonitoringListView);
             this.Controls.Add(this.button1);
-            this.Controls.Add(this.label1);
+            this.Controls.Add(this.DataFabricConfigLabel);
             this.Controls.Add(this.dfConfigSelect);
             this.Controls.Add(this.L3MonitoringListView);
             this.Controls.Add(this.applyL3ConfigButton);
@@ -228,7 +228,7 @@
         private System.Windows.Forms.Button applyL3ConfigButton;
         private System.Windows.Forms.ListView L3MonitoringListView;
         private System.Windows.Forms.ListView dfConfigSelect;
-        private System.Windows.Forms.Label label1;
+        private System.Windows.Forms.Label DataFabricConfigLabel;
         private System.Windows.Forms.Button button1;
         private System.Windows.Forms.ListView dfMonitoringListView;
         private System.Windows.Forms.Label l3ErrorMessage;

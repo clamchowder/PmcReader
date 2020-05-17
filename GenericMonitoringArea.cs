@@ -127,17 +127,23 @@ namespace PmcReader
         /// Make big number readable
         /// </summary>
         /// <param name="n">stupidly big number</param>
-        /// <returns>Formatted string, with G or M suffix for billion/million</returns>
+        /// <returns>Formatted string, with G/M/K suffix if big</returns>
         public static string FormatLargeNumber(ulong n)
         {
             if (n > 1000000000)
             {
                 return string.Format("{0:F2} G", (float)n / 1000000000);
             }
-            else
+            else if (n > 1000000)
             {
                 return string.Format("{0:F2} M", (float)n / 1000000);
             }
+            else if (n > 500)
+            {
+                return string.Format("{0:F2} K", (float)n / 1000);
+            }
+
+            return string.Format("{0} ", n);
         }
 
         public static string FormatLargeNumber(float n)
@@ -146,10 +152,16 @@ namespace PmcReader
             {
                 return string.Format("{0:F2} G", n / 1000000000);
             }
-            else
+            else if (n > 1000000)
             {
                 return string.Format("{0:F2} M", n / 1000000);
             }
+            else if (n > 500)
+            {
+                return string.Format("{0:F2} K", n / 1000);
+            }
+
+            return string.Format("{0:F2} ", n);
         }
 
         /// <summary>

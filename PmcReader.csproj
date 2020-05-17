@@ -60,6 +60,7 @@
     </Compile>
     <Compile Include="Intel\HaswellClientL3.cs" />
     <Compile Include="Intel\HaswellClientUncore.cs" />
+    <Compile Include="Intel\SandyBridgePCU.cs" />
     <Compile Include="Intel\SandyBridgeEL3.cs" />
     <Compile Include="Intel\Skylake.cs" />
     <Compile Include="Intel\SandyBridge.cs" />
