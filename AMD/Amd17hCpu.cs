@@ -121,7 +121,7 @@ namespace PmcReader.AMD
         /// <returns>value to put in DF_PERF_CTL</returns>
         public static ulong GetDFPerfCtlValue(byte perfEventLow, byte umask, bool enable, byte perfEventHi, byte perfEventHi1)
         {
-            return (ulong)perfEventHi |
+            return (ulong)perfEventLow |
                 (ulong)umask << 8 |
                 (enable ? 1UL : 0UL) << 22 |
                 (ulong)perfEventHi << 32 |

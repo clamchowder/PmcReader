@@ -7,7 +7,7 @@ namespace PmcReader.AMD
     {
         public Zen2()
         {
-            monitoringConfigs = new MonitoringConfig[11];
+            monitoringConfigs = new MonitoringConfig[12];
             monitoringConfigs[0] = new OpCacheConfig(this);
             monitoringConfigs[1] = new BpuMonitoringConfig(this);
             monitoringConfigs[2] = new BPUMonitoringConfig1(this);
@@ -18,7 +18,8 @@ namespace PmcReader.AMD
             monitoringConfigs[7] = new ICMonitoringConfig(this);
             monitoringConfigs[8] = new FlopsMonitoringConfig(this);
             monitoringConfigs[9] = new RetireConfig(this);
-            monitoringConfigs[10] = new TestConfig(this);
+            monitoringConfigs[10] = new DecodeHistogram(this);
+            monitoringConfigs[11] = new TestConfig(this);
             architectureName = "Zen 2";
         }
 
@@ -919,6 +920,76 @@ namespace PmcReader.AMD
                         string.Format("{0:F2}%", 100 * (counterData.ctr3 - counterData.ctr4) / counterData.aperf),
                         string.Format("{0:F2}%", 100 * (counterData.ctr4 - counterData.ctr5) / counterData.aperf),
                         string.Format("{0:F2}%", 100 * counterData.ctr5 / counterData.aperf) };
+            }
+        }
+
+        public class DecodeHistogram : MonitoringConfig
+        {
+            private Zen2 cpu;
+            public string GetConfigName() { return "Decoder Histogram"; }
+
+            public DecodeHistogram(Zen2 amdCpu)
+            {
+                cpu = amdCpu;
+            }
+
+            public string[] GetColumns()
+            {
+                return columns;
+            }
+
+            public void Initialize()
+            {
+                cpu.EnablePerformanceCounters();
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    ThreadAffinity.Set(1UL << threadIdx);
+                    // uops from decoder, cmask 1
+                    Ring0.WriteMsr(MSR_PERF_CTL_0, GetPerfCtlValue(0xAA, 1, true, true, false, false, true, false, cmask: 1, 0, false, false));
+                    // ret uops, cmask 2
+                    Ring0.WriteMsr(MSR_PERF_CTL_1, GetPerfCtlValue(0xAA, 1, true, true, false, false, true, false, cmask: 2, 0, false, false));
+                    // ^^ cmask 3
+                    Ring0.WriteMsr(MSR_PERF_CTL_2, GetPerfCtlValue(0xAA, 1, true, true, false, false, true, false, cmask: 3, 0, false, false));
+                    // ^^ cmask 4
+                    Ring0.WriteMsr(MSR_PERF_CTL_3, GetPerfCtlValue(0xAA, 1, true, true, false, false, true, false, cmask: 4, 0, false, false));
+                    // all uops from decoder
+                    Ring0.WriteMsr(MSR_PERF_CTL_4, GetPerfCtlValue(0xAA, 1, true, true, false, false, true, false, cmask: 0 , 0, false, false));
+                    // all uops dispatched
+                    Ring0.WriteMsr(MSR_PERF_CTL_5, GetPerfCtlValue(0xAA, 3, true, true, false, false, true, false, cmask: 0, 0, false, false));
+                }
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[cpu.GetThreadCount()][];
+                cpu.InitializeCoreTotals();
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    cpu.UpdateThreadCoreCounterData(threadIdx);
+                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
+                }
+
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "Decoder Inactive", "1 op", "2 ops", "3 ops", "4 ops", "Decoder ops/c", "Decoder Ops %" };
+
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
+            {
+                return new string[] { label,
+                        FormatLargeNumber(counterData.aperf) + "/s",
+                        FormatLargeNumber(counterData.instr) + "/s",
+                        string.Format("{0:F2}", counterData.instr / counterData.aperf),
+                        string.Format("{0:F2}%", 100 * (counterData.aperf - counterData.ctr0) / counterData.aperf),
+                        string.Format("{0:F2}%", 100 * (counterData.ctr0 - counterData.ctr1) / counterData.ctr0),
+                        string.Format("{0:F2}%", 100 * (counterData.ctr1 - counterData.ctr2) / counterData.ctr0),
+                        string.Format("{0:F2}%", 100 * (counterData.ctr2 - counterData.ctr3) / counterData.ctr0),
+                        string.Format("{0:F2}%", 100 * counterData.ctr3 / counterData.ctr0),
+                        string.Format("{0:F2}", counterData.ctr4 / counterData.ctr0),
+                        string.Format("{0:F2}%", 100 * counterData.ctr4 / counterData.ctr5),
+                };
             }
         }
     }
