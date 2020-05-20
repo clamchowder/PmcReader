@@ -8,17 +8,28 @@ namespace PmcReader.AMD
     public class Zen2L3Cache : Amd17hCpu
     {
         // ccx -> thread id mapping. Just need one thread per ccx - we'll always sample using that thread
-        protected Dictionary<int, int> ccxThreads;
+        protected Dictionary<int, int> ccxSampleThreads;
+        protected Dictionary<int, List<int>> allCcxThreads;
         public L3CounterData[] ccxCounterData;
         public L3CounterData ccxTotals;
 
         public Zen2L3Cache()
         {
             architectureName = "Zen 2 L3";
-            ccxThreads = new Dictionary<int, int>();
+            ccxSampleThreads = new Dictionary<int, int>();
+            allCcxThreads = new Dictionary<int, List<int>>();
             for (int threadIdx = 0; threadIdx < GetThreadCount(); threadIdx++)
             {
-                ccxThreads[GetCcxId(threadIdx)] = threadIdx;
+                int ccxIdx = GetCcxId(threadIdx);
+                ccxSampleThreads[ccxIdx] = threadIdx;
+                List<int> ccxThreads;
+                if (! allCcxThreads.TryGetValue(ccxIdx, out ccxThreads))
+                {
+                    ccxThreads = new List<int>();
+                    allCcxThreads.Add(ccxIdx, ccxThreads);
+                }
+
+                ccxThreads.Add(threadIdx);
             }
 
             monitoringConfigs = new MonitoringConfig[3];
@@ -26,7 +37,7 @@ namespace PmcReader.AMD
             monitoringConfigs[1] = new SliceConfig(this);
             monitoringConfigs[2] = new TestConfig(this);
 
-            ccxCounterData = new L3CounterData[ccxThreads.Count()];
+            ccxCounterData = new L3CounterData[ccxSampleThreads.Count()];
             ccxTotals = new L3CounterData();
         }
 
@@ -95,7 +106,7 @@ namespace PmcReader.AMD
                 ulong L3MissLatencyCtl = GetL3PerfCtlValue(0x90, 0, true, 0xF, 0xFF);
                 ulong L3MissSdpRequestPerfCtl = GetL3PerfCtlValue(0x9A, 0x1F, true, 0xF, 0xFF);
 
-                foreach(KeyValuePair<int, int> ccxThread in l3Cache.ccxThreads)
+                foreach(KeyValuePair<int, int> ccxThread in l3Cache.ccxSampleThreads)
                 {
                     ThreadAffinity.Set(1UL << ccxThread.Value);
                     Ring0.WriteMsr(MSR_L3_PERF_CTL_0, L3AccessPerfCtl);
@@ -112,43 +123,62 @@ namespace PmcReader.AMD
                 float normalizationFactor = l3Cache.GetNormalizationFactor(ref lastUpdateTime);
 
                 MonitoringUpdateResults results = new MonitoringUpdateResults();
-                results.unitMetrics = new string[l3Cache.ccxThreads.Count()][];
+                results.unitMetrics = new string[l3Cache.ccxSampleThreads.Count()][];
                 ulong totalL3Accesses = 0;
                 ulong totalL3Misses = 0;
                 ulong totalL3MissLatency = 0;
                 ulong totalL3MissSdpRequests = 0;
-                foreach (KeyValuePair<int, int> ccxThread in l3Cache.ccxThreads)
+                float[] ccxClocks = new float[l3Cache.allCcxThreads.Count()];
+                foreach (KeyValuePair<int, int> ccxThread in l3Cache.ccxSampleThreads)
                 {
-                    ThreadAffinity.Set(1UL << ccxThread.Value);
-                    ulong l3Access = ReadAndClearMsr(MSR_L3_PERF_CTR_0);
-                    ulong l3Miss = ReadAndClearMsr(MSR_L3_PERF_CTR_1);
-                    ulong l3MissLatency = ReadAndClearMsr(MSR_L3_PERF_CTR_2);
-                    ulong l3MissSdpRequest = ReadAndClearMsr(MSR_L3_PERF_CTR_3);
+                    // Try to determine frequency, by getting max frequency of cores in ccx
+                    foreach (int ccxThreadIdx in l3Cache.allCcxThreads[ccxThread.Key])
+                    {
+                        ThreadAffinity.Set(1UL << ccxThreadIdx);
+                        ulong aperf, mperf, tsc;
+                        l3Cache.UpdateFixedCounters(ccxThreadIdx, out aperf, out _, out tsc, out mperf);
+                        float clk = tsc * ((float)aperf / mperf);
+                        if (clk > ccxClocks[ccxThread.Key]) ccxClocks[ccxThread.Key] = clk;
+                        if (ccxThreadIdx == ccxThread.Value)
+                        {
+                            ulong l3Access = ReadAndClearMsr(MSR_L3_PERF_CTR_0);
+                            ulong l3Miss = ReadAndClearMsr(MSR_L3_PERF_CTR_1);
+                            ulong l3MissLatency = ReadAndClearMsr(MSR_L3_PERF_CTR_2);
+                            ulong l3MissSdpRequest = ReadAndClearMsr(MSR_L3_PERF_CTR_3);
 
-                    totalL3Accesses += l3Access;
-                    totalL3Misses += l3Miss;
-                    totalL3MissLatency += l3MissLatency;
-                    totalL3MissSdpRequests += l3MissSdpRequest;
-                    results.unitMetrics[ccxThread.Key] = computeMetrics("CCX " + ccxThread.Key, l3Access, l3Miss, l3MissLatency, l3MissSdpRequest, normalizationFactor);
+                            totalL3Accesses += l3Access;
+                            totalL3Misses += l3Miss;
+                            totalL3MissLatency += l3MissLatency;
+                            totalL3MissSdpRequests += l3MissSdpRequest;
+                            results.unitMetrics[ccxThread.Key] = computeMetrics("CCX " + ccxThread.Key, l3Access, l3Miss, l3MissLatency, l3MissSdpRequest, ccxClocks[ccxThread.Key], normalizationFactor);
+                        }
+                    }
                 }
 
-                results.overallMetrics = computeMetrics("Overall", totalL3Accesses, totalL3Misses, totalL3MissLatency, totalL3MissSdpRequests, normalizationFactor);
+                float avgClk = 0;
+                foreach (float ccxClock in ccxClocks) avgClk += ccxClock;
+                avgClk /= l3Cache.allCcxThreads.Count();
+                results.overallMetrics = computeMetrics("Overall", totalL3Accesses, totalL3Misses, totalL3MissLatency, totalL3MissSdpRequests, avgClk, normalizationFactor);
                 return results;
             }
 
-            public string[] columns = new string[] { "Item", "Hitrate", "Hit BW", "Mem Latency", "SDP Requests" };
+            public string[] columns = new string[] { "Item", "Est. Clk", "Hitrate", "Hit BW", "Mem Latency", "Est. Mem Latency", "Pend. Miss/Clk", "SDP Requests", "SDP Requests * 64B" };
 
-            private string[] computeMetrics(string label, ulong l3Access, ulong l3Miss, ulong l3MissLatency, ulong l3MissSdpRequest, float normalizationFactor)
+            private string[] computeMetrics(string label, ulong l3Access, ulong l3Miss, ulong l3MissLatency, ulong l3MissSdpRequest, float clk, float normalizationFactor)
             {
                 // event 0x90 counts "total cycles for all transactions divided by 16"
                 float ccxL3MissLatency = (float)l3MissLatency * 16 / l3MissSdpRequest;
                 float ccxL3Hitrate = (1 - (float)l3Miss / l3Access) * 100;
                 float ccxL3HitBw = ((float)l3Access - l3Miss) * 64 * normalizationFactor;
                 return new string[] { label,
+                        FormatLargeNumber(clk),
                         string.Format("{0:F2}%", ccxL3Hitrate),
                         FormatLargeNumber(ccxL3HitBw) + "B/s",
                         string.Format("{0:F1} clks", ccxL3MissLatency),
-                        FormatLargeNumber(l3MissSdpRequest)};
+                        string.Format("{0:F1} ns", (1000000000 / clk) * ccxL3MissLatency),
+                        string.Format("{0:F2}", l3MissLatency * 16 / clk),
+                        FormatLargeNumber(l3MissSdpRequest),
+                        FormatLargeNumber(l3MissSdpRequest * 64) + "B/s"};
             }
         }
 
@@ -172,7 +202,7 @@ namespace PmcReader.AMD
                 ulong slice2Lookups = GetL3PerfCtlValue(0x04, 0xFF, true, 0x4, 0xFF);
                 ulong slice3Lookups = GetL3PerfCtlValue(0x04, 0xFF, true, 0x8, 0xFF);
 
-                foreach (KeyValuePair<int, int> ccxThread in l3Cache.ccxThreads)
+                foreach (KeyValuePair<int, int> ccxThread in l3Cache.ccxSampleThreads)
                 {
                     ThreadAffinity.Set(1UL << ccxThread.Value);
                     Ring0.WriteMsr(MSR_L3_PERF_CTL_0, L3AccessPerfCtl);
@@ -187,9 +217,9 @@ namespace PmcReader.AMD
             public MonitoringUpdateResults Update()
             {
                 MonitoringUpdateResults results = new MonitoringUpdateResults();
-                results.unitMetrics = new string[l3Cache.ccxThreads.Count()][];
+                results.unitMetrics = new string[l3Cache.ccxSampleThreads.Count()][];
                 l3Cache.ClearTotals();
-                foreach (KeyValuePair<int, int> ccxThread in l3Cache.ccxThreads)
+                foreach (KeyValuePair<int, int> ccxThread in l3Cache.ccxSampleThreads)
                 {
                     l3Cache.UpdateCcxL3CounterData(ccxThread.Key, ccxThread.Value);
                     results.unitMetrics[ccxThread.Key] = computeMetrics("CCX " + ccxThread.Key, l3Cache.ccxCounterData[ccxThread.Key]);
@@ -203,16 +233,15 @@ namespace PmcReader.AMD
 
             private string[] computeMetrics(string label, L3CounterData counterData)
             {
-                // event 0x90 counts "total cycles for all transactions divided by 16"
                 float ccxL3Hitrate = (1 - counterData.ctr1 / counterData.ctr0) * 100;
                 float ccxL3HitBw = (counterData.ctr0 - counterData.ctr1) * 64;
                 return new string[] { label,
                         string.Format("{0:F2}%", ccxL3Hitrate),
                         FormatLargeNumber(ccxL3HitBw) + "B/s",
-                        string.Format("{0:F2}%", 100 * counterData.ctr2 / counterData.ctr1),
-                        string.Format("{0:F2}%", 100 * counterData.ctr3 / counterData.ctr1),
-                        string.Format("{0:F2}%", 100 * counterData.ctr4 / counterData.ctr1),
-                        string.Format("{0:F2}%", 100 * counterData.ctr5 / counterData.ctr1)};
+                        string.Format("{0:F2}%", 100 * counterData.ctr2 / counterData.ctr0),
+                        string.Format("{0:F2}%", 100 * counterData.ctr3 / counterData.ctr0),
+                        string.Format("{0:F2}%", 100 * counterData.ctr4 / counterData.ctr0),
+                        string.Format("{0:F2}%", 100 * counterData.ctr5 / counterData.ctr0)};
             }
         }
 
@@ -236,7 +265,7 @@ namespace PmcReader.AMD
                 ulong L3Access10 = GetL3PerfCtlValue(0x04, 0x10, true, 0xF, 0xFF);
                 ulong L3AccessE0 = GetL3PerfCtlValue(0x04, 0xE0, true, 0xF, 0xFF);
 
-                foreach (KeyValuePair<int, int> ccxThread in l3Cache.ccxThreads)
+                foreach (KeyValuePair<int, int> ccxThread in l3Cache.ccxSampleThreads)
                 {
                     ThreadAffinity.Set(1UL << ccxThread.Value);
                     Ring0.WriteMsr(MSR_L3_PERF_CTL_0, L3MissPerfCtl);
@@ -251,9 +280,9 @@ namespace PmcReader.AMD
             public MonitoringUpdateResults Update()
             {
                 MonitoringUpdateResults results = new MonitoringUpdateResults();
-                results.unitMetrics = new string[l3Cache.ccxThreads.Count()][];
+                results.unitMetrics = new string[l3Cache.ccxSampleThreads.Count()][];
                 l3Cache.ClearTotals();
-                foreach (KeyValuePair<int, int> ccxThread in l3Cache.ccxThreads)
+                foreach (KeyValuePair<int, int> ccxThread in l3Cache.ccxSampleThreads)
                 {
                     l3Cache.UpdateCcxL3CounterData(ccxThread.Key, ccxThread.Value);
                     results.unitMetrics[ccxThread.Key] = computeMetrics("CCX " + ccxThread.Key, l3Cache.ccxCounterData[ccxThread.Key]);

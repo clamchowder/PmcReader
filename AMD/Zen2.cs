@@ -256,7 +256,8 @@ namespace PmcReader.AMD
                     ThreadAffinity.Set(1UL << threadIdx);
                     Ring0.ReadMsr(MSR_INSTR_RETIRED, out retiredInstructions);
                     Ring0.ReadMsr(MSR_APERF, out activeCycles);
-                    ulong retiredMacFlops = ReadAndClearMsr(MSR_PERF_CTR_0) * 2;
+                    // "MacFLOPs count as 2 FLOPS" <-- from GB4 SGEMM, this gave counts > 32 flops/clk, so I think it already counts 2/mac op
+                    ulong retiredMacFlops = ReadAndClearMsr(MSR_PERF_CTR_0);
                     Ring0.WriteMsr(MSR_PERF_CTR_1, 0);
                     ulong retiredOtherFlops = ReadAndClearMsr(MSR_PERF_CTR_2);
                     Ring0.WriteMsr(MSR_PERF_CTR_3, 0); ;

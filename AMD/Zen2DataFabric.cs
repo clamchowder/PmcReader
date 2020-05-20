@@ -83,20 +83,20 @@ namespace PmcReader.AMD
             private long lastUpdateTime;
             private const int monitoringThread = 1;
 
-            public string[] columns = new string[] { "Item", "Count * 64B" };
+            public string[] columns = new string[] { "Item", "Count * 64B", "Count" };
             public BwTestConfig(Zen2DataFabric dataFabric)
             {
                 this.dataFabric = dataFabric;
             }
 
-            public string GetConfigName() { return "Test - Client DRAM event, invert mem umask"; }
+            public string GetConfigName() { return "Test"; }
             public string[] GetColumns() { return columns; }
             public void Initialize()
             {
-                ulong mysteryDramBytes3 = GetDFPerfCtlValue(0xC7, 0b1000111, true, 0, 0);
-                ulong mysteryDramBytes2 = GetDFPerfCtlValue(0x87, 0b1000111, true, 0, 0);
-                ulong mysteryDramBytes1 = GetDFPerfCtlValue(0x47, 0b1000111, true, 0, 0);
-                ulong mysteryDramBytes0 = GetDFPerfCtlValue(0x07, 0b1000111, true, 0, 0);
+                ulong mysteryDramBytes3 = GetDFPerfCtlValue(0xC7, 1, true, 0, 0);
+                ulong mysteryDramBytes2 = GetDFPerfCtlValue(0x87, 1, true, 0, 0);
+                ulong mysteryDramBytes1 = GetDFPerfCtlValue(0x47, 1, true, 0, 0);
+                ulong mysteryDramBytes0 = GetDFPerfCtlValue(0x07, 1, true, 0, 0);
 
                 ThreadAffinity.Set(1UL << monitoringThread);
                 Ring0.WriteMsr(MSR_DF_PERF_CTL_0, mysteryDramBytes0);
@@ -113,18 +113,20 @@ namespace PmcReader.AMD
                 MonitoringUpdateResults results = new MonitoringUpdateResults();
                 results.unitMetrics = new string[4][];
                 ThreadAffinity.Set(1UL << monitoringThread);
-                ulong mysteryDramBytes0 = ReadAndClearMsr(MSR_DF_PERF_CTR_0) * 64;
-                ulong mysteryDramBytes1 = ReadAndClearMsr(MSR_DF_PERF_CTR_1) * 64;
-                ulong mysteryDramBytes2 = ReadAndClearMsr(MSR_DF_PERF_CTR_2) * 64;
-                ulong mysteryDramBytes3 = ReadAndClearMsr(MSR_DF_PERF_CTR_3) * 64;
+                ulong ctr0 = ReadAndClearMsr(MSR_DF_PERF_CTR_0);
+                ulong ctr1 = ReadAndClearMsr(MSR_DF_PERF_CTR_1);
+                ulong ctr2 = ReadAndClearMsr(MSR_DF_PERF_CTR_2);
+                ulong ctr3 = ReadAndClearMsr(MSR_DF_PERF_CTR_3);
 
-                results.unitMetrics[0] = new string[] { "DF Evt 0x07 Umask 0xFF", FormatLargeNumber(mysteryDramBytes0 * normalizationFactor) + "B/s" };
-                results.unitMetrics[1] = new string[] { "DF Evt 0x47 Umask 0xFF", FormatLargeNumber(mysteryDramBytes1 * normalizationFactor) + "B/s" };
-                results.unitMetrics[2] = new string[] { "DF Evt 0x87 Umask 0xFF", FormatLargeNumber(mysteryDramBytes2 * normalizationFactor) + "B/s" };
-                results.unitMetrics[3] = new string[] { "DF Evt 0xC7 Umask 0xFF", FormatLargeNumber(mysteryDramBytes3 * normalizationFactor) + "B/s" };
+                results.unitMetrics[0] = new string[] { "DF Evt 0x07 Umask 1", FormatLargeNumber(ctr0 * normalizationFactor * 64) + "B/s", FormatLargeNumber(ctr0 * normalizationFactor) };
+                results.unitMetrics[1] = new string[] { "DF Evt 0x47 Umask 1", FormatLargeNumber(ctr1 * normalizationFactor * 64) + "B/s", FormatLargeNumber(ctr1 * normalizationFactor) };
+                results.unitMetrics[2] = new string[] { "DF Evt 0x87 Umask 1", FormatLargeNumber(ctr2 * normalizationFactor * 64) + "B/s", FormatLargeNumber(ctr2 * normalizationFactor) };
+                results.unitMetrics[3] = new string[] { "DF Evt 0xC7 Umask 1", FormatLargeNumber(ctr3 * normalizationFactor * 64) + "B/s", FormatLargeNumber(ctr3 * normalizationFactor) };
 
                 results.overallMetrics = new string[] { "Overall",
-                    FormatLargeNumber((mysteryDramBytes0 + mysteryDramBytes1 + mysteryDramBytes2 + mysteryDramBytes3) * normalizationFactor) + "B/s" };
+                    FormatLargeNumber((ctr0 + ctr1 + ctr2 + ctr3) * normalizationFactor * 64) + "B/s",
+                    FormatLargeNumber(ctr0 + ctr1 + ctr2 + ctr3)
+                };
                 return results;
             }
         }
