@@ -93,10 +93,10 @@ namespace PmcReader.AMD
             public string[] GetColumns() { return columns; }
             public void Initialize()
             {
-                ulong mysteryDramBytes3 = GetDFPerfCtlValue(0xC7, 1, true, 0, 0);
+                ulong mysteryDramBytes3 = GetDFPerfCtlValue(0xC7, 4, true, 0, 0);
                 ulong mysteryDramBytes2 = GetDFPerfCtlValue(0x87, 1, true, 0, 0);
-                ulong mysteryDramBytes1 = GetDFPerfCtlValue(0x47, 1, true, 0, 0);
-                ulong mysteryDramBytes0 = GetDFPerfCtlValue(0x07, 1, true, 0, 0);
+                ulong mysteryDramBytes1 = GetDFPerfCtlValue(0x47, 2, true, 0, 0);
+                ulong mysteryDramBytes0 = GetDFPerfCtlValue(0x07, 2, true, 0, 0);
 
                 ThreadAffinity.Set(1UL << monitoringThread);
                 Ring0.WriteMsr(MSR_DF_PERF_CTL_0, mysteryDramBytes0);
@@ -118,10 +118,10 @@ namespace PmcReader.AMD
                 ulong ctr2 = ReadAndClearMsr(MSR_DF_PERF_CTR_2);
                 ulong ctr3 = ReadAndClearMsr(MSR_DF_PERF_CTR_3);
 
-                results.unitMetrics[0] = new string[] { "DF Evt 0x07 Umask 1", FormatLargeNumber(ctr0 * normalizationFactor * 64) + "B/s", FormatLargeNumber(ctr0 * normalizationFactor) };
-                results.unitMetrics[1] = new string[] { "DF Evt 0x47 Umask 1", FormatLargeNumber(ctr1 * normalizationFactor * 64) + "B/s", FormatLargeNumber(ctr1 * normalizationFactor) };
-                results.unitMetrics[2] = new string[] { "DF Evt 0x87 Umask 1", FormatLargeNumber(ctr2 * normalizationFactor * 64) + "B/s", FormatLargeNumber(ctr2 * normalizationFactor) };
-                results.unitMetrics[3] = new string[] { "DF Evt 0xC7 Umask 1", FormatLargeNumber(ctr3 * normalizationFactor * 64) + "B/s", FormatLargeNumber(ctr3 * normalizationFactor) };
+                results.unitMetrics[0] = new string[] { "Evt 0x07 Umask 2", FormatLargeNumber(ctr0 * normalizationFactor * 64) + "B/s", FormatLargeNumber(ctr0 * normalizationFactor) };
+                results.unitMetrics[1] = new string[] { "Evt 0x47 Umask 2", FormatLargeNumber(ctr1 * normalizationFactor * 64) + "B/s", FormatLargeNumber(ctr1 * normalizationFactor) };
+                results.unitMetrics[2] = new string[] { "Mem BW related?", FormatLargeNumber(ctr2 * normalizationFactor * 64) + "B/s", FormatLargeNumber(ctr2 * normalizationFactor) };
+                results.unitMetrics[3] = new string[] { "Wat Dis?", FormatLargeNumber(ctr3 * normalizationFactor * 64) + "B/s", FormatLargeNumber(ctr3 * normalizationFactor) };
 
                 results.overallMetrics = new string[] { "Overall",
                     FormatLargeNumber((ctr0 + ctr1 + ctr2 + ctr3) * normalizationFactor * 64) + "B/s",

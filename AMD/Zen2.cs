@@ -787,7 +787,7 @@ namespace PmcReader.AMD
         public class TestConfig : MonitoringConfig
         {
             private Zen2 cpu;
-            public string GetConfigName() { return "Testing Testing"; }
+            public string GetConfigName() { return "Do Zen1 Counters Work?"; }
 
             public TestConfig(Zen2 amdCpu)
             {
@@ -813,10 +813,10 @@ namespace PmcReader.AMD
                     Ring0.WriteMsr(MSR_PERF_CTL_2, GetPerfCtlValue(0x0, 0x4, true, true, false, false, true, false, 0, 0, false, false));
                     // pipe 3
                     Ring0.WriteMsr(MSR_PERF_CTL_3, GetPerfCtlValue(0x0, 0x8, true, true, false, false, true, false, 0, 0, false, false));
-                    // zen 1 page table walker alloc
-                    Ring0.WriteMsr(MSR_PERF_CTL_4, GetPerfCtlValue(0x46, 0xF, true, true, false, false, true, false, 0, 0, false, false));
-                    // instr retired (event)
-                    Ring0.WriteMsr(MSR_PERF_CTL_5, GetPerfCtlValue(0xC0, 0, true, true, false, false, true, false, 0, 0, false, false));
+                    // l2 requests, not counting bus locks, self modifying code, ic/dc sized read
+                    Ring0.WriteMsr(MSR_PERF_CTL_4, GetPerfCtlValue(0x60, 0xFE, true, true, false, false, true, false, 0, 0, false, false));
+                    // zen 1 l2 latency event
+                    Ring0.WriteMsr(MSR_PERF_CTL_5, GetPerfCtlValue(0x62, 1, true, true, false, false, true, false, 0, 0, false, false));
                 }
             }
 
@@ -828,18 +828,22 @@ namespace PmcReader.AMD
                 for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
                 {
                     cpu.UpdateThreadCoreCounterData(threadIdx);
-                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
+                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx], false);
                 }
 
-                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts, true);
                 return results;
             }
 
-            public string[] columns = new string[] { "Item", "TSC", "MPERF", "APERF", "Instr", "IPC", "FP0?", "FP1?", "FP2?", "FP3?", "Page Walks?", "Instr Evt", "Instr Measuring Error"};
+            public string[] columns = new string[] { "Item", "Clk", "TSC", "MPERF", "APERF", "Instr", "IPC", "FP0?", "FP1?", "FP2?", "FP3?", "L2 Miss Latency?", "L2 Miss Latency?", "L2 Pend Miss/C?"};
 
-            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData, bool total)
             {
+                float l2MissLatency = counterData.ctr5 * 4 / counterData.ctr4;
+                float coreClock = counterData.tsc * counterData.aperf / counterData.mperf;
+                if (total) coreClock = coreClock / cpu.GetThreadCount();
                 return new string[] { label,
+                        FormatLargeNumber(coreClock),
                         FormatLargeNumber(counterData.tsc),
                         FormatLargeNumber(counterData.mperf),
                         FormatLargeNumber(counterData.aperf),
@@ -849,9 +853,9 @@ namespace PmcReader.AMD
                         string.Format("{0:F2}%", 100 * counterData.ctr1 / counterData.aperf),
                         string.Format("{0:F2}%", 100 * counterData.ctr2 / counterData.aperf),
                         string.Format("{0:F2}%", 100 * counterData.ctr3 / counterData.aperf),
-                        FormatLargeNumber(counterData.ctr4),
-                        FormatLargeNumber(counterData.ctr5),
-                        string.Format("{0:F2}%", 100 * Math.Abs(counterData.instr - counterData.ctr5) / counterData.aperf) };
+                        string.Format("{0:F2} clk", l2MissLatency),
+                        string.Format("{0:F2} ns", (1000000000 / coreClock) * l2MissLatency),
+                        FormatLargeNumber(counterData.ctr5 * 4 / counterData.aperf) };
             }
         }
 
