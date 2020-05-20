@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Drawing.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -40,6 +39,7 @@ namespace PmcReader
                         if (cpuModel == 0x46 || cpuModel == 0x45 || cpuModel == 0x3C)
                         {
                             l3Monitoring.monitoringArea = new Intel.HaswellClientL3();
+                            dfMonitoring.monitoringArea = new Intel.HaswellClientArb();
                             dfLabelOverride = "System Agent Monitoring Configs (pick one):";
                         }
                     }

@@ -8,10 +8,11 @@ namespace PmcReader.AMD
         public Zen2DataFabric()
         {
             architectureName = "Zen 2 Data Fabric";
-            monitoringConfigs = new MonitoringConfig[3];
+            monitoringConfigs = new MonitoringConfig[4];
             monitoringConfigs[0] = new DramBwConfig(this);
             monitoringConfigs[1] = new DramBw1Config(this);
             monitoringConfigs[2] = new OutboundDataConfig(this);
+            monitoringConfigs[3] = new BwTestConfig(this);
         }
 
         public class DramBwConfig : MonitoringConfig
@@ -72,6 +73,60 @@ namespace PmcReader.AMD
 
                 results.overallMetrics = new string[] { "Overall",
                     FormatLargeNumber((mysteryDramBytes0 + mysteryDramBytes1 + mysteryDramBytes2 + mysteryDramBytes3) * normalizationFactor) + "B/s" };
+                return results;
+            }
+        }
+
+        public class BwTestConfig : MonitoringConfig
+        {
+            private Zen2DataFabric dataFabric;
+            private long lastUpdateTime;
+            private const int monitoringThread = 1;
+
+            public string[] columns = new string[] { "Item", "Count * 64B", "Count" };
+            public BwTestConfig(Zen2DataFabric dataFabric)
+            {
+                this.dataFabric = dataFabric;
+            }
+
+            public string GetConfigName() { return "Test"; }
+            public string[] GetColumns() { return columns; }
+            public void Initialize()
+            {
+                ulong mysteryDramBytes3 = GetDFPerfCtlValue(0xC7, 4, true, 0, 0);
+                ulong mysteryDramBytes2 = GetDFPerfCtlValue(0x87, 1, true, 0, 0);
+                ulong mysteryDramBytes1 = GetDFPerfCtlValue(0x47, 2, true, 0, 0);
+                ulong mysteryDramBytes0 = GetDFPerfCtlValue(0x07, 2, true, 0, 0);
+
+                ThreadAffinity.Set(1UL << monitoringThread);
+                Ring0.WriteMsr(MSR_DF_PERF_CTL_0, mysteryDramBytes0);
+                Ring0.WriteMsr(MSR_DF_PERF_CTL_1, mysteryDramBytes1);
+                Ring0.WriteMsr(MSR_DF_PERF_CTL_2, mysteryDramBytes2);
+                Ring0.WriteMsr(MSR_DF_PERF_CTL_3, mysteryDramBytes3);
+
+                lastUpdateTime = DateTimeOffset.Now.ToUnixTimeMilliseconds();
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                float normalizationFactor = dataFabric.GetNormalizationFactor(ref lastUpdateTime);
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[4][];
+                ThreadAffinity.Set(1UL << monitoringThread);
+                ulong ctr0 = ReadAndClearMsr(MSR_DF_PERF_CTR_0);
+                ulong ctr1 = ReadAndClearMsr(MSR_DF_PERF_CTR_1);
+                ulong ctr2 = ReadAndClearMsr(MSR_DF_PERF_CTR_2);
+                ulong ctr3 = ReadAndClearMsr(MSR_DF_PERF_CTR_3);
+
+                results.unitMetrics[0] = new string[] { "Evt 0x07 Umask 2", FormatLargeNumber(ctr0 * normalizationFactor * 64) + "B/s", FormatLargeNumber(ctr0 * normalizationFactor) };
+                results.unitMetrics[1] = new string[] { "Evt 0x47 Umask 2", FormatLargeNumber(ctr1 * normalizationFactor * 64) + "B/s", FormatLargeNumber(ctr1 * normalizationFactor) };
+                results.unitMetrics[2] = new string[] { "Mem BW related?", FormatLargeNumber(ctr2 * normalizationFactor * 64) + "B/s", FormatLargeNumber(ctr2 * normalizationFactor) };
+                results.unitMetrics[3] = new string[] { "Wat Dis?", FormatLargeNumber(ctr3 * normalizationFactor * 64) + "B/s", FormatLargeNumber(ctr3 * normalizationFactor) };
+
+                results.overallMetrics = new string[] { "Overall",
+                    FormatLargeNumber((ctr0 + ctr1 + ctr2 + ctr3) * normalizationFactor * 64) + "B/s",
+                    FormatLargeNumber(ctr0 + ctr1 + ctr2 + ctr3)
+                };
                 return results;
             }
         }

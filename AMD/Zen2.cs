@@ -7,7 +7,7 @@ namespace PmcReader.AMD
     {
         public Zen2()
         {
-            monitoringConfigs = new MonitoringConfig[11];
+            monitoringConfigs = new MonitoringConfig[12];
             monitoringConfigs[0] = new OpCacheConfig(this);
             monitoringConfigs[1] = new BpuMonitoringConfig(this);
             monitoringConfigs[2] = new BPUMonitoringConfig1(this);
@@ -18,7 +18,8 @@ namespace PmcReader.AMD
             monitoringConfigs[7] = new ICMonitoringConfig(this);
             monitoringConfigs[8] = new FlopsMonitoringConfig(this);
             monitoringConfigs[9] = new RetireConfig(this);
-            monitoringConfigs[10] = new TestConfig(this);
+            monitoringConfigs[10] = new DecodeHistogram(this);
+            monitoringConfigs[11] = new TestConfig(this);
             architectureName = "Zen 2";
         }
 
@@ -255,7 +256,8 @@ namespace PmcReader.AMD
                     ThreadAffinity.Set(1UL << threadIdx);
                     Ring0.ReadMsr(MSR_INSTR_RETIRED, out retiredInstructions);
                     Ring0.ReadMsr(MSR_APERF, out activeCycles);
-                    ulong retiredMacFlops = ReadAndClearMsr(MSR_PERF_CTR_0) * 2;
+                    // "MacFLOPs count as 2 FLOPS" <-- from GB4 SGEMM, this gave counts > 32 flops/clk, so I think it already counts 2/mac op
+                    ulong retiredMacFlops = ReadAndClearMsr(MSR_PERF_CTR_0);
                     Ring0.WriteMsr(MSR_PERF_CTR_1, 0);
                     ulong retiredOtherFlops = ReadAndClearMsr(MSR_PERF_CTR_2);
                     Ring0.WriteMsr(MSR_PERF_CTR_3, 0); ;
@@ -785,7 +787,7 @@ namespace PmcReader.AMD
         public class TestConfig : MonitoringConfig
         {
             private Zen2 cpu;
-            public string GetConfigName() { return "Testing Testing"; }
+            public string GetConfigName() { return "Do Zen1 Counters Work?"; }
 
             public TestConfig(Zen2 amdCpu)
             {
@@ -811,10 +813,10 @@ namespace PmcReader.AMD
                     Ring0.WriteMsr(MSR_PERF_CTL_2, GetPerfCtlValue(0x0, 0x4, true, true, false, false, true, false, 0, 0, false, false));
                     // pipe 3
                     Ring0.WriteMsr(MSR_PERF_CTL_3, GetPerfCtlValue(0x0, 0x8, true, true, false, false, true, false, 0, 0, false, false));
-                    // zen 1 page table walker alloc
-                    Ring0.WriteMsr(MSR_PERF_CTL_4, GetPerfCtlValue(0x46, 0xF, true, true, false, false, true, false, 0, 0, false, false));
-                    // instr retired (event)
-                    Ring0.WriteMsr(MSR_PERF_CTL_5, GetPerfCtlValue(0xC0, 0, true, true, false, false, true, false, 0, 0, false, false));
+                    // l2 requests, not counting bus locks, self modifying code, ic/dc sized read
+                    Ring0.WriteMsr(MSR_PERF_CTL_4, GetPerfCtlValue(0x60, 0xFE, true, true, false, false, true, false, 0, 0, false, false));
+                    // zen 1 l2 latency event
+                    Ring0.WriteMsr(MSR_PERF_CTL_5, GetPerfCtlValue(0x62, 1, true, true, false, false, true, false, 0, 0, false, false));
                 }
             }
 
@@ -826,18 +828,22 @@ namespace PmcReader.AMD
                 for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
                 {
                     cpu.UpdateThreadCoreCounterData(threadIdx);
-                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
+                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx], false);
                 }
 
-                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts, true);
                 return results;
             }
 
-            public string[] columns = new string[] { "Item", "TSC", "MPERF", "APERF", "Instr", "IPC", "FP0?", "FP1?", "FP2?", "FP3?", "Page Walks?", "Instr Evt", "Instr Measuring Error"};
+            public string[] columns = new string[] { "Item", "Clk", "TSC", "MPERF", "APERF", "Instr", "IPC", "FP0?", "FP1?", "FP2?", "FP3?", "L2 Miss Latency?", "L2 Miss Latency?", "L2 Pend Miss/C?"};
 
-            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData, bool total)
             {
+                float l2MissLatency = counterData.ctr5 * 4 / counterData.ctr4;
+                float coreClock = counterData.tsc * counterData.aperf / counterData.mperf;
+                if (total) coreClock = coreClock / cpu.GetThreadCount();
                 return new string[] { label,
+                        FormatLargeNumber(coreClock),
                         FormatLargeNumber(counterData.tsc),
                         FormatLargeNumber(counterData.mperf),
                         FormatLargeNumber(counterData.aperf),
@@ -847,9 +853,9 @@ namespace PmcReader.AMD
                         string.Format("{0:F2}%", 100 * counterData.ctr1 / counterData.aperf),
                         string.Format("{0:F2}%", 100 * counterData.ctr2 / counterData.aperf),
                         string.Format("{0:F2}%", 100 * counterData.ctr3 / counterData.aperf),
-                        FormatLargeNumber(counterData.ctr4),
-                        FormatLargeNumber(counterData.ctr5),
-                        string.Format("{0:F2}%", 100 * Math.Abs(counterData.instr - counterData.ctr5) / counterData.aperf) };
+                        string.Format("{0:F2} clk", l2MissLatency),
+                        string.Format("{0:F2} ns", (1000000000 / coreClock) * l2MissLatency),
+                        FormatLargeNumber(counterData.ctr5 * 4 / counterData.aperf) };
             }
         }
 
@@ -919,6 +925,76 @@ namespace PmcReader.AMD
                         string.Format("{0:F2}%", 100 * (counterData.ctr3 - counterData.ctr4) / counterData.aperf),
                         string.Format("{0:F2}%", 100 * (counterData.ctr4 - counterData.ctr5) / counterData.aperf),
                         string.Format("{0:F2}%", 100 * counterData.ctr5 / counterData.aperf) };
+            }
+        }
+
+        public class DecodeHistogram : MonitoringConfig
+        {
+            private Zen2 cpu;
+            public string GetConfigName() { return "Decoder Histogram"; }
+
+            public DecodeHistogram(Zen2 amdCpu)
+            {
+                cpu = amdCpu;
+            }
+
+            public string[] GetColumns()
+            {
+                return columns;
+            }
+
+            public void Initialize()
+            {
+                cpu.EnablePerformanceCounters();
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    ThreadAffinity.Set(1UL << threadIdx);
+                    // uops from decoder, cmask 1
+                    Ring0.WriteMsr(MSR_PERF_CTL_0, GetPerfCtlValue(0xAA, 1, true, true, false, false, true, false, cmask: 1, 0, false, false));
+                    // ret uops, cmask 2
+                    Ring0.WriteMsr(MSR_PERF_CTL_1, GetPerfCtlValue(0xAA, 1, true, true, false, false, true, false, cmask: 2, 0, false, false));
+                    // ^^ cmask 3
+                    Ring0.WriteMsr(MSR_PERF_CTL_2, GetPerfCtlValue(0xAA, 1, true, true, false, false, true, false, cmask: 3, 0, false, false));
+                    // ^^ cmask 4
+                    Ring0.WriteMsr(MSR_PERF_CTL_3, GetPerfCtlValue(0xAA, 1, true, true, false, false, true, false, cmask: 4, 0, false, false));
+                    // all uops from decoder
+                    Ring0.WriteMsr(MSR_PERF_CTL_4, GetPerfCtlValue(0xAA, 1, true, true, false, false, true, false, cmask: 0 , 0, false, false));
+                    // all uops dispatched
+                    Ring0.WriteMsr(MSR_PERF_CTL_5, GetPerfCtlValue(0xAA, 3, true, true, false, false, true, false, cmask: 0, 0, false, false));
+                }
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[cpu.GetThreadCount()][];
+                cpu.InitializeCoreTotals();
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    cpu.UpdateThreadCoreCounterData(threadIdx);
+                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
+                }
+
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "Decoder Inactive", "1 op", "2 ops", "3 ops", "4 ops", "Decoder ops/c", "Decoder Ops %" };
+
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
+            {
+                return new string[] { label,
+                        FormatLargeNumber(counterData.aperf) + "/s",
+                        FormatLargeNumber(counterData.instr) + "/s",
+                        string.Format("{0:F2}", counterData.instr / counterData.aperf),
+                        string.Format("{0:F2}%", 100 * (counterData.aperf - counterData.ctr0) / counterData.aperf),
+                        string.Format("{0:F2}%", 100 * (counterData.ctr0 - counterData.ctr1) / counterData.ctr0),
+                        string.Format("{0:F2}%", 100 * (counterData.ctr1 - counterData.ctr2) / counterData.ctr0),
+                        string.Format("{0:F2}%", 100 * (counterData.ctr2 - counterData.ctr3) / counterData.ctr0),
+                        string.Format("{0:F2}%", 100 * counterData.ctr3 / counterData.ctr0),
+                        string.Format("{0:F2}", counterData.ctr4 / counterData.ctr0),
+                        string.Format("{0:F2}%", 100 * counterData.ctr4 / counterData.ctr5),
+                };
             }
         }
     }
