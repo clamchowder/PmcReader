@@ -302,7 +302,7 @@ namespace PmcReader.Intel
         public class OffcoreQueue : MonitoringConfig
         {
             private SandyBridge cpu;
-            public string GetConfigName() { return "Offcore Requests"; }
+            public string GetConfigName() { return "Offcore Data Reads"; }
 
             public OffcoreQueue(SandyBridge intelCpu)
             {
@@ -343,17 +343,19 @@ namespace PmcReader.Intel
                 for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
                 {
                     cpu.UpdateThreadCoreCounterData(threadIdx);
-                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
+                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx], false);
                 }
 
-                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts, true);
                 return results;
             }
 
-            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "Offcore Data Reqs", "Cycles w/Data Req", "SQ Occupancy", "SQ Full Stall", "Offcore Req Latency" };
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "Offcore DRD Reqs", "Cycles w/DRD", "SQ DRD Occupancy", "Cycles DRD Blocked (SQ Full)", "Offcore DRD Latency", "Offcore DRD Latency" };
 
-            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData, bool total)
             {
+                float avgCycles = total ? counterData.ActiveCycles / cpu.GetThreadCount() : counterData.ActiveCycles;
+                float reqLatency = counterData.Pmc0 / counterData.Pmc1;
                 return new string[] { label,
                         FormatLargeNumber(counterData.ActiveCycles),
                         FormatLargeNumber(counterData.RetiredInstructions),
@@ -362,7 +364,9 @@ namespace PmcReader.Intel
                         string.Format("{0:F2}%", counterData.Pmc3 / counterData.ActiveCycles * 100),
                         string.Format("{0:F2}", counterData.Pmc0 / counterData.Pmc3),
                         string.Format("{0:F2}%", counterData.Pmc2 / counterData.ActiveCycles * 100),
-                        string.Format("{0:F2}", counterData.Pmc0 / counterData.Pmc1)};
+                        string.Format("{0:F2} clk", reqLatency),
+                        string.Format("{0:F2} ns", (1000000000 / avgCycles) * reqLatency)
+                };
             }
         }
 
