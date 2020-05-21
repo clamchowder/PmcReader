@@ -128,7 +128,7 @@ namespace PmcReader.AMD
                     {
                         ThreadAffinity.Set(1UL << ccxThreadIdx);
                         ulong aperf, mperf, tsc;
-                        l3Cache.UpdateFixedCounters(ccxThreadIdx, out aperf, out _, out tsc, out mperf);
+                        l3Cache.ReadFixedCounters(ccxThreadIdx, out aperf, out _, out tsc, out mperf);
                         float clk = tsc * ((float)aperf / mperf);
                         if (clk > ccxClocks[ccxThread.Key]) ccxClocks[ccxThread.Key] = clk;
                         if (ccxThreadIdx == ccxThread.Value)

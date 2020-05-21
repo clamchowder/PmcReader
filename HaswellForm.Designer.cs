@@ -173,6 +173,7 @@
             // 
             // dfMonitoringListView
             // 
+            this.dfMonitoringListView.Activation = System.Windows.Forms.ItemActivation.OneClick;
             this.dfMonitoringListView.HideSelection = false;
             this.dfMonitoringListView.Location = new System.Drawing.Point(700, 557);
             this.dfMonitoringListView.Name = "dfMonitoringListView";

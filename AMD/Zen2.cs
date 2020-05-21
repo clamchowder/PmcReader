@@ -7,7 +7,7 @@ namespace PmcReader.AMD
     {
         public Zen2()
         {
-            monitoringConfigs = new MonitoringConfig[12];
+            monitoringConfigs = new MonitoringConfig[13];
             monitoringConfigs[0] = new OpCacheConfig(this);
             monitoringConfigs[1] = new BpuMonitoringConfig(this);
             monitoringConfigs[2] = new BPUMonitoringConfig1(this);
@@ -19,7 +19,8 @@ namespace PmcReader.AMD
             monitoringConfigs[8] = new FlopsMonitoringConfig(this);
             monitoringConfigs[9] = new RetireConfig(this);
             monitoringConfigs[10] = new DecodeHistogram(this);
-            monitoringConfigs[11] = new TestConfig(this);
+            monitoringConfigs[11] = new PowerConfig(this);
+            monitoringConfigs[12] = new TestConfig(this);
             architectureName = "Zen 2";
         }
 
@@ -260,7 +261,7 @@ namespace PmcReader.AMD
                     ulong retiredMacFlops = ReadAndClearMsr(MSR_PERF_CTR_0);
                     Ring0.WriteMsr(MSR_PERF_CTR_1, 0);
                     ulong retiredOtherFlops = ReadAndClearMsr(MSR_PERF_CTR_2);
-                    Ring0.WriteMsr(MSR_PERF_CTR_3, 0); ;
+                    Ring0.WriteMsr(MSR_PERF_CTR_3, 0);
                     ulong fpSchedulerFullStall = ReadAndClearMsr(MSR_PERF_CTR_4);
                     ulong fpRegsFullStall = ReadAndClearMsr(MSR_PERF_CTR_5);
 
@@ -316,7 +317,7 @@ namespace PmcReader.AMD
         public class ResourceStallMontitoringConfig : MonitoringConfig
         {
             private Zen2 cpu;
-            public string GetConfigName() { return "Backend OOO Resources"; }
+            public string GetConfigName() { return "Dispatch Stalls"; }
 
             public ResourceStallMontitoringConfig(Zen2 amdCpu)
             {
@@ -370,7 +371,7 @@ namespace PmcReader.AMD
                 return results;
             }
 
-            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "ROB Full Stall", "Load Queue Full Stall", "Store Queue Full Stall", "Taken Branch Buffer Full Stall", "AGU Scheduler Stall", "AGSQ Token Stall" };
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "ROB Full", "LDQ Full", "STQ Full", "Taken Branch Buffer Full", "AGU Sched Stall", "AGSQ Token Stall" };
 
             private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
             {
@@ -391,7 +392,7 @@ namespace PmcReader.AMD
         public class IntSchedulerMonitoringConfig : MonitoringConfig
         {
             private Zen2 cpu;
-            public string GetConfigName() { return "Integer Scheduler"; }
+            public string GetConfigName() { return "Dispatch Stalls 1 (Int Sched)"; }
 
             public IntSchedulerMonitoringConfig(Zen2 amdCpu)
             {
@@ -787,7 +788,7 @@ namespace PmcReader.AMD
         public class TestConfig : MonitoringConfig
         {
             private Zen2 cpu;
-            public string GetConfigName() { return "Do Zen1 Counters Work?"; }
+            public string GetConfigName() { return "Testing"; }
 
             public TestConfig(Zen2 amdCpu)
             {
@@ -831,24 +832,27 @@ namespace PmcReader.AMD
                     results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx], false);
                 }
 
-                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts, true);
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts, true, cpu.ReadPackagePowerCounter());
                 return results;
             }
 
-            public string[] columns = new string[] { "Item", "Clk", "TSC", "MPERF", "APERF", "Instr", "IPC", "FP0?", "FP1?", "FP2?", "FP3?", "L2 Miss Latency?", "L2 Miss Latency?", "L2 Pend Miss/C?"};
+            public string[] columns = new string[] { "Item", "Clk", "TSC", "MPERF", "APERF", "Power", "Instr", "IPC", "Instr/Watt", "FP0?", "FP1?", "FP2?", "FP3?", "L2 Miss Latency?", "L2 Miss Latency?", "L2 Pend Miss/C?"};
 
-            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData, bool total)
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData, bool total, float pwr = 0)
             {
                 float l2MissLatency = counterData.ctr5 * 4 / counterData.ctr4;
                 float coreClock = counterData.tsc * counterData.aperf / counterData.mperf;
+                float watts = pwr == 0 ? counterData.watts : pwr;
                 if (total) coreClock = coreClock / cpu.GetThreadCount();
                 return new string[] { label,
                         FormatLargeNumber(coreClock),
                         FormatLargeNumber(counterData.tsc),
                         FormatLargeNumber(counterData.mperf),
                         FormatLargeNumber(counterData.aperf),
+                        string.Format("{0:F2} W", watts),
                         FormatLargeNumber(counterData.instr),
                         string.Format("{0:F2}", counterData.instr / counterData.aperf),
+                        FormatLargeNumber(counterData.instr / watts),
                         string.Format("{0:F2}%", 100 * counterData.ctr0 / counterData.aperf),
                         string.Format("{0:F2}%", 100 * counterData.ctr1 / counterData.aperf),
                         string.Format("{0:F2}%", 100 * counterData.ctr2 / counterData.aperf),
@@ -994,6 +998,84 @@ namespace PmcReader.AMD
                         string.Format("{0:F2}%", 100 * counterData.ctr3 / counterData.ctr0),
                         string.Format("{0:F2}", counterData.ctr4 / counterData.ctr0),
                         string.Format("{0:F2}%", 100 * counterData.ctr4 / counterData.ctr5),
+                };
+            }
+        }
+
+        public class PowerConfig : MonitoringConfig
+        {
+            private Zen2 cpu;
+            public string GetConfigName() { return "Power Efficiency"; }
+
+            public PowerConfig(Zen2 amdCpu)
+            {
+                cpu = amdCpu;
+            }
+
+            public string[] GetColumns()
+            {
+                return columns;
+            }
+
+            public void Initialize()
+            {
+                cpu.EnablePerformanceCounters();
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    ThreadAffinity.Set(1UL << threadIdx);
+                    // retired flops
+                    Ring0.WriteMsr(MSR_PERF_CTL_0, GetPerfCtlValue(0x3, 0xF, true, true, false, false, true, false, 0, 0, false, false));
+                    // merge
+                    Ring0.WriteMsr(MSR_PERF_CTL_1, GetPerfCtlValue(0xFF, 0, false, false, false, false, true, false, 0, 0xF, false, false));
+                    // retired uops
+                    Ring0.WriteMsr(MSR_PERF_CTL_2, GetPerfCtlValue(0xC1, 0, true, true, false, false, true, false, 0, 0, false, false));
+                    // retired mmx/fp
+                    Ring0.WriteMsr(MSR_PERF_CTL_3, GetPerfCtlValue(0xCB, 0b111, true, true, false, false, true, false, 0, 0, false, false));
+                    // dispatch stall 1
+                    Ring0.WriteMsr(MSR_PERF_CTL_4, GetPerfCtlValue(0xAE, 0xFF, true, true, false, false, true, false, 0, 0, false, false));
+                    // dispathc stall 2
+                    Ring0.WriteMsr(MSR_PERF_CTL_5, GetPerfCtlValue(0xAF, 0x7F, true, true, false, false, true, false, 0, 0, false, false));
+                }
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[cpu.GetThreadCount()][];
+                cpu.InitializeCoreTotals();
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    cpu.UpdateThreadCoreCounterData(threadIdx);
+                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx], false);
+                }
+
+                results.overallMetrics = computeMetrics("Package", cpu.NormalizedTotalCounts, true, cpu.ReadPackagePowerCounter());
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Clk", "Power", "MPERF %", "Active Cycles", "Instructions", "IPC", "Instr/Watt", "Ops/C", "Ops/Watt", "FLOPS", "FLOPS/Watt", "MMX/FP Instr", "Dispatch Stall 1", "Dispatch Stall 2" };
+
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData, bool total, float pwr = 0)
+            {
+                float l2MissLatency = counterData.ctr5 * 4 / counterData.ctr4;
+                float coreClock = counterData.tsc * counterData.aperf / counterData.mperf;
+                float watts = pwr == 0 ? counterData.watts : pwr;
+                if (total) coreClock = coreClock / cpu.GetThreadCount();
+                return new string[] { label,
+                        FormatLargeNumber(coreClock),
+                        string.Format("{0:F2} W", watts),
+                        string.Format("{0:F1}%", 100 * counterData.mperf / counterData.tsc),
+                        FormatLargeNumber(counterData.aperf),
+                        FormatLargeNumber(counterData.instr),
+                        string.Format("{0:F2}", counterData.instr / counterData.aperf),
+                        FormatLargeNumber(counterData.instr / watts),
+                        string.Format("{0:F2}", counterData.ctr2 / counterData.aperf),
+                        FormatLargeNumber(counterData.ctr2 / watts),
+                        FormatLargeNumber(counterData.ctr0),
+                        FormatLargeNumber(counterData.ctr0 / watts),
+                        FormatLargeNumber(counterData.ctr3),
+                        string.Format("{0:F2}%", 100 * counterData.ctr4 / counterData.aperf),
+                        string.Format("{0:F2}%", 100 * counterData.ctr5 / counterData.aperf)
                 };
             }
         }
