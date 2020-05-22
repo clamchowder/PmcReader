@@ -148,6 +148,8 @@ namespace PmcReader.AMD
 
             public string[] columns = new string[] { "Item", "Clk?", "Hitrate", "Hit BW", "Mem Latency", "Mem Latency?", "Pend. Miss/Clk", "SDP Requests", "SDP Requests * 64B" };
 
+            public string GetHelpText() { return ""; }
+
             private string[] computeMetrics(string label, L3CounterData counterData, float clk)
             {
                 // event 0x90 counts "total cycles for all transactions divided by 16"
@@ -215,6 +217,8 @@ namespace PmcReader.AMD
 
             public string[] columns = new string[] { "Item", "Hitrate", "Hit BW", "Slice 0", "Slice 1", "Slice 2", "Slice 3" };
 
+            public string GetHelpText() { return ""; }
+
             private string[] computeMetrics(string label, L3CounterData counterData)
             {
                 float ccxL3Hitrate = (1 - counterData.ctr1 / counterData.ctr0) * 100;
@@ -277,6 +281,8 @@ namespace PmcReader.AMD
             }
 
             public string[] columns = new string[] { "Item", "Hitrate", "Hit BW", "Lookup 0x1 (Miss)", "Lookup 0x2", "Lookup 0x4", "Lookup 0x8", "Lookup 0x10", "Lookup 0xE0" };
+
+            public string GetHelpText() { return ""; }
 
             private string[] computeMetrics(string label, L3CounterData counterData)
             {

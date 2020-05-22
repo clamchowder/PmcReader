@@ -138,7 +138,7 @@ namespace PmcReader
 
         private void applyConfigButton_Click(object sender, EventArgs e)
         {
-            applyMonitoringConfig(coreMonitoring, configSelect);
+            applyMonitoringConfig(coreMonitoring, configSelect, helpTextLabel);
         }
 
         /// <summary>
@@ -168,7 +168,8 @@ namespace PmcReader
         /// </summary>
         /// <param name="setup">Monitoring setup</param>
         /// <param name="configSelectListView">Target list view for monitoring thread to send output to</param>
-        private void applyMonitoringConfig(MonitoringSetup setup, ListView configSelectListView)
+        /// <param name="helpLabel">Label to put help text in</param>
+        private void applyMonitoringConfig(MonitoringSetup setup, ListView configSelectListView, Label helpLabel = null)
         {
             int cfgIdx;
             if (configSelectListView.SelectedItems.Count > 0)
@@ -188,6 +189,13 @@ namespace PmcReader
             setup.monitoringThreadCancellation = new CancellationTokenSource();
             setup.monitoringThread = Task.Run(() => setup.monitoringArea.MonitoringThread(cfgIdx, setup.targetListView, setup.monitoringThreadCancellation.Token));
             errorLabel.Text = "";
+
+            MonitoringConfig[] configs = setup.monitoringArea.GetMonitoringConfigs();
+            if (helpLabel != null)
+            {
+                helpLabel.Text = "";
+                if (configs[cfgIdx].GetHelpText() != null) helpLabel.Text = "Notes:\n" + configs[cfgIdx].GetHelpText();
+            }
         }
 
         private class MonitoringSetup

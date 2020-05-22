@@ -35,6 +35,12 @@ namespace PmcReader
         string GetConfigName();
 
         /// <summary>
+        /// Description of this config
+        /// </summary>
+        /// <returns></returns>
+        string GetHelpText();
+
+        /// <summary>
         /// Get columns to display in listview
         /// </summary>
         /// <returns></returns>

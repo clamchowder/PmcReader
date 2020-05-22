@@ -18,6 +18,7 @@ namespace PmcReader.Intel
             private Skylake cpu;
             public string GetConfigName() { return "ALU Port Utilization"; }
             public string[] columns = new string[] { "Item", "Instructions", "IPC", "Port 0", "Port 1", "Port 5", "Port 6" };
+            public string GetHelpText() { return ""; }
 
             public ALUPortUtilization(Skylake intelCpu)
             {

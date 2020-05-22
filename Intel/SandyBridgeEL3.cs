@@ -308,6 +308,8 @@ namespace PmcReader.Intel
 
             public string[] columns = new string[] { "Item", "Clk", "Hit BW", "MESF state", "Ring Stop Traffic", "BL Up Cycles", "BL Dn Cycles" };
 
+            public string GetHelpText() { return ""; }
+
             private string[] computeMetrics(string label, NormalizedCboCounterData counterData)
             {
                 return new string[] { label,
@@ -366,6 +368,8 @@ namespace PmcReader.Intel
             }
 
             public string[] columns = new string[] { "Item", "Clk", "IngressQ Occupancy", "IngressQ Alloc", "IngressQ Latency", "IngressQ not empty" };
+
+            public string GetHelpText() { return ""; }
 
             private string[] computeMetrics(string label, NormalizedCboCounterData counterData)
             {
@@ -427,6 +431,8 @@ namespace PmcReader.Intel
 
             public string[] columns = new string[] { "Item", "Clk", "ToR DRD Occupancy", "DRD Miss Latency?", "DRD Miss Present", "DRD ToR Insert" };
 
+            public string GetHelpText() { return ""; }
+
             private string[] computeMetrics(string label, NormalizedCboCounterData counterData)
             {
                 return new string[] { label,
@@ -481,6 +487,8 @@ namespace PmcReader.Intel
             }
 
             public string[] columns = new string[] { "Item", "Clk", "L3 Miss BW", "I State", "AD Ring Total", "AD Up Cycles", "AD Dn Cycles" };
+
+            public string GetHelpText() { return ""; }
 
             private string[] computeMetrics(string label, NormalizedCboCounterData counterData)
             {
@@ -539,6 +547,8 @@ namespace PmcReader.Intel
 
             public string[] columns = new string[] { "Item", "Clk", "L3 Writeback BW", "L3 Writebacks", "IV Ring Total", "IV Odd Polarity", "IV Even Polarity" };
 
+            public string GetHelpText() { return ""; }
+
             private string[] computeMetrics(string label, NormalizedCboCounterData counterData)
             {
                 return new string[] { label,
@@ -595,6 +605,8 @@ namespace PmcReader.Intel
             }
 
             public string[] columns = new string[] { "Item", "Clk", "Response Bounces", "AK Ring Total", "AK Up Cycles", "AK Dn Cycles" };
+
+            public string GetHelpText() { return ""; }
 
             private string[] computeMetrics(string label, NormalizedCboCounterData counterData)
             {

@@ -87,6 +87,14 @@ namespace PmcReader.Intel
                 return results;
             }
 
+            public string GetHelpText()
+            {
+                return "Clk - uncore active clocks\n" +
+                    "Requests - all requests to the system agent\n" +
+                    "Q Occupancy - average arbitration queue occupancy, when a request is pending\n" +
+                    "Req Latency - average time each request stayed in the arbitration queue";
+            }
+
             public string[] columns = new string[] { "Clk", "Requests", "Q Occupancy", "Req Latency" };
         }
     }

@@ -24,6 +24,7 @@ namespace PmcReader.Intel
             private SandyBridge cpu;
             public string GetConfigName() { return "Per-Core ALU Port Utilization"; }
             public string[] columns = new string[] { "Item", "Core Instructions", "Core IPC", "P0 ALU/FADD", "P1 ALU/FMUL", "P5 ALU/Branch" };
+            public string GetHelpText() { return ""; }
 
             public ALUPortUtilization(SandyBridge intelCpu)
             {
@@ -130,7 +131,7 @@ namespace PmcReader.Intel
             private SandyBridge cpu;
             public string GetConfigName() { return "Per-Core LS Port Utilization"; }
             public string[] columns = new string[] { "Item", "Core Instructions", "Core IPC", "P2 AGU", "P3 AGU", "P4 StoreData" };
-            private long lastUpdateTime;
+            public string GetHelpText() { return ""; }
 
             public LSPortUtilization(SandyBridge intelCpu)
             {
@@ -172,8 +173,6 @@ namespace PmcReader.Intel
                     ulong branchResteers = GetPerfEvtSelRegisterValue(0xA1, 0x40, true, true, false, false, false, true, true, false, 0);
                     Ring0.WriteMsr(IA32_PERFEVTSEL2, branchResteers);
                 }
-
-                lastUpdateTime = DateTimeOffset.Now.ToUnixTimeMilliseconds();
             }
 
             public MonitoringUpdateResults Update()
@@ -285,6 +284,7 @@ namespace PmcReader.Intel
             }
 
             public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "LDQ Full", "STQ Full", "RS Full", "ROB Full" };
+            public string GetHelpText() { return ""; }
 
             private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
             {
@@ -351,6 +351,7 @@ namespace PmcReader.Intel
             }
 
             public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "Offcore Data Reqs", "Cycles w/Data Req", "SQ Occupancy", "SQ Full Stall", "Offcore Req Latency" };
+            public string GetHelpText() { return ""; }
 
             private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
             {
@@ -418,6 +419,7 @@ namespace PmcReader.Intel
             }
 
             public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "FP32/X87 Flops", "Flops/C", "SSE Scalar FP32 Flops", "128B FP32 Flops", "256B FP32 Flops", "x87 Ops" };
+            public string GetHelpText() { return ""; }
 
             private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
             {
@@ -489,6 +491,7 @@ namespace PmcReader.Intel
             }
 
             public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "FP64 Flops", "Flops/C", "SSE Scalar FP64 Flops", "128B FP64 Flops", "256B FP64 Flops", "FP Divider Active" };
+            public string GetHelpText() { return ""; }
 
             private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
             {

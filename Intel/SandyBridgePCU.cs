@@ -245,6 +245,7 @@ namespace PmcReader.Intel
             }
 
             public string[] columns = new string[] { "Item", "Cycles", "Count", "Latency", "Latency" };
+            public string GetHelpText() { return ""; }
         }
 
         public class Limits : MonitoringConfig
@@ -287,6 +288,7 @@ namespace PmcReader.Intel
             }
 
             public string[] columns = new string[] { "Freq Limit", "Cycles" };
+            public string GetHelpText() { return ""; }
         }
     }
 }

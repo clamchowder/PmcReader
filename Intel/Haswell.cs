@@ -1,5 +1,6 @@
 ﻿using PmcReader.Interop;
 using System;
+using System.Runtime.InteropServices.WindowsRuntime;
 
 namespace PmcReader.Intel
 {
@@ -73,6 +74,14 @@ namespace PmcReader.Intel
 
             public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "Port 0", "Port 1", "Port 5", "Port 6" };
 
+            public string GetHelpText()
+            {
+                return "Port 0 - ALU, FMUL/FMA, predicted not-taken branches\n" +
+                    "Port 1 - ALU, IMUL, FMUL/FADD/FMA\n" +
+                    "Port 5 - ALU, integer vector, crypto\n" +
+                    "Port 6 - ALU, predicted taken branches";
+            }
+
             private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
             {
                 float ipc = counterData.RetiredInstructions / counterData.ActiveCycles;
@@ -144,6 +153,13 @@ namespace PmcReader.Intel
 
             public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "P2 AGU", "P3 AGU", "P4 StoreData", "P7 StoreAGU" };
 
+            public string GetHelpText()
+            {
+                return "Port 2/3 - Load/Store address generation\n" +
+                    "Port 4 - Store Data. Each store sends an op to port 4, and one to port 2 or 3 or 7\n" +
+                    "Port 7 - Store address generation. Only handles simple address calculations (no index reg)\n";
+            }
+
             private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
             {
                 float ipc = counterData.RetiredInstructions / counterData.ActiveCycles;
@@ -210,6 +226,11 @@ namespace PmcReader.Intel
             }
 
             public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "DTLB Miss STLB Hit", "DTLB Miss, Page Walk", "Page Walk Completed", "DTLB MPKI", "STLB Hitrate", "Page Walk Duration", "Page Walk Cycles", "% Walks Completed" };
+
+            public string GetHelpText()
+            {
+                return "";
+            }
 
             private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
             {
@@ -281,6 +302,11 @@ namespace PmcReader.Intel
             }
 
             public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "% movs eliminated", "% int movs elim", "% simd movs elim", "eliminated int movs", "int elim candidates", "eliminated simd movs", "simd elim candidates" };
+
+            public string GetHelpText()
+            {
+                return "Eliminated movs have zero latency and don't use an execution port, but still use up frontend/renamer bandwidth and backend tracking resources";
+            }
 
             private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
             {
@@ -356,6 +382,11 @@ namespace PmcReader.Intel
             }
 
             public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "(LDQ Full?)", "STQ Full", "RS Full", "ROB Full" };
+
+            public string GetHelpText()
+            {
+                return "Load queue full umask is undocumented in Haswell";
+            }
 
             private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
             {
