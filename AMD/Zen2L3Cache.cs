@@ -127,9 +127,10 @@ namespace PmcReader.AMD
                     foreach (int ccxThreadIdx in l3Cache.allCcxThreads[ccxThread.Key])
                     {
                         ThreadAffinity.Set(1UL << ccxThreadIdx);
+                        float normalizationFactor = l3Cache.GetNormalizationFactor(l3Cache.GetThreadCount() + ccxThreadIdx);
                         ulong aperf, mperf, tsc;
                         l3Cache.ReadFixedCounters(ccxThreadIdx, out aperf, out _, out tsc, out mperf);
-                        float clk = tsc * ((float)aperf / mperf);
+                        float clk = tsc * ((float)aperf / mperf) * normalizationFactor;
                         if (clk > ccxClocks[ccxThread.Key]) ccxClocks[ccxThread.Key] = clk;
                         if (ccxThreadIdx == ccxThread.Value)
                         {
@@ -146,7 +147,7 @@ namespace PmcReader.AMD
                 return results;
             }
 
-            public string[] columns = new string[] { "Item", "Clk?", "Hitrate", "Hit BW", "Mem Latency", "Mem Latency?", "Pend. Miss/Clk", "SDP Requests", "SDP Requests * 64B" };
+            public string[] columns = new string[] { "Item", "Clk", "Hitrate", "Hit BW", "Mem Latency", "Mem Latency?", "Pend. Miss/C", "SDP Requests", "SDP Requests * 64B" };
 
             public string GetHelpText() { return ""; }
 

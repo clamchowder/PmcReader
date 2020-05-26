@@ -8,7 +8,7 @@ namespace PmcReader.AMD
     {
         public Zen2()
         {
-            monitoringConfigs = new MonitoringConfig[14];
+            monitoringConfigs = new MonitoringConfig[17];
             monitoringConfigs[0] = new BpuMonitoringConfig(this);
             monitoringConfigs[1] = new BPUMonitoringConfig1(this);
             monitoringConfigs[2] = new ICMonitoringConfig(this);
@@ -17,12 +17,15 @@ namespace PmcReader.AMD
             monitoringConfigs[5] = new ResourceStallMontitoringConfig(this);
             monitoringConfigs[6] = new IntSchedulerMonitoringConfig(this);
             monitoringConfigs[7] = new DtlbConfig(this);
-            monitoringConfigs[8] = new DCMonitoringConfig(this);
-            monitoringConfigs[9] = new L2MonitoringConfig(this);
-            monitoringConfigs[10] = new FlopsMonitoringConfig(this);
-            monitoringConfigs[11] = new RetireConfig(this);
-            monitoringConfigs[12] = new PowerConfig(this);
-            monitoringConfigs[13] = new TestConfig(this);
+            monitoringConfigs[8] = new LSConfig(this);
+            monitoringConfigs[9] = new LSSwPrefetch(this);
+            monitoringConfigs[10] = new DCMonitoringConfig(this);
+            monitoringConfigs[11] = new L2MonitoringConfig(this);
+            monitoringConfigs[12] = new FlopsMonitoringConfig(this);
+            monitoringConfigs[13] = new RetireConfig(this);
+            monitoringConfigs[14] = new RetireBurstConfig(this);
+            monitoringConfigs[15] = new PowerConfig(this);
+            monitoringConfigs[16] = new TestConfig(this);
             architectureName = "Zen 2";
         }
 
@@ -921,8 +924,8 @@ namespace PmcReader.AMD
 
             public string GetHelpText() 
             { 
-                return "LS dispatch - all load/store ops dispatched" + 
-                    "Coalesced page hits are counted as DTLB misses\nbecause the PPR says so (is this an error?)"; 
+                return "LS dispatch - all load/store ops dispatched\n" + 
+                    "Coalesced page hits are counted as DTLB misses, because the PPR says so\n(is this an error?)"; 
             }
 
             private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
@@ -1097,6 +1100,77 @@ namespace PmcReader.AMD
             }
         }
 
+        public class RetireBurstConfig : MonitoringConfig
+        {
+            private Zen2 cpu;
+            public string GetConfigName() { return "Retire (Burst)"; }
+
+            public RetireBurstConfig(Zen2 amdCpu)
+            {
+                cpu = amdCpu;
+            }
+
+            public string[] GetColumns()
+            {
+                return columns;
+            }
+
+            public void Initialize()
+            {
+                cpu.EnablePerformanceCounters();
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    ThreadAffinity.Set(1UL << threadIdx);
+                    // ret uops, cmask 1
+                    Ring0.WriteMsr(MSR_PERF_CTL_0, GetPerfCtlValue(0xC1, 0, true, true, false, false, true, false, cmask: 1, 0, false, false));
+                    // ret uops, cmask 8
+                    Ring0.WriteMsr(MSR_PERF_CTL_1, GetPerfCtlValue(0xC1, 0, true, true, false, false, true, false, cmask: 8, 0, false, false));
+                    // cmask 8, edge
+                    Ring0.WriteMsr(MSR_PERF_CTL_2, GetPerfCtlValue(0xC1, 0, true, true, edge: true, false, true, false, cmask: 8, 0, false, false));
+                    // cmask 1, edge
+                    Ring0.WriteMsr(MSR_PERF_CTL_3, GetPerfCtlValue(0xC1, 0, true, true, edge: true, false, true, false, cmask: 1, 0, false, false));
+                    // no ret uops
+                    Ring0.WriteMsr(MSR_PERF_CTL_4, GetPerfCtlValue(0xC1, 0, true, true, false, false, true, invert: true, cmask: 1, 0, false, false));
+                    // no ret uops, edge
+                    Ring0.WriteMsr(MSR_PERF_CTL_5, GetPerfCtlValue(0xC1, 0, true, true, edge: true, false, true, invert: true, cmask: 1, 0, false, false));
+                }
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[cpu.GetThreadCount()][];
+                cpu.InitializeCoreTotals();
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    cpu.UpdateThreadCoreCounterData(threadIdx);
+                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
+                }
+
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "Retire Stall", "retire active duration", "8 ops", "8 ops ret duration", "no uops cycles", "no uops duration" };
+
+            public string GetHelpText() { return ""; }
+
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
+            {
+                return new string[] { label,
+                        FormatLargeNumber(counterData.aperf) + "/s",
+                        FormatLargeNumber(counterData.instr) + "/s",
+                        string.Format("{0:F2}", counterData.instr / counterData.aperf),
+                        string.Format("{0:F2}%", 100 * (counterData.aperf - counterData.ctr0) / counterData.aperf),
+                        string.Format("{0:F2}", counterData.ctr0 / counterData.ctr3),
+                        string.Format("{0:F2}%", 100 * counterData.ctr2 / counterData.ctr0),
+                        string.Format("{0:F2}", counterData.ctr1 / counterData.ctr2),
+                        string.Format("{0:F2}%", 100 * counterData.ctr4 / counterData.aperf),
+                        string.Format("{0:F2}", counterData.ctr4 / counterData.ctr5)
+                };
+            }
+        }
+
         public class DecodeHistogram : MonitoringConfig
         {
             private Zen2 cpu;
@@ -1171,6 +1245,159 @@ namespace PmcReader.AMD
             }
         }
 
+        public class LSConfig : MonitoringConfig
+        {
+            private Zen2 cpu;
+            public string GetConfigName() { return "Load/Store Unit"; }
+
+            public LSConfig(Zen2 amdCpu)
+            {
+                cpu = amdCpu;
+            }
+
+            public string[] GetColumns()
+            {
+                return columns;
+            }
+
+            public void Initialize()
+            {
+                cpu.EnablePerformanceCounters();
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    ThreadAffinity.Set(1UL << threadIdx);
+                    // ls dispatch, loads/load-op-store
+                    Ring0.WriteMsr(MSR_PERF_CTL_0, GetPerfCtlValue(0x29, 0b101, true, true, false, false, true, false, 0, 0, false, false));
+                    // store to load forward
+                    Ring0.WriteMsr(MSR_PERF_CTL_1, GetPerfCtlValue(0x35, 0, true, true, false, false, true, false, 0, 0, false, false));
+                    // stlf fail, StilNoState = no DC hit / valid DC way for a forward
+                    Ring0.WriteMsr(MSR_PERF_CTL_2, GetPerfCtlValue(0x24, 1, true, true, false, false, true, false, 0, 0, false, false));
+                    // stlf fail, StilOther = partial overlap, non-cacheable store, etc.
+                    Ring0.WriteMsr(MSR_PERF_CTL_3, GetPerfCtlValue(0x24, 2, true, true, false, false, true, false, 0, 0, false, false));
+                    // stlf fail, StlfNoData = forwarding checks out but no store data
+                    Ring0.WriteMsr(MSR_PERF_CTL_4, GetPerfCtlValue(0x24, 4, true, true, false, false, true, false, 0, 0, false, false));
+                    // Misaligned loads
+                    Ring0.WriteMsr(MSR_PERF_CTL_5, GetPerfCtlValue(0x47, 0, true, true, false, false, true, false, 0, 0, false, false));
+                }
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[cpu.GetThreadCount()][];
+                cpu.InitializeCoreTotals();
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    cpu.UpdateThreadCoreCounterData(threadIdx);
+                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
+                }
+
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "Loads", "Store Forwarded", "StilNoState", "StilOther", "StlfNoData", "Misaligned Loads" };
+
+            public string GetHelpText() 
+            {
+                return "Loads = loads and load-op-stores dispatched\n" +
+                    "StilNoState = Store forwarding fail, no L1D hit and a L1D way\n" +
+                    "StilOther = Store forwarding fail, other reasons like partial overlap or non-cacheable store\n" +
+                    "StlfNoData = Store data not yet available for forwarding\n";
+            }
+
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
+            {
+                return new string[] { label,
+                        FormatLargeNumber(counterData.aperf) + "/s",
+                        FormatLargeNumber(counterData.instr) + "/s",
+                        string.Format("{0:F2}", counterData.instr / counterData.aperf),
+                        FormatLargeNumber(counterData.ctr0),
+                        FormatLargeNumber(counterData.ctr1),
+                        FormatLargeNumber(counterData.ctr2),
+                        FormatLargeNumber(counterData.ctr3),
+                        FormatLargeNumber(counterData.ctr4),
+                        FormatLargeNumber(counterData.ctr5)
+                };
+            }
+        }
+
+        public class LSSwPrefetch : MonitoringConfig
+        {
+            private Zen2 cpu;
+            public string GetConfigName() { return "Software Prefetch"; }
+
+            public LSSwPrefetch(Zen2 amdCpu)
+            {
+                cpu = amdCpu;
+            }
+
+            public string[] GetColumns()
+            {
+                return columns;
+            }
+              
+            public void Initialize()
+            {
+                cpu.EnablePerformanceCounters();
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    ThreadAffinity.Set(1UL << threadIdx);
+                    // software prefetches, all documented umask bits (prefetch, prefetchw, prefetchnta)
+                    Ring0.WriteMsr(MSR_PERF_CTL_0, GetPerfCtlValue(0x4B, 0b111, true, true, false, false, true, false, 0, 0, false, false));
+                    // ineffective sw prefetches, DataPipeSwPfDcHit
+                    Ring0.WriteMsr(MSR_PERF_CTL_1, GetPerfCtlValue(0x52, 0b1, true, true, false, false, true, false, 0, 0, false, false));
+                    // ineffective sw prefetches, MabMchCnt
+                    Ring0.WriteMsr(MSR_PERF_CTL_2, GetPerfCtlValue(0x52, 0b10, true, true, false, false, true, false, 0, 0, false, false));
+                    // sw prefetch L2 hit
+                    Ring0.WriteMsr(MSR_PERF_CTL_3, GetPerfCtlValue(0x59, 0b1, true, true, false, false, true, false, 0, 0, false, false));
+                    // sw prefetch, l3 hit
+                    Ring0.WriteMsr(MSR_PERF_CTL_4, GetPerfCtlValue(0x59, 0x12, true, true, false, false, true, false, 0, 0, false, false));
+                    // sw prefetch, dram
+                    Ring0.WriteMsr(MSR_PERF_CTL_5, GetPerfCtlValue(0x59, 0x48, true, true, false, false, true, false, 0, 0, false, false));
+                }
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[cpu.GetThreadCount()][];
+                cpu.InitializeCoreTotals();
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    cpu.UpdateThreadCoreCounterData(threadIdx);
+                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
+                }
+
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "Sw Prefetches", "% useless", "Useless SwPf, DC hit", "Useless SwPf, MAB Hit", "SwPf, L2 hit", "SwPf, L3 hit", "SwPf, DRAM" };
+
+            public string GetHelpText()
+            {
+                return "Useless SwPf, DC hit - software prefetches that didn't fetch any data because it was already in L1D\n" +
+                    "MAB hit - same as above, no data fetched because an outstanding request for the requested data was pending (miss address buffer hit)";
+            }
+
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
+            {
+                return new string[] { label,
+                        FormatLargeNumber(counterData.aperf) + "/s",
+                        FormatLargeNumber(counterData.instr) + "/s",
+                        string.Format("{0:F2}", counterData.instr / counterData.aperf),
+                        FormatLargeNumber(counterData.ctr0),
+                        string.Format("{0:F2}%", 100 * (counterData.ctr1 + counterData.ctr2) / counterData.ctr0),
+                        FormatLargeNumber(counterData.ctr1),
+                        FormatLargeNumber(counterData.ctr2),
+                        FormatLargeNumber(counterData.ctr3),
+                        FormatLargeNumber(counterData.ctr4),
+                        FormatLargeNumber(counterData.ctr5)
+                };
+            }
+        }
+
         public class PowerConfig : MonitoringConfig
         {
             private Zen2 cpu;
@@ -1202,7 +1429,7 @@ namespace PmcReader.AMD
                     Ring0.WriteMsr(MSR_PERF_CTL_3, GetPerfCtlValue(0xCB, 0b111, true, true, false, false, true, false, 0, 0, false, false));
                     // dispatch stall 1
                     Ring0.WriteMsr(MSR_PERF_CTL_4, GetPerfCtlValue(0xAE, 0xFF, true, true, false, false, true, false, 0, 0, false, false));
-                    // dispathc stall 2
+                    // dispatch stall 2
                     Ring0.WriteMsr(MSR_PERF_CTL_5, GetPerfCtlValue(0xAF, 0x7F, true, true, false, false, true, false, 0, 0, false, false));
                 }
             }

@@ -76,6 +76,9 @@ namespace PmcReader
             coreMonitoring.targetListView = monitoringListView;
             l3Monitoring.targetListView = L3MonitoringListView;
             dfMonitoring.targetListView = dfMonitoringListView;
+            monitoringListView.FullRowSelect = true;
+            L3MonitoringListView.FullRowSelect = true;
+            dfMonitoringListView.FullRowSelect = true;
             if (dfLabelOverride != null) DataFabricConfigLabel.Text = dfLabelOverride;
 
             cpuidLabel.Text = string.Format("CPU: {0} Family 0x{1:X}, Model 0x{2:X}, Stepping 0x{3:x} - {4}", 
