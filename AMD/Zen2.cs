@@ -109,7 +109,7 @@ namespace PmcReader.AMD
                     string.Format("{0:F2}%", 100 * counterData.ctr1 / counterData.aperf),
                     FormatLargeNumber(counterData.ctr0),
                     string.Format("{0:F2}", counterData.ctr2 / counterData.ctr3),
-                    string.Format("{0:F2}%", counterData.ctr3 / counterData.aperf),
+                    string.Format("{0:F2}%", 100 * counterData.ctr3 / counterData.aperf),
                     FormatLargeNumber(counterData.ctr2),
                     string.Format("{0:F2}%", bogusOps),
                     string.Format("{0:F2}%", 100 * counterData.ctr5 / counterData.aperf) };
@@ -758,7 +758,7 @@ namespace PmcReader.AMD
                 return results;
             }
 
-            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "L1i Hitrate", "L1i MPKI", "ITLB Hitrate", "L2 ITLB Hitrate", "L2 ITLB MPKI", "L2->L1i BW", "Sys->L1i BW" };
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "L1i Hitrate", "L1i MPKI", "ITLB Hitrate", "ITLB MPKI", "L2 ITLB Hitrate", "L2 ITLB MPKI", "L2->L1i BW", "Sys->L1i BW", "L1i Misses" };
 
             public string GetHelpText()
             {
@@ -769,6 +769,7 @@ namespace PmcReader.AMD
             {
                 float l2CodeRequests = counterData.ctr0;
                 float itlbHits = counterData.ctr1;
+                float itlbMpki = (counterData.ctr2 + counterData.ctr3) / counterData.aperf;
                 float l2ItlbHits = counterData.ctr2;
                 float l2ItlbMisses = counterData.ctr3;
                 float l2IcRefills = counterData.ctr4;
@@ -787,10 +788,13 @@ namespace PmcReader.AMD
                         string.Format("{0:F2}%", icHitrate),
                         string.Format("{0:F2}", icMpki),
                         string.Format("{0:F2}%", itlbHitrate),
+                        string.Format("{0:F2}", itlbMpki),
                         string.Format("{0:F2}%", l2ItlbHitrate),
                         string.Format("{0:F2}", l2ItlbMpki),
                         FormatLargeNumber(l2RefillBw) + "B/s",
-                        FormatLargeNumber(sysRefillBw) + "B/s" };
+                        FormatLargeNumber(sysRefillBw) + "B/s",
+                        FormatLargeNumber(l2CodeRequests)
+                };
             }
         }
 
@@ -1377,8 +1381,8 @@ namespace PmcReader.AMD
 
             public string GetHelpText()
             {
-                return "Useless SwPf, DC hit - software prefetches that didn't fetch any data because it was already in L1D\n" +
-                    "MAB hit - same as above, no data fetched because an outstanding request for the requested data was pending (miss address buffer hit)";
+                return "Useless SwPf, DC hit - requested data already in L1D\n" +
+                    "Useless SwPf, MAB hit - request for data already pending";
             }
 
             private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
