@@ -1,4 +1,6 @@
 ﻿using PmcReader.Interop;
+using System;
+using System.Diagnostics;
 using System.Management.Instrumentation;
 
 namespace PmcReader.AMD
@@ -43,13 +45,22 @@ namespace PmcReader.AMD
         public const uint MSR_DF_PERF_CTR_2 = 0xC0010245;
         public const uint MSR_DF_PERF_CTR_3 = 0xC0010247;
 
+        public const uint MSR_RAPL_PWR_UNIT = 0xC0010299;
+        public const uint MSR_CORE_ENERGY_STAT = 0xC001029A;
+        public const uint MSR_PKG_ENERGY_STAT = 0xC001029B;
+
         public NormalizedCoreCounterData[] NormalizedThreadCounts;
         public NormalizedCoreCounterData NormalizedTotalCounts;
 
-        public ulong[] lastThreadAperf;
-        public ulong[] lastThreadRetiredInstructions;
-        public ulong[] lastThreadMperf;
-        public ulong[] lastThreadTsc;
+        private ulong[] lastThreadAperf;
+        private ulong[] lastThreadRetiredInstructions;
+        private ulong[] lastThreadMperf;
+        private ulong[] lastThreadTsc;
+        private ulong[] lastThreadPwr;
+        private ulong lastPkgPwr;
+        private Stopwatch lastPkgPwrTime;
+
+        private float energyStatusUnits;
 
         public Amd17hCpu()
         {
@@ -58,6 +69,13 @@ namespace PmcReader.AMD
             lastThreadRetiredInstructions = new ulong[GetThreadCount()];
             lastThreadMperf = new ulong[GetThreadCount()];
             lastThreadTsc = new ulong[GetThreadCount()];
+            lastThreadPwr = new ulong[GetThreadCount()];
+            lastPkgPwr = 0;
+
+            ulong raplPwrUnit;
+            Ring0.ReadMsr(MSR_RAPL_PWR_UNIT, out raplPwrUnit);
+            ulong energyUnits = (raplPwrUnit >> 8) & 0x1F; // bits 8-12 = energy status units
+            energyStatusUnits = (float)Math.Pow(0.5, (double)energyUnits); // 1/2 ^ (value)
         }
 
         /// <summary>
@@ -78,7 +96,7 @@ namespace PmcReader.AMD
         /// <returns>value for perf ctl msr</returns>
         public static ulong GetPerfCtlValue(byte perfEvent, byte umask, bool usr, bool os, bool edge, bool interrupt, bool enable, bool invert, byte cmask, byte perfEventHi, bool guest, bool host)
         {
-            return (ulong)perfEvent |
+            return perfEvent |
                 (ulong)umask << 8 |
                 (usr ? 1UL : 0UL) << 16 |
                 (os ? 1UL : 0UL) << 17 |
@@ -103,7 +121,7 @@ namespace PmcReader.AMD
         /// <returns>value to put in ChL3PmcCfg</returns>
         public static ulong GetL3PerfCtlValue(byte perfEvent, byte umask, bool enable, byte sliceMask, byte threadMask)
         {
-            return (ulong)perfEvent |
+            return perfEvent |
                 (ulong)umask << 8 |
                 (enable ? 1UL : 0UL) << 22 |
                 (ulong)sliceMask << 48 |
@@ -121,7 +139,7 @@ namespace PmcReader.AMD
         /// <returns>value to put in DF_PERF_CTL</returns>
         public static ulong GetDFPerfCtlValue(byte perfEventLow, byte umask, bool enable, byte perfEventHi, byte perfEventHi1)
         {
-            return (ulong)perfEventLow |
+            return perfEventLow |
                 (ulong)umask << 8 |
                 (enable ? 1UL : 0UL) << 22 |
                 (ulong)perfEventHi << 32 |
@@ -133,7 +151,6 @@ namespace PmcReader.AMD
         /// </summary>
         public void EnablePerformanceCounters()
         {
-            
             for (int threadIdx = 0; threadIdx < GetThreadCount(); threadIdx++)
             {
                 // Enable instructions retired counter
@@ -169,7 +186,7 @@ namespace PmcReader.AMD
         /// Update fixed counters for thread, affinity must be set going in
         /// </summary>
         /// <param name="threadIdx">thread to update fixed counters for</param>
-        public void UpdateFixedCounters(int threadIdx, out ulong elapsedAperf, out ulong elapsedInstr, out ulong elapsedTsc, out ulong elapsedMperf)
+        public void ReadFixedCounters(int threadIdx, out ulong elapsedAperf, out ulong elapsedInstr, out ulong elapsedTsc, out ulong elapsedMperf)
         {
             ulong aperf, instr, tsc, mperf;
             Ring0.ReadMsr(MSR_APERF, out aperf);
@@ -197,6 +214,50 @@ namespace PmcReader.AMD
         }
 
         /// <summary>
+        /// Read core energy consumed counter. Affinity must be set going in
+        /// </summary>
+        /// <param name="threadIdx">thread</param>
+        /// <param name="joulesConsumed">energy consumed</param>
+        public void ReadCorePowerCounter(int threadIdx, out float joulesConsumed)
+        {
+            ulong coreEnergyStat, elapsedEnergyStat;
+            Ring0.ReadMsr(MSR_CORE_ENERGY_STAT, out coreEnergyStat);
+            coreEnergyStat &= 0xFFFFFFFF; // bits 0-31 = total energy consumed. other bits reserved
+
+            elapsedEnergyStat = coreEnergyStat;
+            if (lastThreadPwr[threadIdx] < coreEnergyStat) elapsedEnergyStat = coreEnergyStat - lastThreadPwr[threadIdx];
+            lastThreadPwr[threadIdx] = coreEnergyStat;
+            joulesConsumed = elapsedEnergyStat * energyStatusUnits;
+        }
+
+        /// <summary>
+        /// Read package energy consumed counter
+        /// </summary>
+        /// <returns>Watts consumed</returns>
+        public float ReadPackagePowerCounter()
+        {
+            ulong pkgEnergyStat, elapsedEnergyStat;
+            float normalizationFactor = 1;
+            if (lastPkgPwrTime == null)
+            {
+                lastPkgPwrTime = new Stopwatch();
+                lastPkgPwrTime.Start();
+            }
+            else
+            {
+                lastPkgPwrTime.Stop();
+                normalizationFactor = 1000 / (float)lastPkgPwrTime.ElapsedMilliseconds;
+                lastPkgPwrTime.Restart();
+            }
+
+            Ring0.ReadMsr(MSR_PKG_ENERGY_STAT, out pkgEnergyStat);
+            elapsedEnergyStat = pkgEnergyStat;
+            if (lastPkgPwr < pkgEnergyStat) elapsedEnergyStat = pkgEnergyStat - lastPkgPwr;
+            lastPkgPwr = pkgEnergyStat;
+            return elapsedEnergyStat * energyStatusUnits * normalizationFactor;
+        }
+
+        /// <summary>
         /// initialize/reset accumulated totals for core counter data
         /// </summary>
         public void InitializeCoreTotals()
@@ -216,6 +277,7 @@ namespace PmcReader.AMD
             NormalizedTotalCounts.ctr3 = 0;
             NormalizedTotalCounts.ctr4 = 0;
             NormalizedTotalCounts.ctr5 = 0;
+            NormalizedTotalCounts.watts = 0;
         }
 
         /// <summary>
@@ -227,15 +289,17 @@ namespace PmcReader.AMD
         {
             ThreadAffinity.Set(1UL << threadIdx);
             float normalizationFactor = GetNormalizationFactor(threadIdx);
+            float joules;
             ulong aperf, mperf, tsc, instr;
             ulong ctr0, ctr1, ctr2, ctr3, ctr4, ctr5;
-            UpdateFixedCounters(threadIdx, out aperf, out instr, out tsc, out mperf);
+            ReadFixedCounters(threadIdx, out aperf, out instr, out tsc, out mperf);
             ctr0 = ReadAndClearMsr(MSR_PERF_CTR_0);
             ctr1 = ReadAndClearMsr(MSR_PERF_CTR_1);
             ctr2 = ReadAndClearMsr(MSR_PERF_CTR_2);
             ctr3 = ReadAndClearMsr(MSR_PERF_CTR_3);
             ctr4 = ReadAndClearMsr(MSR_PERF_CTR_4);
             ctr5 = ReadAndClearMsr(MSR_PERF_CTR_5);
+            ReadCorePowerCounter(threadIdx, out joules);
 
             if (NormalizedThreadCounts == null)
             {
@@ -257,6 +321,7 @@ namespace PmcReader.AMD
             NormalizedThreadCounts[threadIdx].ctr3 = ctr3 * normalizationFactor;
             NormalizedThreadCounts[threadIdx].ctr4 = ctr4 * normalizationFactor;
             NormalizedThreadCounts[threadIdx].ctr5 = ctr5 * normalizationFactor;
+            NormalizedThreadCounts[threadIdx].watts = joules * normalizationFactor;
             NormalizedThreadCounts[threadIdx].NormalizationFactor = normalizationFactor;
             NormalizedTotalCounts.aperf += NormalizedThreadCounts[threadIdx].aperf;
             NormalizedTotalCounts.mperf += NormalizedThreadCounts[threadIdx].mperf;
@@ -286,6 +351,7 @@ namespace PmcReader.AMD
             public float ctr3;
             public float ctr4;
             public float ctr5;
+            public float watts;
             public float NormalizationFactor;
         }
     }

@@ -22,6 +22,7 @@ namespace PmcReader.AMD
             private const int monitoringThread = 1;
 
             public string[] columns = new string[] { "Item", "DRAM BW" };
+            public string GetHelpText() { return ""; }
             public DramBwConfig(Zen2DataFabric dataFabric)
             {
                 this.dataFabric = dataFabric;
@@ -84,6 +85,7 @@ namespace PmcReader.AMD
             private const int monitoringThread = 1;
 
             public string[] columns = new string[] { "Item", "Count * 64B", "Count" };
+            public string GetHelpText() { return ""; }
             public BwTestConfig(Zen2DataFabric dataFabric)
             {
                 this.dataFabric = dataFabric;
@@ -138,6 +140,7 @@ namespace PmcReader.AMD
             private const int monitoringThread = 1;
 
             public string[] columns = new string[] { "Item", "DRAM BW 1" };
+            public string GetHelpText() { return ""; }
             public DramBw1Config(Zen2DataFabric dataFabric)
             {
                 this.dataFabric = dataFabric;
@@ -194,6 +197,7 @@ namespace PmcReader.AMD
             private const int monitoringThread = 1;
 
             public string[] columns = new string[] { "Item", "Outbound Data BW" };
+            public string GetHelpText() { return ""; }
             public OutboundDataConfig(Zen2DataFabric dataFabric)
             {
                 this.dataFabric = dataFabric;

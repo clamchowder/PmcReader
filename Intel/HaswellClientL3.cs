@@ -111,6 +111,8 @@ namespace PmcReader.Intel
 
             public string[] columns = new string[] { "Item", "Hitrate", "Hit BW", "All Lookups", "I state" };
 
+            public string GetHelpText() { return ""; }
+
             private string[] computeMetrics(string label, NormalizedCboCounterData counterData)
             {
                 return new string[] { label,
@@ -171,6 +173,8 @@ namespace PmcReader.Intel
 
             public string[] columns = new string[] { "Item", "Invalidate Resp %", "Invalidate BW", "All Snoop Responses", "Core Cache Lines Invalidated" };
 
+            public string GetHelpText() { return ""; }
+
             private string[] computeMetrics(string label, NormalizedCboCounterData counterData)
             {
                 return new string[] { label,
@@ -230,6 +234,8 @@ namespace PmcReader.Intel
             }
 
             public string[] columns = new string[] { "Item", "Snoop Hitrate", "Snoop Hit BW", "All Snoop Responses", "Snoop Hits" };
+
+            public string GetHelpText() { return ""; }
 
             private string[] computeMetrics(string label, NormalizedCboCounterData counterData)
             {

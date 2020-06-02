@@ -1,5 +1,6 @@
 ﻿using PmcReader.Interop;
 using System;
+using System.Runtime.Remoting.Messaging;
 using System.Threading;
 
 namespace PmcReader.Intel
@@ -249,6 +250,7 @@ namespace PmcReader.Intel
             }
 
             public string[] columns = new string[] { "Item", "Cycles", "Count", "Latency", "Latency" };
+            public string GetHelpText() { return ""; }
         }
 
         public class Limits : MonitoringConfig
@@ -291,6 +293,7 @@ namespace PmcReader.Intel
             }
 
             public string[] columns = new string[] { "Freq Limit", "Cycles" };
+            public string GetHelpText() { return ""; }
         }
 
         public class ChangeAndPhaseShedding : MonitoringConfig
@@ -333,6 +336,7 @@ namespace PmcReader.Intel
             }
 
             public string[] columns = new string[] { "Item", "Cycles" };
+            public string GetHelpText() { return ""; }
         }
     }
 }

@@ -237,6 +237,8 @@ namespace PmcReader.Intel
 
             public string[] columns = new string[] { "Item", "Norm", "REF_TSC", "Active Cycles", "Instructions", "IPC", "BPU Accuracy", "Branch MPKI", "BTB Hitrate", "% Branches" };
 
+            public string GetHelpText() { return ""; }
+
             private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
             {
                 float bpuAccuracy = (1 - counterData.Pmc1 / counterData.Pmc0) * 100;
@@ -317,6 +319,8 @@ namespace PmcReader.Intel
             }
 
             public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "Op$ Hitrate", "Op$ Ops/C", "Op$ Active", "Decoder Ops/C", "Decoder Active", "Op$ Ops", "Decoder Ops" };
+
+            public string GetHelpText() { return ""; }
 
             private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
             {

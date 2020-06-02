@@ -127,9 +127,10 @@ namespace PmcReader.AMD
                     foreach (int ccxThreadIdx in l3Cache.allCcxThreads[ccxThread.Key])
                     {
                         ThreadAffinity.Set(1UL << ccxThreadIdx);
+                        float normalizationFactor = l3Cache.GetNormalizationFactor(l3Cache.GetThreadCount() + ccxThreadIdx);
                         ulong aperf, mperf, tsc;
-                        l3Cache.UpdateFixedCounters(ccxThreadIdx, out aperf, out _, out tsc, out mperf);
-                        float clk = tsc * ((float)aperf / mperf);
+                        l3Cache.ReadFixedCounters(ccxThreadIdx, out aperf, out _, out tsc, out mperf);
+                        float clk = tsc * ((float)aperf / mperf) * normalizationFactor;
                         if (clk > ccxClocks[ccxThread.Key]) ccxClocks[ccxThread.Key] = clk;
                         if (ccxThreadIdx == ccxThread.Value)
                         {
@@ -146,7 +147,9 @@ namespace PmcReader.AMD
                 return results;
             }
 
-            public string[] columns = new string[] { "Item", "Clk?", "Hitrate", "Hit BW", "Mem Latency", "Mem Latency?", "Pend. Miss/Clk", "SDP Requests", "SDP Requests * 64B" };
+            public string[] columns = new string[] { "Item", "Clk", "Hitrate", "Hit BW", "Mem Latency", "Mem Latency?", "Pend. Miss/C", "SDP Requests", "SDP Requests * 64B" };
+
+            public string GetHelpText() { return ""; }
 
             private string[] computeMetrics(string label, L3CounterData counterData, float clk)
             {
@@ -215,6 +218,8 @@ namespace PmcReader.AMD
 
             public string[] columns = new string[] { "Item", "Hitrate", "Hit BW", "Slice 0", "Slice 1", "Slice 2", "Slice 3" };
 
+            public string GetHelpText() { return ""; }
+
             private string[] computeMetrics(string label, L3CounterData counterData)
             {
                 float ccxL3Hitrate = (1 - counterData.ctr1 / counterData.ctr0) * 100;
@@ -277,6 +282,8 @@ namespace PmcReader.AMD
             }
 
             public string[] columns = new string[] { "Item", "Hitrate", "Hit BW", "Lookup 0x1 (Miss)", "Lookup 0x2", "Lookup 0x4", "Lookup 0x8", "Lookup 0x10", "Lookup 0xE0" };
+
+            public string GetHelpText() { return ""; }
 
             private string[] computeMetrics(string label, L3CounterData counterData)
             {
