@@ -1,5 +1,5 @@
 ﻿using System;
-using System.Threading;
+using System.Runtime.InteropServices.WindowsRuntime;
 using PmcReader.Interop;
 
 namespace PmcReader.AMD
@@ -82,6 +82,7 @@ namespace PmcReader.AMD
                 }
 
                 results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                results.overallCounterValues = cpu.GetOverallCounterValues("Op Cache Ops", "Op Cache Ops cmask=1", "Decoder Ops", "Decoder Ops cmask=1", "Retired Ops", "Mop Queue Empty Cycles");
                 return results;
             }
 
@@ -169,6 +170,7 @@ namespace PmcReader.AMD
                 }
 
                 results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                results.overallCounterValues = cpu.GetOverallCounterValues("Retired Branches", "Retired Misp Branches", "L1 BTB Override", "L2 BTB Override", "Decoder Override", "Fused Branches");
                 return results;
             }
 
@@ -342,6 +344,15 @@ namespace PmcReader.AMD
                         string.Format("{0:F1}", overallFlopsPerClk),
                         string.Format("{0:F2}%", totalFpSchStallPct),
                         string.Format("{0:F2}%", totalFpRegsStallPct) };
+
+                Tuple<string, float>[] overallCounterValues = new Tuple<string, float>[6];
+                overallCounterValues[0] = new Tuple<string, float>("APERF", totalActiveCycles);
+                overallCounterValues[1] = new Tuple<string, float>("IRPerfCount", totalRetiredInstructions);
+                overallCounterValues[2] = new Tuple<string, float>("FMA FLOPS", totalMacFlops);
+                overallCounterValues[3] = new Tuple<string, float>("Non-FMA FLOPS", totalOtherFlops);
+                overallCounterValues[4] = new Tuple<string, float>("FP Scheduler Full", totalFpSchedulerStalls);
+                overallCounterValues[6] = new Tuple<string, float>("FP Regs Full", totalFpRegFullStalls);
+                results.overallCounterValues = overallCounterValues;
                 return results;
             }
         }
@@ -400,6 +411,7 @@ namespace PmcReader.AMD
                 }
 
                 results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                results.overallCounterValues = cpu.GetOverallCounterValues("ROB Full", "LDQ Full", "STQ Full", "Taken Branch Buffer Full", "ScAguDispatchStall", "AGSQ Full");
                 return results;
             }
 
@@ -504,6 +516,7 @@ namespace PmcReader.AMD
                 }
 
                 results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                results.overallCounterValues = cpu.GetOverallCounterValues("ALSQ3_0 Full", "ALSQ1 Full", "ALSQ2 Full", "ALU Tokens Unavailable", "Int Regs Full", "Int Sched Misc Stall");
                 return results;
             }
 
@@ -545,7 +558,7 @@ namespace PmcReader.AMD
                 ulong l2DataRequests = GetPerfCtlValue(0x64, 0xF8, true, true, false, false, true, false, 0, 0, false, false);
                 ulong l2DataMiss = GetPerfCtlValue(0x64, 0x8, true, true, false, false, true, false, 0, 0, false, false);
                 ulong l2PrefetchRequests = GetPerfCtlValue(0x60, 0x2, true, true, false, false, true, false, 0, 0, false, false);
-                ulong l2PrefetchHits = GetPerfCtlValue(0x70, 0x7, true, true, false, false, true, false, 0, 0, false, false);
+                ulong l2PrefetchHits = GetPerfCtlValue(0x70, 0xFF, true, true, false, false, true, false, 0, 0, false, false);
 
                 for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
                 {
@@ -571,6 +584,7 @@ namespace PmcReader.AMD
                 }
 
                 results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                results.overallCounterValues = cpu.GetOverallCounterValues("L2 Code Req", "L2 Code Miss", "L2 Data Req", "L2 Data Miss", "L2 Prefetch Requests", "L2 Prefetch Hit");
                 return results;
             }
 
@@ -663,6 +677,7 @@ namespace PmcReader.AMD
                     results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
                 }
 
+                results.overallCounterValues = cpu.GetOverallCounterValues("DC Access", "LsMabAlloc", "DC Refill From L2", "DC Refill From L3", "DC Refill From DRAM", "DC HW Prefetch");
                 results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
                 return results;
             }
@@ -755,6 +770,7 @@ namespace PmcReader.AMD
                 }
 
                 results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                results.overallCounterValues = cpu.GetOverallCounterValues("L2 Code Requests", "ITLB Hit", "ITLB Miss L2 ITLB Hit", "L2 ITLB Miss", "IC Refill From L2", "IC Refill From System");
                 return results;
             }
 
@@ -769,7 +785,7 @@ namespace PmcReader.AMD
             {
                 float l2CodeRequests = counterData.ctr0;
                 float itlbHits = counterData.ctr1;
-                float itlbMpki = (counterData.ctr2 + counterData.ctr3) / counterData.aperf;
+                float itlbMpki = (counterData.ctr2 + counterData.ctr3) / counterData.instr * 100;
                 float l2ItlbHits = counterData.ctr2;
                 float l2ItlbMisses = counterData.ctr3;
                 float l2IcRefills = counterData.ctr4;
@@ -845,6 +861,7 @@ namespace PmcReader.AMD
                     results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
                 }
 
+                results.overallCounterValues = cpu.GetOverallCounterValues("Retired Branches", "Retired Taken Branches", "Dynamic Indirect Predictions", "Retired Mispredicted Indirect Branches", "Retired Near Returns", "Retired Near Returns Mispredicted");
                 results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
                 return results;
             }
@@ -865,11 +882,11 @@ namespace PmcReader.AMD
                         FormatLargeNumber(counterData.aperf) + "/s",
                         FormatLargeNumber(counterData.instr) + "/s",
                         string.Format("{0:F2}", counterData.instr / counterData.aperf),
-                        string.Format("{0:F2}%", (float)counterData.ctr0 / counterData.instr * 100),
-                        string.Format("{0:F2}%", (float)counterData.ctr1 / counterData.ctr0 * 100),
-                        string.Format("{0:F2}%", (float)counterData.ctr2 / counterData.aperf * 4 * 100),
-                        string.Format("{0:F2}", (float)counterData.ctr3 / counterData.instr * 1000),
-                        string.Format("{0:F2}%", (1 - (float)counterData.ctr5 / counterData.ctr4) * 100)};
+                        string.Format("{0:F2}%", counterData.ctr0 / counterData.instr * 100),
+                        string.Format("{0:F2}%", counterData.ctr1 / counterData.ctr0 * 100),
+                        string.Format("{0:F2}%", counterData.ctr2 / counterData.aperf * 4 * 100),
+                        string.Format("{0:F2}", counterData.ctr3 / counterData.instr * 1000),
+                        string.Format("{0:F2}%", (1 - counterData.ctr5 / counterData.ctr4) * 100)};
             }
         }
 
@@ -920,6 +937,7 @@ namespace PmcReader.AMD
                     results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
                 }
 
+                results.overallCounterValues = cpu.GetOverallCounterValues("LS Dispatch", "DTLB Miss STLB Hit", "STLB Miss", "Coalesced Page Hit", "Coalesced Page Miss", "TLB Flush");
                 results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
                 return results;
             }
@@ -1001,6 +1019,7 @@ namespace PmcReader.AMD
                 }
 
                 results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts, true, cpu.ReadPackagePowerCounter());
+                results.overallCounterValues = cpu.GetOverallCounterValues("FP0", "FP1", "FP2", "FP3", "L2 Requests Group 1", "L2 Request Latency");
                 return results;
             }
 
@@ -1081,6 +1100,7 @@ namespace PmcReader.AMD
                 }
 
                 results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                results.overallCounterValues = cpu.GetOverallCounterValues("Ret uops cmask 1", "Ret uops cmask 2", "Ret uops cmask 3", "ret uops cmask 4", "ret uops cmask 5", "ret uops cmask 6");
                 return results;
             }
 
@@ -1296,6 +1316,7 @@ namespace PmcReader.AMD
                     results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
                 }
 
+                results.overallCounterValues = cpu.GetOverallCounterValues("LS Dispatch Load/LoadOpStore", "Store Forwarded", "StilNoState", "StilOther", "StilNoData", "Misaligned Loads");
                 results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
                 return results;
             }
@@ -1373,6 +1394,7 @@ namespace PmcReader.AMD
                     results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
                 }
 
+                results.overallCounterValues = cpu.GetOverallCounterValues("Software Prefetches", "DataPipeSwPfDcHit", "MabMchCnt", "Sw Prefetch L2 Hit", "Sw Prefetch L3 Hit", "Sw Prefetch DRAM Hit");
                 results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
                 return results;
             }
@@ -1450,6 +1472,7 @@ namespace PmcReader.AMD
                 }
 
                 results.overallMetrics = computeMetrics("Package", cpu.NormalizedTotalCounts, true, cpu.ReadPackagePowerCounter());
+                results.overallCounterValues = cpu.GetOverallCounterValues("Retired Flops", "(merge)", "Retired Ops", "Retired MMX/FP", "Dispatch Stall 1", "Dispatch Stall 2");
                 return results;
             }
 

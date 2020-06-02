@@ -139,6 +139,26 @@ namespace PmcReader
 
         }
 
+        private void HaswellForm_Load(object sender, EventArgs e)
+        {
+            errorLabel.Text = "";
+        }
+
+        private void logButton_Click(object sender, EventArgs e)
+        {
+            // Only log core events for now
+            coreMonitoring.monitoringArea.StopLoggingToFile();
+            string error = coreMonitoring.monitoringArea.StartLogToFile(logFilePathTextBox.Text);
+            if (error != null) errorLabel.Text = error;
+            else errorLabel.Text = "Logging started";
+        }
+
+        private void stopLoggingButton_Click(object sender, EventArgs e)
+        {
+            coreMonitoring.monitoringArea.StopLoggingToFile();
+            errorLabel.Text = "Logging stopped";
+        }
+
         private void applyConfigButton_Click(object sender, EventArgs e)
         {
             applyMonitoringConfig(coreMonitoring, configSelect, helpTextLabel);
@@ -185,6 +205,7 @@ namespace PmcReader
 
             if (setup.monitoringThread != null && setup.monitoringThreadCancellation != null)
             {
+                coreMonitoring.monitoringArea.StopLoggingToFile();
                 setup.monitoringThreadCancellation.Cancel();
                 setup.monitoringThread.Wait();
             }

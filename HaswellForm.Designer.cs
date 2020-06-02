@@ -40,10 +40,14 @@
             this.L3MonitoringListView = new System.Windows.Forms.ListView();
             this.dfConfigSelect = new System.Windows.Forms.ListView();
             this.DataFabricConfigLabel = new System.Windows.Forms.Label();
-            this.button1 = new System.Windows.Forms.Button();
+            this.applyDfConfigButton = new System.Windows.Forms.Button();
             this.dfMonitoringListView = new System.Windows.Forms.ListView();
             this.l3ErrorMessage = new System.Windows.Forms.Label();
             this.helpTextLabel = new System.Windows.Forms.Label();
+            this.logButton = new System.Windows.Forms.Button();
+            this.logFilePathTextBox = new System.Windows.Forms.TextBox();
+            this.stopLoggingButton = new System.Windows.Forms.Button();
+            this.logFilePathLabel = new System.Windows.Forms.Label();
             this.SuspendLayout();
             // 
             // configSelect
@@ -99,10 +103,11 @@
             // errorLabel
             // 
             this.errorLabel.AutoSize = true;
-            this.errorLabel.Location = new System.Drawing.Point(94, 135);
+            this.errorLabel.Location = new System.Drawing.Point(193, 18);
             this.errorLabel.Name = "errorLabel";
-            this.errorLabel.Size = new System.Drawing.Size(0, 13);
+            this.errorLabel.Size = new System.Drawing.Size(34, 13);
             this.errorLabel.TabIndex = 6;
+            this.errorLabel.Text = "(error)";
             // 
             // L3ConfigSelect
             // 
@@ -162,15 +167,15 @@
             this.DataFabricConfigLabel.TabIndex = 12;
             this.DataFabricConfigLabel.Text = "Data Fabric PMC Configurations (pick one):";
             // 
-            // button1
+            // applyDfConfigButton
             // 
-            this.button1.Location = new System.Drawing.Point(700, 528);
-            this.button1.Name = "button1";
-            this.button1.Size = new System.Drawing.Size(102, 23);
-            this.button1.TabIndex = 13;
-            this.button1.Text = "Apply DF Config";
-            this.button1.UseVisualStyleBackColor = true;
-            this.button1.Click += new System.EventHandler(this.applyDfConfigButton_Click);
+            this.applyDfConfigButton.Location = new System.Drawing.Point(700, 528);
+            this.applyDfConfigButton.Name = "applyDfConfigButton";
+            this.applyDfConfigButton.Size = new System.Drawing.Size(102, 23);
+            this.applyDfConfigButton.TabIndex = 13;
+            this.applyDfConfigButton.Text = "Apply DF Config";
+            this.applyDfConfigButton.UseVisualStyleBackColor = true;
+            this.applyDfConfigButton.Click += new System.EventHandler(this.applyDfConfigButton_Click);
             // 
             // dfMonitoringListView
             // 
@@ -199,15 +204,55 @@
             this.helpTextLabel.Size = new System.Drawing.Size(0, 13);
             this.helpTextLabel.TabIndex = 16;
             // 
+            // logButton
+            // 
+            this.logButton.Location = new System.Drawing.Point(527, 123);
+            this.logButton.Name = "logButton";
+            this.logButton.Size = new System.Drawing.Size(75, 23);
+            this.logButton.TabIndex = 17;
+            this.logButton.Text = "Log To File";
+            this.logButton.UseVisualStyleBackColor = true;
+            this.logButton.Click += new System.EventHandler(this.logButton_Click);
+            // 
+            // logFilePathTextBox
+            // 
+            this.logFilePathTextBox.Location = new System.Drawing.Point(303, 125);
+            this.logFilePathTextBox.Name = "logFilePathTextBox";
+            this.logFilePathTextBox.Size = new System.Drawing.Size(218, 20);
+            this.logFilePathTextBox.TabIndex = 18;
+            // 
+            // stopLoggingButton
+            // 
+            this.stopLoggingButton.Location = new System.Drawing.Point(608, 123);
+            this.stopLoggingButton.Name = "stopLoggingButton";
+            this.stopLoggingButton.Size = new System.Drawing.Size(87, 23);
+            this.stopLoggingButton.TabIndex = 19;
+            this.stopLoggingButton.Text = "Stop Logging";
+            this.stopLoggingButton.UseVisualStyleBackColor = true;
+            this.stopLoggingButton.Click += new System.EventHandler(this.stopLoggingButton_Click);
+            // 
+            // logFilePathLabel
+            // 
+            this.logFilePathLabel.AutoSize = true;
+            this.logFilePathLabel.Location = new System.Drawing.Point(228, 128);
+            this.logFilePathLabel.Name = "logFilePathLabel";
+            this.logFilePathLabel.Size = new System.Drawing.Size(69, 13);
+            this.logFilePathLabel.TabIndex = 20;
+            this.logFilePathLabel.Text = "Log File Path";
+            // 
             // HaswellForm
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.ClientSize = new System.Drawing.Size(1197, 687);
+            this.Controls.Add(this.logFilePathLabel);
+            this.Controls.Add(this.stopLoggingButton);
+            this.Controls.Add(this.logFilePathTextBox);
+            this.Controls.Add(this.logButton);
             this.Controls.Add(this.helpTextLabel);
             this.Controls.Add(this.l3ErrorMessage);
             this.Controls.Add(this.dfMonitoringListView);
-            this.Controls.Add(this.button1);
+            this.Controls.Add(this.applyDfConfigButton);
             this.Controls.Add(this.DataFabricConfigLabel);
             this.Controls.Add(this.dfConfigSelect);
             this.Controls.Add(this.L3MonitoringListView);
@@ -222,6 +267,7 @@
             this.Controls.Add(this.configSelect);
             this.Name = "HaswellForm";
             this.Text = "CPU Performance Monitoring";
+            this.Load += new System.EventHandler(this.HaswellForm_Load);
             this.ResumeLayout(false);
             this.PerformLayout();
 
@@ -240,10 +286,14 @@
         private System.Windows.Forms.ListView L3MonitoringListView;
         private System.Windows.Forms.ListView dfConfigSelect;
         private System.Windows.Forms.Label DataFabricConfigLabel;
-        private System.Windows.Forms.Button button1;
+        private System.Windows.Forms.Button applyDfConfigButton;
         private System.Windows.Forms.ListView dfMonitoringListView;
         private System.Windows.Forms.Label l3ErrorMessage;
         private System.Windows.Forms.Label helpTextLabel;
+        private System.Windows.Forms.Button logButton;
+        private System.Windows.Forms.TextBox logFilePathTextBox;
+        private System.Windows.Forms.Button stopLoggingButton;
+        private System.Windows.Forms.Label logFilePathLabel;
     }
 }
 
