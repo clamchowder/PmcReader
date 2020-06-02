@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Threading;
 using System.Windows.Forms;
 using PmcReader.Interop;
@@ -16,6 +17,9 @@ namespace PmcReader
         protected int threadCount = 0;
         protected string architectureName = "Generic";
         private Dictionary<int, Stopwatch> lastUpdateTimers;
+        private string logFilePath = null;
+        private Object logFileLock = new object();
+        private bool logFileHeadersWritten = false;
 
         public GenericMonitoringArea()
         {
@@ -38,6 +42,59 @@ namespace PmcReader
         }
 
         /// <summary>
+        /// Start logging to file
+        /// </summary>
+        /// <param name="filePath">File to log to</param>
+        /// <returns>null if successful, error string if something went wrong</returns>
+        public string StartLogToFile(string filePath)
+        {
+            if (string.IsNullOrEmpty(filePath))
+            {
+                return "No file path to log to";
+            }
+
+            if (!File.Exists(filePath))
+            {
+                try
+                {
+                    File.WriteAllText(filePath, "");
+                }
+                catch (Exception e)
+                {
+                    return e.Message;
+                }
+            }
+            else
+            {
+                try
+                {
+                    // just do this to check permissions
+                    File.WriteAllText(filePath, "");
+                }
+                catch (Exception e)
+                {
+                    return e.Message;
+                }
+            }
+
+            logFileHeadersWritten = false;
+            lock (logFileLock)
+            {
+                logFilePath = filePath;
+            }
+
+            return null;
+        }
+
+        public void StopLoggingToFile()
+        {
+            lock (logFileLock)
+            {
+                logFilePath = null;
+            }
+        }
+
+        /// <summary>
         /// Starts background monitoring thread that periodically updates monitoring list view 
         /// with new results
         /// </summary>
@@ -49,6 +106,9 @@ namespace PmcReader
         {
             MonitoringConfig selectedConfig = monitoringConfigs[configId];
             lastUpdateTimers = null;
+
+            if (cancelToken.IsCancellationRequested) return;
+
             selectedConfig.Initialize();
             SafeSetMonitoringListViewColumns cd = new SafeSetMonitoringListViewColumns(SetMonitoringListViewColumns);
             listView.Invoke(cd, selectedConfig.GetColumns(), listView);
@@ -58,6 +118,78 @@ namespace PmcReader
                 // update list box with results (and we're always on a different thread)
                 SafeSetMonitoringListViewItems d = new SafeSetMonitoringListViewItems(SetMonitoringListView);
                 listView.Invoke(d, updateResults, listView);
+
+                // log to file, if we're doing that
+                lock (logFileLock)
+                {
+                    if (!string.IsNullOrEmpty(logFilePath))
+                    {
+                        // log raw counter values if available. otherwise log metrics
+                        // eventually I want to move everything over to log raw counter values
+                        bool first;
+                        if (updateResults.overallCounterValues != null)
+                        {
+                            if (!logFileHeadersWritten)
+                            {
+                                string csvHeader = "";
+                                first = true;
+                                foreach(Tuple<string, float> counterValue in updateResults.overallCounterValues)
+                                {
+                                    if (first) csvHeader += counterValue.Item1;
+                                    else csvHeader += "," + counterValue.Item1;
+                                    first = false;
+                                }
+
+                                csvHeader += "\n";
+                                File.AppendAllText(logFilePath, csvHeader);
+                                logFileHeadersWritten = true;
+                            }
+
+                            string csvLine = "";
+                            first = true;
+                            foreach(Tuple<string, float> counterValue in updateResults.overallCounterValues)
+                            {
+                                if (first) csvLine += counterValue.Item2;
+                                else csvLine += "," + counterValue.Item2;
+                                first = false;
+                            }
+
+                            csvLine += "\n";
+                            File.AppendAllText(logFilePath, csvLine);
+                        }
+                        else if (updateResults.overallMetrics != null)
+                        {
+                            if (!logFileHeadersWritten)
+                            {
+                                string csvHeader = "";
+                                first = true;
+                                foreach(string columnHeader in selectedConfig.GetColumns())
+                                {
+                                    if (first) csvHeader += columnHeader;
+                                    else csvHeader += "," + columnHeader;
+                                    first = false;
+                                }
+
+                                csvHeader += "\n";
+                                File.AppendAllText(logFilePath, csvHeader);
+                                logFileHeadersWritten = true;
+                            }
+
+                            string csvLine = "";
+                            first = true;
+                            foreach(string value in updateResults.overallMetrics)
+                            {
+                                if (first) csvLine += value;
+                                else csvLine += "," + value;
+                                first = false;
+                            }
+
+                            csvLine += "\n";
+                            File.AppendAllText(logFilePath, csvLine);
+                        }
+                    }
+                }
+
                 Thread.Sleep(1000);
             }
         }

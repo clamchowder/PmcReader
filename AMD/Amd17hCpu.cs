@@ -336,6 +336,33 @@ namespace PmcReader.AMD
         }
 
         /// <summary>
+        /// Assemble overall counter values into a Tuple of string, float array.
+        /// </summary>
+        /// <param name="ctr0">Description for counter 0 value</param>
+        /// <param name="ctr1">Description for counter 1 value</param>
+        /// <param name="ctr2">Description for counter 2 value</param>
+        /// <param name="ctr3">Description for counter 3 value</param>
+        /// <param name="ctr4">Description for counter 4 value</param>
+        /// <param name="ctr5">Description for counter 5 value</param>
+        /// <returns>Array to put in results object</returns>
+        public Tuple<string, float>[] GetOverallCounterValues(string ctr0, string ctr1, string ctr2, string ctr3, string ctr4, string ctr5)
+        {
+            Tuple<string, float>[] retval = new Tuple<string, float>[11];
+            retval[0] = new Tuple<string, float>("APERF", NormalizedTotalCounts.aperf);
+            retval[1] = new Tuple<string, float>("MPERF", NormalizedTotalCounts.mperf);
+            retval[2] = new Tuple<string, float>("TSC", NormalizedTotalCounts.tsc);
+            retval[3] = new Tuple<string, float>("IRPerfCount", NormalizedTotalCounts.instr);
+            retval[4] = new Tuple<string, float>("Watts", NormalizedTotalCounts.watts);
+            retval[5] = new Tuple<string, float>(ctr0, NormalizedTotalCounts.ctr0);
+            retval[6] = new Tuple<string, float>(ctr1, NormalizedTotalCounts.ctr1);
+            retval[7] = new Tuple<string, float>(ctr2, NormalizedTotalCounts.ctr2);
+            retval[8] = new Tuple<string, float>(ctr3, NormalizedTotalCounts.ctr3);
+            retval[9] = new Tuple<string, float>(ctr4, NormalizedTotalCounts.ctr4);
+            retval[10] = new Tuple<string, float>(ctr5, NormalizedTotalCounts.ctr5);
+            return retval;
+        }
+
+        /// <summary>
         /// Holds performance counter, read out from the three fixed counters
         /// and four programmable ones
         /// </summary>

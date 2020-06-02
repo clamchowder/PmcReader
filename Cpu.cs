@@ -24,6 +24,9 @@ namespace PmcReader
         /// </summary>
         /// <returns>Number of threads</returns>
         int GetThreadCount();
+
+        string StartLogToFile(string filePath);
+        void StopLoggingToFile();
     }
 
     public interface MonitoringConfig
@@ -76,5 +79,10 @@ namespace PmcReader
         /// List of per-unit metrics
         /// </summary>
         public string[][] unitMetrics;
+
+        /// <summary>
+        /// Counter values, for logging
+        /// </summary>
+        public Tuple<string, float>[] overallCounterValues;
     }
 }
