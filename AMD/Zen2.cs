@@ -345,7 +345,7 @@ namespace PmcReader.AMD
                         string.Format("{0:F2}%", totalFpSchStallPct),
                         string.Format("{0:F2}%", totalFpRegsStallPct) };
 
-                Tuple<string, float>[] overallCounterValues = new Tuple<string, float>[6];
+                Tuple<string, float>[] overallCounterValues = new Tuple<string, float>[7];
                 overallCounterValues[0] = new Tuple<string, float>("APERF", totalActiveCycles);
                 overallCounterValues[1] = new Tuple<string, float>("IRPerfCount", totalRetiredInstructions);
                 overallCounterValues[2] = new Tuple<string, float>("FMA FLOPS", totalMacFlops);
