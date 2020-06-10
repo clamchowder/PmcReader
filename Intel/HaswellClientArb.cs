@@ -89,6 +89,7 @@ namespace PmcReader.Intel
                 return results;
             }
 
+            public string GetHelpText() { return ""; }
             public string[] columns = new string[] { "Clk", "Requests", "Q Occupancy", "Req Latency", "Req Latency" };
         }
 
@@ -134,6 +135,7 @@ namespace PmcReader.Intel
                 return results;
             }
 
+            public string GetHelpText() { return ""; }
             public string[] columns = new string[] { "Clk", "Requests", "Q Occupancy", "Req Latency", "Req Latency" };
         }
     }
