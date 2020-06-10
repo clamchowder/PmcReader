@@ -11,8 +11,9 @@ namespace PmcReader.Intel
         {
             architectureName = "Haswell Client System Agent";
             lastUncoreClockCount = 0;
-            monitoringConfigs = new MonitoringConfig[1];
-            monitoringConfigs[0] = new AllRequests(this);
+            monitoringConfigs = new MonitoringConfig[2];
+            monitoringConfigs[0] = new MCRequests(this);
+            monitoringConfigs[1] = new CoherencyRequests(this);
         }
 
         public class NormalizedArbCounterData
@@ -44,12 +45,12 @@ namespace PmcReader.Intel
             return rc;
         }
 
-        public class AllRequests : MonitoringConfig
+        public class MCRequests : MonitoringConfig
         {
             private HaswellClientArb cpu;
             public string GetConfigName() { return "All MC Requests"; }
 
-            public AllRequests(HaswellClientArb intelCpu)
+            public MCRequests(HaswellClientArb intelCpu)
             {
                 cpu = intelCpu;
             }
@@ -82,20 +83,58 @@ namespace PmcReader.Intel
                 results.overallMetrics = new string[] { FormatLargeNumber(counterData.uncoreClock),
                     FormatLargeNumber(counterData.ctr1),
                     string.Format("{0:F2}", counterData.ctr0 / counterData.uncoreClock),
-                    string.Format("{0:F2} clk", counterData.ctr0 / counterData.ctr1)
+                    string.Format("{0:F2} clk", counterData.ctr0 / counterData.ctr1),
+                    string.Format("{0:F2} ns", (1000000000 / counterData.uncoreClock) * (counterData.ctr0 / counterData.ctr1))
                 };
                 return results;
             }
 
-            public string GetHelpText()
+            public string[] columns = new string[] { "Clk", "Requests", "Q Occupancy", "Req Latency", "Req Latency" };
+        }
+
+        public class CoherencyRequests : MonitoringConfig
+        {
+            private HaswellClientArb cpu;
+            public string GetConfigName() { return "Coherency Tracker Requests"; }
+
+            public CoherencyRequests(HaswellClientArb intelCpu)
             {
-                return "Clk - uncore active clocks\n" +
-                    "Requests - all requests to the system agent\n" +
-                    "Q Occupancy - average arbitration queue occupancy, when a request is pending\n" +
-                    "Req Latency - average time each request stayed in the arbitration queue";
+                cpu = intelCpu;
             }
 
-            public string[] columns = new string[] { "Clk", "Requests", "Q Occupancy", "Req Latency" };
+            public string[] GetColumns()
+            {
+                return columns;
+            }
+
+            public void Initialize()
+            {
+                cpu.EnableUncoreCounters();
+                // 0x83 = increments by number of outstanding requests every cycle in coherency tracker
+                Ring0.WriteMsr(MSR_UNC_ARB_PERFEVTSEL0,
+                    GetUncorePerfEvtSelRegisterValue(0x83, 1, false, false, true, false, 0));
+
+                // 0x84 = number of requests allocated in coherency tracker
+                Ring0.WriteMsr(MSR_UNC_ARB_PERFEVTSEL1,
+                    GetUncorePerfEvtSelRegisterValue(0x84, 1, false, false, true, false, 0));
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = null;
+                NormalizedArbCounterData counterData = cpu.UpdateArbCounterData();
+
+                results.overallMetrics = new string[] { FormatLargeNumber(counterData.uncoreClock),
+                    FormatLargeNumber(counterData.ctr1),
+                    string.Format("{0:F2}", counterData.ctr0 / counterData.uncoreClock),
+                    string.Format("{0:F2} clk", counterData.ctr0 / counterData.ctr1),
+                    string.Format("{0:F2} ns", (1000000000 / counterData.uncoreClock) * (counterData.ctr0 / counterData.ctr1))
+                };
+                return results;
+            }
+
+            public string[] columns = new string[] { "Clk", "Requests", "Q Occupancy", "Req Latency", "Req Latency" };
         }
     }
 }
