@@ -254,7 +254,9 @@ namespace PmcReader.AMD
             elapsedEnergyStat = pkgEnergyStat;
             if (lastPkgPwr < pkgEnergyStat) elapsedEnergyStat = pkgEnergyStat - lastPkgPwr;
             lastPkgPwr = pkgEnergyStat;
-            return elapsedEnergyStat * energyStatusUnits * normalizationFactor;
+            float packagePowerConsumed = elapsedEnergyStat * energyStatusUnits * normalizationFactor;
+            if(NormalizedTotalCounts != null) NormalizedTotalCounts.watts = packagePowerConsumed;
+            return packagePowerConsumed;
         }
 
         /// <summary>
@@ -368,16 +370,42 @@ namespace PmcReader.AMD
         /// </summary>
         public class NormalizedCoreCounterData
         {
+            /// <summary>
+            /// Actual performance frequency clock count
+            /// Counts actual number of C0 cycles
+            /// </summary>
             public float aperf;
+
+            /// <summary>
+            /// Max performance frequency clock count
+            /// Increments at P0 frequency while core is in C0
+            /// </summary>
             public float mperf;
+
+            /// <summary>
+            /// Time stamp counter
+            /// Increments at P0 frequency
+            /// </summary>
             public float tsc;
+
+            /// <summary>
+            /// Retired instructions (IRPerfCount)
+            /// </summary>
             public float instr;
+
+            /// <summary>
+            /// Programmable performance counter 0 value
+            /// </summary>
             public float ctr0;
             public float ctr1;
             public float ctr2;
             public float ctr3;
             public float ctr4;
             public float ctr5;
+
+            /// <summary>
+            /// Power consumed. Can be per-core, or whole package (for total)
+            /// </summary>
             public float watts;
             public float NormalizationFactor;
         }

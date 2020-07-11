@@ -1,9 +1,5 @@
-﻿using PmcReader.Intel;
-using PmcReader.Interop;
+﻿using PmcReader.Interop;
 using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
 using System.Windows.Forms;
 
 namespace PmcReader

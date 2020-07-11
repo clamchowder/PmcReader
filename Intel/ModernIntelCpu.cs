@@ -1,4 +1,6 @@
-﻿using PmcReader.Interop;
+﻿using System;
+using System.Diagnostics;
+using PmcReader.Interop;
 
 namespace PmcReader.Intel
 {
@@ -18,8 +20,18 @@ namespace PmcReader.Intel
         public const uint IA32_A_PMC2 = 0x4C3;
         public const uint IA32_A_PMC3 = 0x4C4;
 
+        // RAPL only applies to sandy bridge and later
+        public const uint MSR_RAPL_POWER_UNIT = 0x606;
+        public const uint MSR_PKG_ENERGY_STATUS = 0x611;
+        public const uint MSR_PP0_ENERGY_STATUS = 0x639;
+        public const uint MSR_DRAM_ENERGY_STATUS = 0x619;
+
         public NormalizedCoreCounterData[] NormalizedThreadCounts;
         public NormalizedCoreCounterData NormalizedTotalCounts;
+
+        private float energyStatusUnits = 0;
+        private Stopwatch lastPkgPwrTime;
+        private ulong lastPkgPwr = 0;
 
         public ModernIntelCpu()
         {
@@ -105,13 +117,13 @@ namespace PmcReader.Intel
                 NormalizedTotalCounts = new NormalizedCoreCounterData();
             }
 
-            NormalizedTotalCounts.ActiveCycles = 0;
-            NormalizedTotalCounts.RetiredInstructions = 0;
-            NormalizedTotalCounts.RefTsc = 0;
-            NormalizedTotalCounts.Pmc0 = 0;
-            NormalizedTotalCounts.Pmc1 = 0;
-            NormalizedTotalCounts.Pmc2 = 0;
-            NormalizedTotalCounts.Pmc3 = 0;
+            NormalizedTotalCounts.activeCycles = 0;
+            NormalizedTotalCounts.instr = 0;
+            NormalizedTotalCounts.refTsc = 0;
+            NormalizedTotalCounts.pmc0 = 0;
+            NormalizedTotalCounts.pmc1 = 0;
+            NormalizedTotalCounts.pmc2 = 0;
+            NormalizedTotalCounts.pmc3 = 0;
         }
 
         /// <summary>
@@ -142,21 +154,21 @@ namespace PmcReader.Intel
                 NormalizedThreadCounts[threadIdx] = new NormalizedCoreCounterData();
             }
 
-            NormalizedThreadCounts[threadIdx].ActiveCycles = activeCycles * normalizationFactor;
-            NormalizedThreadCounts[threadIdx].RetiredInstructions = retiredInstructions * normalizationFactor;
-            NormalizedThreadCounts[threadIdx].RefTsc = refTsc * normalizationFactor;
-            NormalizedThreadCounts[threadIdx].Pmc0 = pmc0 * normalizationFactor;
-            NormalizedThreadCounts[threadIdx].Pmc1 = pmc1 * normalizationFactor;
-            NormalizedThreadCounts[threadIdx].Pmc2 = pmc2 * normalizationFactor;
-            NormalizedThreadCounts[threadIdx].Pmc3 = pmc3 * normalizationFactor;
+            NormalizedThreadCounts[threadIdx].activeCycles = activeCycles * normalizationFactor;
+            NormalizedThreadCounts[threadIdx].instr = retiredInstructions * normalizationFactor;
+            NormalizedThreadCounts[threadIdx].refTsc = refTsc * normalizationFactor;
+            NormalizedThreadCounts[threadIdx].pmc0 = pmc0 * normalizationFactor;
+            NormalizedThreadCounts[threadIdx].pmc1 = pmc1 * normalizationFactor;
+            NormalizedThreadCounts[threadIdx].pmc2 = pmc2 * normalizationFactor;
+            NormalizedThreadCounts[threadIdx].pmc3 = pmc3 * normalizationFactor;
             NormalizedThreadCounts[threadIdx].NormalizationFactor = normalizationFactor;
-            NormalizedTotalCounts.ActiveCycles += NormalizedThreadCounts[threadIdx].ActiveCycles;
-            NormalizedTotalCounts.RetiredInstructions += NormalizedThreadCounts[threadIdx].RetiredInstructions;
-            NormalizedTotalCounts.RefTsc += NormalizedThreadCounts[threadIdx].RefTsc;
-            NormalizedTotalCounts.Pmc0 += NormalizedThreadCounts[threadIdx].Pmc0;
-            NormalizedTotalCounts.Pmc1 += NormalizedThreadCounts[threadIdx].Pmc1;
-            NormalizedTotalCounts.Pmc2 += NormalizedThreadCounts[threadIdx].Pmc2;
-            NormalizedTotalCounts.Pmc3 += NormalizedThreadCounts[threadIdx].Pmc3;
+            NormalizedTotalCounts.activeCycles += NormalizedThreadCounts[threadIdx].activeCycles;
+            NormalizedTotalCounts.instr += NormalizedThreadCounts[threadIdx].instr;
+            NormalizedTotalCounts.refTsc += NormalizedThreadCounts[threadIdx].refTsc;
+            NormalizedTotalCounts.pmc0 += NormalizedThreadCounts[threadIdx].pmc0;
+            NormalizedTotalCounts.pmc1 += NormalizedThreadCounts[threadIdx].pmc1;
+            NormalizedTotalCounts.pmc2 += NormalizedThreadCounts[threadIdx].pmc2;
+            NormalizedTotalCounts.pmc3 += NormalizedThreadCounts[threadIdx].pmc3;
         }
 
         /// <summary>
@@ -165,14 +177,74 @@ namespace PmcReader.Intel
         /// </summary>
         public class NormalizedCoreCounterData
         {
-            public float ActiveCycles;
-            public float RetiredInstructions;
-            public float RefTsc;
-            public float Pmc0;
-            public float Pmc1;
-            public float Pmc2;
-            public float Pmc3;
+            public float activeCycles;
+            public float instr;
+            public float refTsc;
+            public float packagePower;
+            public float pmc0;
+            public float pmc1;
+            public float pmc2;
+            public float pmc3;
             public float NormalizationFactor;
+        }
+
+        public float ReadPackagePowerCounter()
+        {
+            if (energyStatusUnits == 0)
+            {
+                ulong raplPowerUnitRegister, energyStatusUnitsField;
+                Ring0.ReadMsr(MSR_RAPL_POWER_UNIT, out raplPowerUnitRegister);
+                // energy status units in bits 8-12
+                energyStatusUnitsField = (raplPowerUnitRegister >> 8) & 0x1F;
+                energyStatusUnits = (float)Math.Pow(0.5, (float)energyStatusUnitsField);
+            }
+
+            ulong pkgEnergyStatus, elapsedPkgEnergy;
+            Ring0.ReadMsr(MSR_PKG_ENERGY_STATUS, out pkgEnergyStatus);
+            pkgEnergyStatus &= 0xFFFFFFFF;
+            elapsedPkgEnergy = pkgEnergyStatus;
+            if (pkgEnergyStatus > lastPkgPwr) elapsedPkgEnergy -= lastPkgPwr;
+            else if (lastPkgPwr > 0) elapsedPkgEnergy += (0xFFFFFFFF - lastPkgPwr);
+            lastPkgPwr = pkgEnergyStatus;
+
+            float normalizationFactor = 1;
+            if (lastPkgPwrTime == null)
+            {
+                lastPkgPwrTime = new Stopwatch();
+                lastPkgPwrTime.Start();
+            }
+            else
+            {
+                lastPkgPwrTime.Stop();
+                normalizationFactor = 1000 / (float)lastPkgPwrTime.ElapsedMilliseconds;
+                lastPkgPwrTime.Restart();
+            }
+
+            float packagePower = elapsedPkgEnergy * energyStatusUnits * normalizationFactor;
+            if (NormalizedTotalCounts != null) NormalizedTotalCounts.packagePower = packagePower;
+            return packagePower;
+        }
+
+        /// <summary>
+        /// Assemble overall counter values into a Tuple of string, float array.
+        /// </summary>
+        /// <param name="pmc0">Description for counter 0</param>
+        /// <param name="pmc1">Description for counter 1</param>
+        /// <param name="pmc2">Description for counter 2</param>
+        /// <param name="pmc3">Description for counter 3</param>
+        /// <returns>Array to put in results object</returns>
+        public Tuple<string, float>[] GetOverallCounterValues(string pmc0, string pmc1, string pmc2, string pmc3)
+        {
+            Tuple<string, float>[] retval = new Tuple<string, float>[8];
+            retval[0] = new Tuple<string, float>("Active Cycles", NormalizedTotalCounts.activeCycles);
+            retval[1] = new Tuple<string, float>("REF_TSC", NormalizedTotalCounts.refTsc);
+            retval[2] = new Tuple<string, float>("Instructions,", NormalizedTotalCounts.instr);
+            retval[3] = new Tuple<string, float>("Package Power", NormalizedTotalCounts.packagePower);
+            retval[4] = new Tuple<string, float>(pmc0, NormalizedTotalCounts.pmc0);
+            retval[5] = new Tuple<string, float>(pmc1, NormalizedTotalCounts.pmc1);
+            retval[6] = new Tuple<string, float>(pmc2, NormalizedTotalCounts.pmc2);
+            retval[7] = new Tuple<string, float>(pmc3, NormalizedTotalCounts.pmc3);
+            return retval;
         }
 
         /// <summary>
@@ -232,6 +304,7 @@ namespace PmcReader.Intel
                 }
 
                 results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                results.overallCounterValues = cpu.GetOverallCounterValues("Retired Branches", "Retired Mispredicted Branches", "BAClears", "Executed Branches");
                 return results;
             }
 
@@ -241,17 +314,17 @@ namespace PmcReader.Intel
 
             private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
             {
-                float bpuAccuracy = (1 - counterData.Pmc1 / counterData.Pmc0) * 100;
-                float ipc = counterData.RetiredInstructions / counterData.ActiveCycles;
-                float branchMpki = counterData.Pmc1 / counterData.RetiredInstructions * 1000;
-                float btbHitrate = (1 - counterData.Pmc2 / counterData.Pmc0) * 100;
-                float branchRate = counterData.Pmc0 / counterData.RetiredInstructions * 100;
+                float bpuAccuracy = (1 - counterData.pmc1 / counterData.pmc0) * 100;
+                float ipc = counterData.instr / counterData.activeCycles;
+                float branchMpki = counterData.pmc1 / counterData.instr * 1000;
+                float btbHitrate = (1 - counterData.pmc2 / counterData.pmc0) * 100;
+                float branchRate = counterData.pmc0 / counterData.instr * 100;
 
                 return new string[] { label,
                     string.Format("{0:F2}", counterData.NormalizationFactor),
-                    FormatLargeNumber(counterData.RefTsc),
-                    FormatLargeNumber(counterData.ActiveCycles),
-                    FormatLargeNumber(counterData.RetiredInstructions),
+                    FormatLargeNumber(counterData.refTsc),
+                    FormatLargeNumber(counterData.activeCycles),
+                    FormatLargeNumber(counterData.instr),
                     string.Format("{0:F2}", ipc),
                     string.Format("{0:F2}%", bpuAccuracy),
                     string.Format("{0:F2}", branchMpki),
@@ -315,6 +388,7 @@ namespace PmcReader.Intel
                 }
 
                 results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                results.overallCounterValues = cpu.GetOverallCounterValues("DSB Uops", "DSB Uops cmask=1", "MITE Uops", "MITE Uops cmask=1");
                 return results;
             }
 
@@ -324,18 +398,169 @@ namespace PmcReader.Intel
 
             private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
             {
-                float ipc = counterData.RetiredInstructions / counterData.ActiveCycles;
+                float ipc = counterData.instr / counterData.activeCycles;
                 return new string[] { label,
-                    FormatLargeNumber(counterData.ActiveCycles),
-                    FormatLargeNumber(counterData.RetiredInstructions),
+                    FormatLargeNumber(counterData.activeCycles),
+                    FormatLargeNumber(counterData.instr),
                     string.Format("{0:F2}", ipc),
-                    string.Format("{0:F2}%", 100 * counterData.Pmc0 / (counterData.Pmc0 + counterData.Pmc2)),
-                    string.Format("{0:F2}", counterData.Pmc0 / counterData.Pmc1),
-                    string.Format("{0:F2}%", 100 * counterData.Pmc1 / counterData.ActiveCycles),
-                    string.Format("{0:F2}", counterData.Pmc2 / counterData.Pmc3),
-                    string.Format("{0:F2}%", 100 * counterData.Pmc3 / counterData.ActiveCycles),
-                    FormatLargeNumber(counterData.Pmc0),
-                    FormatLargeNumber(counterData.Pmc2)};
+                    string.Format("{0:F2}%", 100 * counterData.pmc0 / (counterData.pmc0 + counterData.pmc2)),
+                    string.Format("{0:F2}", counterData.pmc0 / counterData.pmc1),
+                    string.Format("{0:F2}%", 100 * counterData.pmc1 / counterData.activeCycles),
+                    string.Format("{0:F2}", counterData.pmc2 / counterData.pmc3),
+                    string.Format("{0:F2}%", 100 * counterData.pmc3 / counterData.activeCycles),
+                    FormatLargeNumber(counterData.pmc0),
+                    FormatLargeNumber(counterData.pmc2)};
+            }
+        }
+
+        public class OpDelivery : MonitoringConfig
+        {
+            private ModernIntelCpu cpu;
+            public string GetConfigName() { return "Frontend Op Delivery"; }
+
+            public OpDelivery(ModernIntelCpu intelCpu)
+            {
+                cpu = intelCpu;
+            }
+
+            public string[] GetColumns()
+            {
+                return columns;
+            }
+
+            public void Initialize()
+            {
+                cpu.EnablePerformanceCounters();
+
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    ThreadAffinity.Set(1UL << threadIdx);
+                    // Set PMC0 to count LSD uops
+                    Ring0.WriteMsr(IA32_PERFEVTSEL0, GetPerfEvtSelRegisterValue(0xA8, 0x1, true, true, false, false, false, false, true, false, 0));
+
+                    // Set PMC1 to count DSB uops
+                    Ring0.WriteMsr(IA32_PERFEVTSEL1, GetPerfEvtSelRegisterValue(0x79, 0x8, true, true, false, false, false, false, true, false, 0));
+
+                    // Set PMC2 to count MITE uops
+                    Ring0.WriteMsr(IA32_PERFEVTSEL2, GetPerfEvtSelRegisterValue(0x79, 0x4, true, true, false, false, false, false, true, false, 0));
+
+                    // Set PMC3 to count MS uops
+                    Ring0.WriteMsr(IA32_PERFEVTSEL3, GetPerfEvtSelRegisterValue(0x79, 0x30, true, true, false, false, false, false, true, false, 0));
+                }
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[cpu.GetThreadCount()][];
+                cpu.InitializeCoreTotals();
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    cpu.UpdateThreadCoreCounterData(threadIdx);
+                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
+                }
+
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "LSD Ops", "LSD %", "Op$ Ops", "Op$ %", "Decoder Ops", "Decoder %", "MS Ops", "MS %" };
+
+            public string GetHelpText()
+            {
+                return "";
+            }
+
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
+            {
+                float totalOps = counterData.pmc0 + counterData.pmc1 + counterData.pmc2 + counterData.pmc3;
+                return new string[] { label,
+                        FormatLargeNumber(counterData.activeCycles),
+                        FormatLargeNumber(counterData.instr),
+                        string.Format("{0:F2}", counterData.instr / counterData.activeCycles),
+                        FormatLargeNumber(counterData.pmc0),
+                        string.Format("{0:F2}%", 100 * counterData.pmc0 / totalOps),
+                        FormatLargeNumber(counterData.pmc1),
+                        string.Format("{0:F2}%", 100 * counterData.pmc1 / totalOps),
+                        FormatLargeNumber(counterData.pmc2),
+                        string.Format("{0:F2}%", 100 * counterData.pmc2 / totalOps),
+                        FormatLargeNumber(counterData.pmc3),
+                        string.Format("{0:F2}%", 100 * counterData.pmc3 / totalOps)
+                };
+            }
+        }
+
+        public class L1DFill : MonitoringConfig
+        {
+            private ModernIntelCpu cpu;
+            public string GetConfigName() { return "L1D Fill"; }
+
+            public L1DFill(ModernIntelCpu intelCpu)
+            {
+                cpu = intelCpu;
+            }
+
+            public string[] GetColumns()
+            {
+                return columns;
+            }
+
+            public void Initialize()
+            {
+                cpu.EnablePerformanceCounters();
+
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    ThreadAffinity.Set(1UL << threadIdx);
+                    // PMC0 - L1D Replacements
+                    Ring0.WriteMsr(IA32_PERFEVTSEL0, GetPerfEvtSelRegisterValue(0x51, 0x1, true, true, false, false, false, false, true, false, 0));
+
+                    // PMC1 - fb full
+                    Ring0.WriteMsr(IA32_PERFEVTSEL1, GetPerfEvtSelRegisterValue(0x48, 0x2, true, true, false, false, false, false, true, false, 0));
+
+                    // PMC2 - pending misses (ctr2 only)
+                    Ring0.WriteMsr(IA32_PERFEVTSEL2, GetPerfEvtSelRegisterValue(0x48, 0x1, true, true, false, false, false, false, true, false, 0));
+
+                    // PMC2 - fb full cycles (cmask=1)
+                    Ring0.WriteMsr(IA32_PERFEVTSEL3, GetPerfEvtSelRegisterValue(0x48, 0x2, true, true, false, false, false, false, true, false, 1));
+                }
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[cpu.GetThreadCount()][];
+                cpu.InitializeCoreTotals();
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    cpu.UpdateThreadCoreCounterData(threadIdx);
+                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
+                }
+
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "L1D Fill BW", "Pending Misses", "FB Full", "FB Full Cycles", "L1D Fill Latency" };
+
+            public string GetHelpText()
+            {
+                return "";
+            }
+
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
+            {
+                float totalOps = counterData.pmc0 + counterData.pmc1 + counterData.pmc2 + counterData.pmc3;
+                return new string[] { label,
+                        FormatLargeNumber(counterData.activeCycles),
+                        FormatLargeNumber(counterData.instr),
+                        string.Format("{0:F2}", counterData.instr / counterData.activeCycles),
+                        FormatLargeNumber(counterData.pmc0 * 64) + "B",
+                        string.Format("{0:F2}", counterData.pmc2 / counterData.activeCycles),
+                        FormatLargeNumber(counterData.pmc1),
+                        string.Format("{0:F2}%", 100 * counterData.pmc3 / counterData.activeCycles),
+                        string.Format("{0:F2} clk", counterData.pmc2 / counterData.pmc0)
+                };
             }
         }
     }
