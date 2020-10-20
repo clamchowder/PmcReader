@@ -1,6 +1,5 @@
 ﻿using PmcReader.Interop;
-using System;
-using System.Threading;
+using System.Runtime.Remoting.Messaging;
 
 namespace PmcReader.Intel
 {
@@ -82,13 +81,15 @@ namespace PmcReader.Intel
             architectureName = "Sandy Bridge E L3 Cache";
             cboTotals = new NormalizedCboCounterData();
             cboData = new NormalizedCboCounterData[CboCount];
-            monitoringConfigs = new MonitoringConfig[6];
+            monitoringConfigs = new MonitoringConfig[8];
             monitoringConfigs[0] = new HitsBlConfig(this);
             monitoringConfigs[1] = new RxRConfig(this);
-            monitoringConfigs[2] = new DataReadMissLatency(this);
+            monitoringConfigs[2] = new DataReadLatency(this);
             monitoringConfigs[3] = new MissesAdConfig(this);
             monitoringConfigs[4] = new LLCVictimsAndIvRing(this);
             monitoringConfigs[5] = new BouncesAndAkRing(this);
+            monitoringConfigs[6] = new DataReadMissLatency(this);
+            monitoringConfigs[7] = new ToR(this);
         }
 
         public class NormalizedCboCounterData
@@ -383,12 +384,12 @@ namespace PmcReader.Intel
             }
         }
 
-        public class DataReadMissLatency : MonitoringConfig
+        public class DataReadLatency : MonitoringConfig
         {
             private SandyBridgeEL3 cpu;
-            public string GetConfigName() { return "Data Read Miss Latency"; }
+            public string GetConfigName() { return "ToR, Data Read Latency"; }
 
-            public DataReadMissLatency(SandyBridgeEL3 intelCpu)
+            public DataReadLatency(SandyBridgeEL3 intelCpu)
             {
                 cpu = intelCpu;
             }
@@ -407,6 +408,70 @@ namespace PmcReader.Intel
                 // 0x35 = tor inserts, 0x1 = use opcode filter
                 ulong torInserts = GetUncorePerfEvtSelRegisterValue(0x35, 1, false, false, false, true, false, 0);
                 // 0x1F = counter 0 occupancy. cmask = 1 to count cycles when data read is present
+                ulong drdPresent = GetUncorePerfEvtSelRegisterValue(0x1D, 0xFF, false, false, false, true, false, 1);
+                // opcode 0x182 = demand data read, but opcode field is only 8 bits wide. wtf.
+                // try with just lower 8 bits
+                ulong filter = GetUncoreFilterRegisterValue(0, 0x1, LLC_LOOKUP_E | LLC_LOOKUP_F | LLC_LOOKUP_M | LLC_LOOKUP_S, 0x182);
+                cpu.SetupMonitoringSession(torOccupancy, torInserts, clockticks, drdPresent, filter);
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[CboCount][];
+                cpu.InitializeCboTotals();
+                for (uint cboIdx = 0; cboIdx < CboCount; cboIdx++)
+                {
+                    cpu.UpdateCboCounterData(cboIdx);
+                    results.unitMetrics[cboIdx] = computeMetrics("CBo " + cboIdx, cpu.cboData[cboIdx], false);
+                }
+
+                results.overallMetrics = computeMetrics("Overall", cpu.cboTotals, true);
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Clk", "ToR DRD Occupancy", "DRD Latency", "DRD Latency", "DRD Present", "DRD ToR Insert" };
+            public string GetHelpText() { return ""; }
+
+            private string[] computeMetrics(string label, NormalizedCboCounterData counterData, bool total)
+            {
+                float avgClock = total ? counterData.ctr2 / CboCount : counterData.ctr2;
+                float missLatency = counterData.ctr0 / counterData.ctr1;
+                return new string[] { label,
+                    FormatLargeNumber(counterData.ctr2),
+                    string.Format("{0:F2}", counterData.ctr0 / counterData.ctr3),
+                    string.Format("{0:F2} clk", missLatency),
+                    string.Format("{0:F2} ns", (1000000000 / avgClock) * missLatency),
+                    string.Format("{0:F2}%", 100 * counterData.ctr3 / counterData.ctr2),
+                    FormatLargeNumber(counterData.ctr1)
+                };
+            }
+        }
+
+        public class DataReadMissLatency : MonitoringConfig
+        {
+            private SandyBridgeEL3 cpu;
+            public string GetConfigName() { return "ToR, Data Read Miss Latency"; }
+
+            public DataReadMissLatency(SandyBridgeEL3 intelCpu)
+            {
+                cpu = intelCpu;
+            }
+
+            public string[] GetColumns()
+            {
+                return columns;
+            }
+
+            public void Initialize()
+            {
+                // no counter restrictions for clockticks
+                ulong clockticks = GetUncorePerfEvtSelRegisterValue(0, 0, false, false, false, true, false, 0);
+                // 0x36 = tor occupancy, 0b11 = miss transactions, and use opcode filter
+                ulong torOccupancy = GetUncorePerfEvtSelRegisterValue(0x36, 0b11, false, false, false, true, false, 0);
+                // 0x35 = tor inserts, 0b11 = miss transactions, use opcode filter
+                ulong torInserts = GetUncorePerfEvtSelRegisterValue(0x35, 0b11, false, false, false, true, false, 0);
+                // 0x1F = counter 0 occupancy. cmask = 1 to count cycles when data read is present
                 ulong missPresent = GetUncorePerfEvtSelRegisterValue(0x1D, 0xFF, false, false, false, true, false, 1);
                 // opcode 0x182 = demand data read, but opcode field is only 8 bits wide. wtf.
                 // try with just lower 8 bits
@@ -422,23 +487,90 @@ namespace PmcReader.Intel
                 for (uint cboIdx = 0; cboIdx < CboCount; cboIdx++)
                 {
                     cpu.UpdateCboCounterData(cboIdx);
-                    results.unitMetrics[cboIdx] = computeMetrics("CBo " + cboIdx, cpu.cboData[cboIdx]);
+                    results.unitMetrics[cboIdx] = computeMetrics("CBo " + cboIdx, cpu.cboData[cboIdx], false);
                 }
 
-                results.overallMetrics = computeMetrics("Overall", cpu.cboTotals);
+                results.overallMetrics = computeMetrics("Overall", cpu.cboTotals, true);
                 return results;
             }
 
-            public string[] columns = new string[] { "Item", "Clk", "ToR DRD Occupancy", "DRD Miss Latency?", "DRD Miss Present", "DRD ToR Insert" };
-
             public string GetHelpText() { return ""; }
 
-            private string[] computeMetrics(string label, NormalizedCboCounterData counterData)
+            public string[] columns = new string[] { "Item", "Clk", "ToR DRD Miss Occupancy", "DRD Miss Latency", "DRD Miss Latency", "DRD Miss Present", "DRD Miss ToR Insert" };
+
+            private string[] computeMetrics(string label, NormalizedCboCounterData counterData, bool total)
             {
+                float avgClock = total ? counterData.ctr2 / CboCount : counterData.ctr2;
+                float missLatency = counterData.ctr0 / counterData.ctr1;
                 return new string[] { label,
                     FormatLargeNumber(counterData.ctr2),
                     string.Format("{0:F2}", counterData.ctr0 / counterData.ctr3),
-                    string.Format("{0:F2} clk", counterData.ctr0 / counterData.ctr1),
+                    string.Format("{0:F2} clk", missLatency),
+                    string.Format("{0:F2} ns", (1000000000 / avgClock) * missLatency),
+                    string.Format("{0:F2}%", 100 * counterData.ctr3 / counterData.ctr2),
+                    FormatLargeNumber(counterData.ctr1)
+                };
+            }
+        }
+
+        public class ToR : MonitoringConfig
+        {
+            private SandyBridgeEL3 cpu;
+            public string GetConfigName() { return "ToR, All Requests"; }
+
+            public ToR(SandyBridgeEL3 intelCpu)
+            {
+                cpu = intelCpu;
+            }
+
+            public string[] GetColumns()
+            {
+                return columns;
+            }
+
+            public void Initialize()
+            {
+                // no counter restrictions for clockticks
+                ulong clockticks = GetUncorePerfEvtSelRegisterValue(0, 0, false, false, false, true, false, 0);
+                // 0x36 = tor occupancy, 0b1000 = all valid ToR entries
+                ulong torOccupancy = GetUncorePerfEvtSelRegisterValue(0x36, 0b1000, false, false, false, true, false, 0);
+                // 0x35 = tor inserts. 0b1000 not documented but other umasks are the same so let's try
+                ulong torInserts = GetUncorePerfEvtSelRegisterValue(0x35, 0b1000, false, false, false, true, false, 0);
+                // 0x1F = counter 0 occupancy. cmask = 1 to count cycles when there are valid entries in the ToR
+                ulong missPresent = GetUncorePerfEvtSelRegisterValue(0x1D, 0xFF, false, false, false, true, false, 1);
+                // filter not used, low bit of umask not set for ToR events
+                ulong filter = GetUncoreFilterRegisterValue(0, 0x1, LLC_LOOKUP_E | LLC_LOOKUP_F | LLC_LOOKUP_M | LLC_LOOKUP_S, 0x182);
+                cpu.SetupMonitoringSession(torOccupancy, torInserts, clockticks, missPresent, filter);
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[CboCount][];
+                cpu.InitializeCboTotals();
+                for (uint cboIdx = 0; cboIdx < CboCount; cboIdx++)
+                {
+                    cpu.UpdateCboCounterData(cboIdx);
+                    results.unitMetrics[cboIdx] = computeMetrics("CBo " + cboIdx, cpu.cboData[cboIdx], false);
+                }
+
+                results.overallMetrics = computeMetrics("Overall", cpu.cboTotals, true);
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Clk", "ToR Occupancy", "Req Latency", "Req Latency", "Req Present", "ToR Insert" };
+
+            public string GetHelpText() { return ""; }
+
+            private string[] computeMetrics(string label, NormalizedCboCounterData counterData, bool total)
+            {
+                float avgClock = total ? counterData.ctr2 / CboCount : counterData.ctr2;
+                float missLatency = counterData.ctr0 / counterData.ctr1;
+                return new string[] { label,
+                    FormatLargeNumber(counterData.ctr2),
+                    string.Format("{0:F2}", counterData.ctr0 / counterData.ctr3),
+                    string.Format("{0:F2} clk", missLatency),
+                    string.Format("{0:F2} ns", (1000000000 / avgClock) * missLatency),
                     string.Format("{0:F2}%", 100 * counterData.ctr3 / counterData.ctr2),
                     FormatLargeNumber(counterData.ctr1)
                 };

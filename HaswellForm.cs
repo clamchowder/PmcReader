@@ -216,31 +216,34 @@ namespace PmcReader
         /// <param name="helpLabel">Label to put help text in</param>
         private void applyMonitoringConfig(MonitoringSetup setup, ListView configSelectListView, Label helpLabel = null)
         {
-            int cfgIdx;
-            if (configSelectListView.SelectedItems.Count > 0)
-                cfgIdx = (int)configSelectListView.SelectedItems[0].Tag;
-            else
+            lock (cpuManufacturer)
             {
-                errorLabel.Text = "No config selected";
-                return;
-            }
+                int cfgIdx;
+                if (configSelectListView.SelectedItems.Count > 0)
+                    cfgIdx = (int)configSelectListView.SelectedItems[0].Tag;
+                else
+                {
+                    errorLabel.Text = "No config selected";
+                    return;
+                }
 
-            if (setup.monitoringThread != null && setup.monitoringThreadCancellation != null)
-            {
-                coreMonitoring.monitoringArea.StopLoggingToFile();
-                setup.monitoringThreadCancellation.Cancel();
-                setup.monitoringThread.Wait();
-            }
+                if (setup.monitoringThread != null && setup.monitoringThreadCancellation != null)
+                {
+                    coreMonitoring.monitoringArea.StopLoggingToFile();
+                    setup.monitoringThreadCancellation.Cancel();
+                    setup.monitoringThread.Wait();
+                }
 
-            setup.monitoringThreadCancellation = new CancellationTokenSource();
-            setup.monitoringThread = Task.Run(() => setup.monitoringArea.MonitoringThread(cfgIdx, setup.targetListView, setup.monitoringThreadCancellation.Token));
-            errorLabel.Text = "";
+                setup.monitoringThreadCancellation = new CancellationTokenSource();
+                setup.monitoringThread = Task.Run(() => setup.monitoringArea.MonitoringThread(cfgIdx, setup.targetListView, setup.monitoringThreadCancellation.Token));
+                errorLabel.Text = "";
 
-            MonitoringConfig[] configs = setup.monitoringArea.GetMonitoringConfigs();
-            if (helpLabel != null)
-            {
-                helpLabel.Text = "";
-                if (configs[cfgIdx].GetHelpText() != null) helpLabel.Text = "Notes:\n" + configs[cfgIdx].GetHelpText();
+                MonitoringConfig[] configs = setup.monitoringArea.GetMonitoringConfigs();
+                if (helpLabel != null)
+                {
+                    helpLabel.Text = "";
+                    if (configs[cfgIdx].GetHelpText() != null) helpLabel.Text = "Notes:\n" + configs[cfgIdx].GetHelpText();
+                }
             }
         }
 

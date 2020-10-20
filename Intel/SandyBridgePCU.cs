@@ -1,5 +1,6 @@
 ﻿using PmcReader.Interop;
 using System;
+using System.Runtime.Remoting.Messaging;
 using System.Threading;
 
 namespace PmcReader.Intel
@@ -33,9 +34,10 @@ namespace PmcReader.Intel
         public SandyBridgePCU()
         {
             architectureName = "Sandy Bridge E Power Control Unit";
-            monitoringConfigs = new MonitoringConfig[2];
+            monitoringConfigs = new MonitoringConfig[3];
             monitoringConfigs[0] = new VoltageTransitions(this);
             monitoringConfigs[1] = new Limits(this);
+            monitoringConfigs[2] = new ChangeAndPhaseShedding(this);
         }
 
         /// <summary>
@@ -92,6 +94,7 @@ namespace PmcReader.Intel
         /// <param name="occ_sel">Occupancy counter to use</param>
         /// <param name="reset">Reset counter to 0</param>
         /// <param name="edge">Edge detect, must set cmask to >= 1</param>
+        /// <param name="extra_select">Extra select bit, undocumented...?</param>
         /// <param name="enable">Enable counter</param>
         /// <param name="invert">Invert cmask, must set cmask to >= 1</param>
         /// <param name="cmask">Counter comparison threshold</param>
@@ -102,6 +105,7 @@ namespace PmcReader.Intel
             byte occ_sel,
             bool reset,
             bool edge,
+            bool extra_select,
             bool enable,
             bool invert,
             byte cmask,
@@ -112,6 +116,7 @@ namespace PmcReader.Intel
                 (ulong)(occ_sel & 0x7) << 14 |
                 (reset ? 1UL : 0UL) << 17 |
                 (edge ? 1UL : 0UL) << 18 |
+                (extra_select ? 1UL : 0UL) << 21 |
                 (enable ? 1UL : 0UL) << 22 |
                 (invert ? 1UL : 0UL) << 23 |
                 (ulong)(cmask & 0xF) << 24 |
@@ -213,10 +218,10 @@ namespace PmcReader.Intel
 
             public void Initialize()
             {
-                ulong voltageIncreaseCycles = GetPCUPerfEvtSelRegisterValue(0x1, 0, false, false, true, false, 0, false, false);
-                ulong voltageIncreaseCount = GetPCUPerfEvtSelRegisterValue(0x1, 0, false, edge: true, true, false, 1, false, false);
-                ulong voltageDecreaseCycles = GetPCUPerfEvtSelRegisterValue(0x2, 0, false, false, true, false, 0, false, false);
-                ulong voltageDecreaseCount = GetPCUPerfEvtSelRegisterValue(0x2, 0, false, edge: true, true, false, 1, false, false);
+                ulong voltageIncreaseCycles = GetPCUPerfEvtSelRegisterValue(0x1, 0, reset: false, edge: false, extra_select: false, enable: true, invert: false, cmask: 0, occ_invert: false, occ_edge: false);
+                ulong voltageIncreaseCount = GetPCUPerfEvtSelRegisterValue(0x1, 0, reset: false, edge: true, extra_select: false, enable: true, invert: false, cmask: 1, occ_invert: false, occ_edge: false);
+                ulong voltageDecreaseCycles = GetPCUPerfEvtSelRegisterValue(0x2, 0, reset: false, edge: false, extra_select: false, enable: true, invert: false, cmask: 0, occ_invert: false, occ_edge: false);;
+                ulong voltageDecreaseCount = GetPCUPerfEvtSelRegisterValue(0x2, 0, reset: false, edge: true, extra_select: false, enable: true, invert: false, cmask: 1, occ_invert: false, occ_edge: false);
                 ulong filter = 0;
                 cpu.SetupMonitoringSession(voltageIncreaseCycles, voltageIncreaseCount, voltageDecreaseCycles, voltageDecreaseCount, filter);
             }
@@ -265,10 +270,10 @@ namespace PmcReader.Intel
 
             public void Initialize()
             {
-                ulong thermalLimitCycles = GetPCUPerfEvtSelRegisterValue(0x4, 0, false, false, true, false, 0, false, false);
-                ulong currentLimitCycles = GetPCUPerfEvtSelRegisterValue(0x7, 0, false, false, true, false, 0, false, false);
-                ulong osLimitCycles = GetPCUPerfEvtSelRegisterValue(0x6, 0, false, false, true, false, 0, false, false);
-                ulong powerLimitCycles = GetPCUPerfEvtSelRegisterValue(0x5, 0, false, false, true, false, 0, false, false);
+                ulong thermalLimitCycles = GetPCUPerfEvtSelRegisterValue(0x4, 0, false, false, false, true, false, 0, false, false);
+                ulong currentLimitCycles = GetPCUPerfEvtSelRegisterValue(0x7, 0, false, false, false, true, false, 0, false, false);
+                ulong osLimitCycles = GetPCUPerfEvtSelRegisterValue(0x6, 0, false, false, false, true, false, 0, false, false);
+                ulong powerLimitCycles = GetPCUPerfEvtSelRegisterValue(0x5, 0, false, false, false, true, false, 0, false, false);
                 ulong filter = 0;
                 cpu.SetupMonitoringSession(thermalLimitCycles, currentLimitCycles, osLimitCycles, powerLimitCycles, filter);
             }
@@ -288,6 +293,49 @@ namespace PmcReader.Intel
             }
 
             public string[] columns = new string[] { "Freq Limit", "Cycles" };
+            public string GetHelpText() { return ""; }
+        }
+
+        public class ChangeAndPhaseShedding : MonitoringConfig
+        {
+            private SandyBridgePCU cpu;
+            public string GetConfigName() { return "Transition Cycles/Phase Shedding"; }
+
+            public ChangeAndPhaseShedding(SandyBridgePCU intelCpu)
+            {
+                cpu = intelCpu;
+            }
+
+            public string[] GetColumns()
+            {
+                return columns;
+            }
+
+            public void Initialize()
+            {
+                ulong voltTransCycles = GetPCUPerfEvtSelRegisterValue(0x3, 0, false, false, false, true, false, 0, false, false);
+                ulong freqTransCycles = GetPCUPerfEvtSelRegisterValue(0, 0, false, false, extra_select: true, true, false, 0, false, false);
+                ulong phaseSheddingCycles = GetPCUPerfEvtSelRegisterValue(0x2F, 0, false, false, false, true, false, 0, false, false);
+                ulong cstateTransCycles = GetPCUPerfEvtSelRegisterValue(0xB, 0, false, false, extra_select: true, true, false, 0, false, false);
+                ulong filter = 0;
+                cpu.SetupMonitoringSession(voltTransCycles, freqTransCycles, cstateTransCycles, phaseSheddingCycles, filter);
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[3][];
+                PcuCounterData counterData = cpu.ReadPcuCounterData();
+
+                // abuse the form code because there's only one unit and uh, there's vertical space
+                results.overallMetrics = new string[] { "Voltage Transition", string.Format("{0:F2}%", counterData.ctr0 / PcuFrequency) };
+                results.unitMetrics[0] = new string[] { "Freq Transition", string.Format("{0:F2}%", counterData.ctr1 / PcuFrequency) };
+                results.unitMetrics[1] = new string[] { "C State Transition", string.Format("{0:F2}%", counterData.ctr2 / PcuFrequency) };
+                results.unitMetrics[2] = new string[] { "Memory Phase Shedding", string.Format("{0:F2}%", counterData.ctr3 / PcuFrequency) };
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Cycles" };
             public string GetHelpText() { return ""; }
         }
     }

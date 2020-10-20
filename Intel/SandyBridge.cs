@@ -7,15 +7,21 @@ namespace PmcReader.Intel
     {
         public SandyBridge()
         {
-            monitoringConfigs = new MonitoringConfig[8];
+            monitoringConfigs = new MonitoringConfig[14];
             monitoringConfigs[0] = new BpuMonitoringConfig(this);
-            monitoringConfigs[1] = new OpCachePerformance(this);
-            monitoringConfigs[2] = new ALUPortUtilization(this);
-            monitoringConfigs[3] = new LSPortUtilization(this);
-            monitoringConfigs[4] = new DispatchStalls(this);
-            monitoringConfigs[5] = new OffcoreQueue(this);
-            monitoringConfigs[6] = new Fp32Flops(this);
-            monitoringConfigs[7] = new Fp64Flops(this);
+            monitoringConfigs[1] = new OpDelivery(this);
+            monitoringConfigs[2] = new OpCachePerformance(this);
+            monitoringConfigs[3] = new ALUPortUtilization(this);
+            monitoringConfigs[4] = new LSPortUtilization(this);
+            monitoringConfigs[5] = new DispatchStalls(this);
+            monitoringConfigs[6] = new OffcoreQueue(this);
+            monitoringConfigs[7] = new Fp32Flops(this);
+            monitoringConfigs[8] = new Fp64Flops(this);
+            monitoringConfigs[9] = new L2Cache(this);
+            monitoringConfigs[10] = new LoadSources(this);
+            monitoringConfigs[11] = new RetireHistogram(this);
+            monitoringConfigs[12] = new UopExecution(this);
+            monitoringConfigs[13] = new L1DFill(this);
             architectureName = "Sandy Bridge";
         }
 
@@ -289,20 +295,20 @@ namespace PmcReader.Intel
             private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
             {
                 return new string[] { label,
-                        FormatLargeNumber(counterData.ActiveCycles),
-                        FormatLargeNumber(counterData.RetiredInstructions),
-                        string.Format("{0:F2}", counterData.RetiredInstructions / counterData.ActiveCycles),
-                        string.Format("{0:F2}%", counterData.Pmc0 / counterData.ActiveCycles * 100),
-                        string.Format("{0:F2}%", counterData.Pmc1 / counterData.ActiveCycles * 100),
-                        string.Format("{0:F2}%", counterData.Pmc2 / counterData.ActiveCycles * 100),
-                        string.Format("{0:F2}%", counterData.Pmc3 / counterData.ActiveCycles * 100)};
+                        FormatLargeNumber(counterData.activeCycles),
+                        FormatLargeNumber(counterData.instr),
+                        string.Format("{0:F2}", counterData.instr / counterData.activeCycles),
+                        string.Format("{0:F2}%", counterData.pmc0 / counterData.activeCycles * 100),
+                        string.Format("{0:F2}%", counterData.pmc1 / counterData.activeCycles * 100),
+                        string.Format("{0:F2}%", counterData.pmc2 / counterData.activeCycles * 100),
+                        string.Format("{0:F2}%", counterData.pmc3 / counterData.activeCycles * 100)};
             }
         }
 
         public class OffcoreQueue : MonitoringConfig
         {
             private SandyBridge cpu;
-            public string GetConfigName() { return "Offcore Requests"; }
+            public string GetConfigName() { return "Offcore Data Reads"; }
 
             public OffcoreQueue(SandyBridge intelCpu)
             {
@@ -343,27 +349,32 @@ namespace PmcReader.Intel
                 for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
                 {
                     cpu.UpdateThreadCoreCounterData(threadIdx);
-                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
+                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx], false);
                 }
 
-                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts, true);
                 return results;
             }
 
-            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "Offcore Data Reqs", "Cycles w/Data Req", "SQ Occupancy", "SQ Full Stall", "Offcore Req Latency" };
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "Offcore DRD Reqs", "Cycles w/DRD", "SQ DRD Occupancy", "Cycles DRD Blocked (SQ Full)", "Offcore DRD Latency", "Offcore DRD Latency" };
+
             public string GetHelpText() { return ""; }
 
-            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData, bool total)
             {
+                float avgCycles = total ? counterData.activeCycles / cpu.GetThreadCount() : counterData.activeCycles;
+                float reqLatency = counterData.pmc0 / counterData.pmc1;
                 return new string[] { label,
-                        FormatLargeNumber(counterData.ActiveCycles),
-                        FormatLargeNumber(counterData.RetiredInstructions),
-                        string.Format("{0:F2}", counterData.RetiredInstructions / counterData.ActiveCycles),
-                        FormatLargeNumber(counterData.Pmc1),
-                        string.Format("{0:F2}%", counterData.Pmc3 / counterData.ActiveCycles * 100),
-                        string.Format("{0:F2}", counterData.Pmc0 / counterData.Pmc3),
-                        string.Format("{0:F2}%", counterData.Pmc2 / counterData.ActiveCycles * 100),
-                        string.Format("{0:F2}", counterData.Pmc0 / counterData.Pmc1)};
+                        FormatLargeNumber(counterData.activeCycles),
+                        FormatLargeNumber(counterData.instr),
+                        string.Format("{0:F2}", counterData.instr / counterData.activeCycles),
+                        FormatLargeNumber(counterData.pmc1),
+                        string.Format("{0:F2}%", counterData.pmc3 / counterData.activeCycles * 100),
+                        string.Format("{0:F2}", counterData.pmc0 / counterData.pmc3),
+                        string.Format("{0:F2}%", counterData.pmc2 / counterData.activeCycles * 100),
+                        string.Format("{0:F2} clk", reqLatency),
+                        string.Format("{0:F2} ns", (1000000000 / avgCycles) * reqLatency)
+                };
             }
         }
 
@@ -411,31 +422,35 @@ namespace PmcReader.Intel
                 for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
                 {
                     cpu.UpdateThreadCoreCounterData(threadIdx);
-                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
+                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx], false);
                 }
 
-                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts, true);
+                cpu.ReadPackagePowerCounter();
+                results.overallCounterValues = cpu.GetOverallCounterValues("Scalar SSE FP32", "Packed SSE FP32", "Packed AVX-256 FP32", "X87 Ops");
                 return results;
             }
 
-            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "FP32/X87 Flops", "Flops/C", "SSE Scalar FP32 Flops", "128B FP32 Flops", "256B FP32 Flops", "x87 Ops" };
+            public string[] columns = new string[] { "Item", "Pkg Power", "Active Cycles", "Instructions", "IPC", "Instr/Watt", "FP32/X87 Flops", "Flops/C", "SSE Scalar FP32 Flops", "128B FP32 Flops", "256B FP32 Flops", "x87 Ops" };
             public string GetHelpText() { return ""; }
 
-            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData, bool total)
             {
-                float scalarFlops = counterData.Pmc0;
-                float sseFlops = counterData.Pmc1 * 4;
-                float avxFlops = counterData.Pmc2 * 8;
+                float scalarFlops = counterData.pmc0;
+                float sseFlops = counterData.pmc1 * 4;
+                float avxFlops = counterData.pmc2 * 8;
                 return new string[] { label,
-                        FormatLargeNumber(counterData.ActiveCycles),
-                        FormatLargeNumber(counterData.RetiredInstructions),
-                        string.Format("{0:F2}", counterData.RetiredInstructions / counterData.ActiveCycles),
-                        FormatLargeNumber(scalarFlops + sseFlops + avxFlops + counterData.Pmc3),
-                        string.Format("{0:F2}", (scalarFlops + sseFlops + avxFlops + counterData.Pmc3) / counterData.ActiveCycles),
+                        total ? string.Format("{0:F2} W", counterData.packagePower) : "N/A",
+                        FormatLargeNumber(counterData.activeCycles),
+                        FormatLargeNumber(counterData.instr),
+                        string.Format("{0:F2}", counterData.instr / counterData.activeCycles),
+                        total ? FormatLargeNumber(counterData.instr / counterData.packagePower) : "N/A",
+                        FormatLargeNumber(scalarFlops + sseFlops + avxFlops + counterData.pmc3),
+                        string.Format("{0:F2}", (scalarFlops + sseFlops + avxFlops + counterData.pmc3) / counterData.activeCycles),
                         FormatLargeNumber(scalarFlops),
                         FormatLargeNumber(sseFlops),
                         FormatLargeNumber(avxFlops),
-                        FormatLargeNumber(counterData.Pmc3)};
+                        FormatLargeNumber(counterData.pmc3)};
             }
         }
 
@@ -495,19 +510,295 @@ namespace PmcReader.Intel
 
             private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
             {
-                float scalarFlops = counterData.Pmc0;
-                float sseFlops = counterData.Pmc1 * 2;
-                float avxFlops = counterData.Pmc2 * 4;
+                float scalarFlops = counterData.pmc0;
+                float sseFlops = counterData.pmc1 * 2;
+                float avxFlops = counterData.pmc2 * 4;
                 return new string[] { label,
-                        FormatLargeNumber(counterData.ActiveCycles),
-                        FormatLargeNumber(counterData.RetiredInstructions),
-                        string.Format("{0:F2}", counterData.RetiredInstructions / counterData.ActiveCycles),
+                        FormatLargeNumber(counterData.activeCycles),
+                        FormatLargeNumber(counterData.instr),
+                        string.Format("{0:F2}", counterData.instr / counterData.activeCycles),
                         FormatLargeNumber(scalarFlops + sseFlops + avxFlops),
-                        string.Format("{0:F2}", (scalarFlops + sseFlops + avxFlops + counterData.Pmc3) / counterData.ActiveCycles),
+                        string.Format("{0:F2}", (scalarFlops + sseFlops + avxFlops + counterData.pmc3) / counterData.activeCycles),
                         FormatLargeNumber(scalarFlops),
                         FormatLargeNumber(sseFlops),
                         FormatLargeNumber(avxFlops),
-                        string.Format("{0:F2}%", 100 * counterData.Pmc3 / counterData.ActiveCycles)};
+                        string.Format("{0:F2}%", 100 * counterData.pmc3 / counterData.activeCycles)};
+            }
+        }
+
+        public class L2Cache : MonitoringConfig
+        {
+            private SandyBridge cpu;
+            public string GetConfigName() { return "L2 Cache"; }
+
+            public L2Cache(SandyBridge intelCpu)
+            {
+                cpu = intelCpu;
+            }
+
+            public string[] GetColumns()
+            {
+                return columns;
+            }
+
+            public void Initialize()
+            {
+                cpu.EnablePerformanceCounters();
+
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    ThreadAffinity.Set(1UL << threadIdx);
+                    // PMC0 - L2 requests
+                    Ring0.WriteMsr(IA32_PERFEVTSEL0, GetPerfEvtSelRegisterValue(0x24, 0xFF, true, true, false, false, false, false, true, false, 0));
+
+                    // PMC1 - L2 hits
+                    Ring0.WriteMsr(IA32_PERFEVTSEL1, GetPerfEvtSelRegisterValue(0x24, 0b01010101, true, true, false, false, false, false, true, false, 0));
+
+                    // PMC2 - L2 lines in
+                    Ring0.WriteMsr(IA32_PERFEVTSEL2, GetPerfEvtSelRegisterValue(0xF1, 0x07, true, true, false, false, false, false, true, false, 0));
+
+                    // PMC3 - L1D -> L2 Writeback hits
+                    Ring0.WriteMsr(IA32_PERFEVTSEL3, GetPerfEvtSelRegisterValue(0x28, 0b1110, true, true, false, false, false, false, true, false, 0));
+                }
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[cpu.GetThreadCount()][];
+                cpu.InitializeCoreTotals();
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    cpu.UpdateThreadCoreCounterData(threadIdx);
+                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
+                }
+
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "L2 Hitrate", "L2 Hit BW", "L2 Fill BW", "L1D->L2 WB BW" };
+            public string GetHelpText() { return ""; }
+
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
+            {
+                return new string[] { label,
+                        FormatLargeNumber(counterData.activeCycles),
+                        FormatLargeNumber(counterData.instr),
+                        string.Format("{0:F2}", counterData.instr / counterData.activeCycles),
+                        string.Format("{0:F2}%", 100 * counterData.pmc1 / counterData.pmc0),
+                        FormatLargeNumber(counterData.pmc1 * 64) + "B/s", 
+                        FormatLargeNumber(counterData.pmc2 * 64) + "B/s",
+                        FormatLargeNumber(counterData.pmc3 * 64) + "B/s"
+                };
+            }
+        }
+
+        public class LoadSources : MonitoringConfig
+        {
+            private SandyBridge cpu;
+            public string GetConfigName() { return "Load Data Sources (WIP)"; }
+
+            public LoadSources(SandyBridge intelCpu)
+            {
+                cpu = intelCpu;
+            }
+
+            public string[] GetColumns()
+            {
+                return columns;
+            }
+
+            public void Initialize()
+            {
+                cpu.EnablePerformanceCounters();
+
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    ThreadAffinity.Set(1UL << threadIdx);
+                    // PMC0 - All loads
+                    Ring0.WriteMsr(IA32_PERFEVTSEL0, GetPerfEvtSelRegisterValue(0xD1, 0x81, true, true, false, false, false, false, true, false, 0));
+
+                    // PMC1 - L1/FB hit
+                    Ring0.WriteMsr(IA32_PERFEVTSEL1, GetPerfEvtSelRegisterValue(0xD1, 0x41, true, true, false, false, false, false, true, false, 0));
+
+                    // PMC2 - L2 hit
+                    Ring0.WriteMsr(IA32_PERFEVTSEL2, GetPerfEvtSelRegisterValue(0xD1, 0x2, true, true, false, false, false, false, true, false, 0));
+
+                    // PMC3 - LLC hit
+                    Ring0.WriteMsr(IA32_PERFEVTSEL3, GetPerfEvtSelRegisterValue(0xD1, 0x4, true, true, false, false, false, false, true, false, 0));
+                }
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[cpu.GetThreadCount()][];
+                cpu.InitializeCoreTotals();
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    cpu.UpdateThreadCoreCounterData(threadIdx);
+                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
+                }
+
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "% Loads", "Loads Retired", "L1/LFB Hit", "L2 Hit", "LLC Hit" };
+            public string GetHelpText() { return ""; }
+
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
+            {
+                return new string[] { label,
+                        FormatLargeNumber(counterData.activeCycles),
+                        FormatLargeNumber(counterData.instr),
+                        string.Format("{0:F2}", counterData.instr / counterData.activeCycles),
+                        string.Format("{0:F2}%", 100 * counterData.pmc0 / counterData.instr),
+                        FormatLargeNumber(counterData.pmc0),
+                        FormatLargeNumber(counterData.pmc1),
+                        FormatLargeNumber(counterData.pmc2),
+                        FormatLargeNumber(counterData.pmc3)
+                };
+            }
+        }
+        public class RetireHistogram : MonitoringConfig
+        {
+            private SandyBridge cpu;
+            public string GetConfigName() { return "Retire Histogram"; }
+
+            public RetireHistogram(SandyBridge intelCpu)
+            {
+                cpu = intelCpu;
+            }
+
+            public string[] GetColumns()
+            {
+                return columns;
+            }
+
+            public void Initialize()
+            {
+                cpu.EnablePerformanceCounters();
+
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    ThreadAffinity.Set(1UL << threadIdx);
+                    // PMC0 - retire slots cmask 1
+                    Ring0.WriteMsr(IA32_PERFEVTSEL0, GetPerfEvtSelRegisterValue(0xC2, 0x2, true, true, false, false, false, false, true, false, 1));
+
+                    // PMC1 - retire slots cmask 2
+                    Ring0.WriteMsr(IA32_PERFEVTSEL1, GetPerfEvtSelRegisterValue(0xC2, 0x2, true, true, false, false, false, false, true, false, 2));
+
+                    // PMC2 - retire slots cmask 3
+                    Ring0.WriteMsr(IA32_PERFEVTSEL2, GetPerfEvtSelRegisterValue(0xC2, 0x2, true, true, false, false, false, false, true, false, 3));
+
+                    // PMC3 - retire slots cmask 4
+                    Ring0.WriteMsr(IA32_PERFEVTSEL3, GetPerfEvtSelRegisterValue(0xC2, 0x2, true, true, false, false, false, false, true, false, 4));
+                }
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[cpu.GetThreadCount()][];
+                cpu.InitializeCoreTotals();
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    cpu.UpdateThreadCoreCounterData(threadIdx);
+                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
+                }
+
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "Uops Ret/C", "Retire Stall", "1 Slot", "2 Slots", "3 Slots", "4 Slots" };
+            public string GetHelpText() { return ""; }
+
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
+            {
+                return new string[] { label,
+                        FormatLargeNumber(counterData.activeCycles),
+                        FormatLargeNumber(counterData.instr),
+                        string.Format("{0:F2}", counterData.instr / counterData.activeCycles),
+                        string.Format("{0:F2}", (counterData.pmc0 + counterData.pmc1 * 2 + counterData.pmc2 * 3 + counterData.pmc3 * 4) / counterData.activeCycles),
+                        string.Format("{0:F2}%", 100 * counterData.pmc0 / counterData.activeCycles),
+                        string.Format("{0:F2}%", 100 * (counterData.pmc0 - counterData.pmc1) / counterData.pmc0),
+                        string.Format("{0:F2}%", 100 * (counterData.pmc1 - counterData.pmc2) / counterData.pmc0),
+                        string.Format("{0:F2}%", 100 * (counterData.pmc2 - counterData.pmc3) / counterData.pmc0),
+                        string.Format("{0:F2}%", 100 * counterData.pmc3 / counterData.pmc0),
+                };
+            }
+        }
+
+        public class UopExecution : MonitoringConfig
+        {
+            private SandyBridge cpu;
+            public string GetConfigName() { return "Uop Execution (Core)"; }
+
+            public UopExecution(SandyBridge intelCpu)
+            {
+                cpu = intelCpu;
+            }
+
+            public string[] GetColumns()
+            {
+                return columns;
+            }
+
+            public void Initialize()
+            {
+                cpu.EnablePerformanceCounters();
+
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    ThreadAffinity.Set(1UL << threadIdx);
+                    // PMC0 - Uops Executed
+                    Ring0.WriteMsr(IA32_PERFEVTSEL0, GetPerfEvtSelRegisterValue(0xB1, 0x2, true, true, false, false, false, false, true, false, 0));
+
+                    // PMC1 - Uops Executed, cmask=1
+                    Ring0.WriteMsr(IA32_PERFEVTSEL1, GetPerfEvtSelRegisterValue(0xB1, 0x2, true, true, false, false, false, false, true, false, 1));
+
+                    // PMC2 - Uops Executed, cmask=2
+                    Ring0.WriteMsr(IA32_PERFEVTSEL2, GetPerfEvtSelRegisterValue(0xB1, 0x2, true, true, false, false, false, false, true, false, 2));
+
+                    // PMC3 - Uops Executed, cmask=4
+                    Ring0.WriteMsr(IA32_PERFEVTSEL3, GetPerfEvtSelRegisterValue(0xB1, 0x2, true, true, false, false, false, false, true, false, 4));
+                }
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[cpu.GetThreadCount()][];
+                cpu.InitializeCoreTotals();
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    cpu.UpdateThreadCoreCounterData(threadIdx);
+                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
+                }
+
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "Uops Exec/C", "Uops Exec/C (non-stall)", "Exec Stall", "1 Uop", ">=2 Uops", ">=4 Uops" };
+            public string GetHelpText() { return ""; }
+
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
+            {
+                return new string[] { label,
+                        FormatLargeNumber(counterData.activeCycles),
+                        FormatLargeNumber(counterData.instr),
+                        string.Format("{0:F2}", counterData.instr / counterData.activeCycles),
+                        string.Format("{0:F2}", counterData.pmc0 / counterData.activeCycles),
+                        string.Format("{0:F2}", counterData.pmc0 / counterData.pmc1),
+                        string.Format("{0:F2}%", 100 * (counterData.activeCycles - counterData.pmc1) / counterData.activeCycles),
+                        string.Format("{0:F2}%", 100 * (counterData.pmc1 - counterData.pmc2) / counterData.activeCycles),
+                        string.Format("{0:F2}%", 100 * counterData.pmc2 / counterData.activeCycles),
+                        string.Format("{0:F2}%", 100 * counterData.pmc3 / counterData.activeCycles)
+                };
             }
         }
     }
