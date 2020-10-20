@@ -200,12 +200,20 @@ namespace PmcReader.AMD
             elapsedMperf = mperf;
             if (instr > lastThreadRetiredInstructions[threadIdx])
                 elapsedInstr = instr - lastThreadRetiredInstructions[threadIdx];
+            else if (lastThreadRetiredInstructions[threadIdx] > 0)
+                elapsedInstr = instr + (0xFFFFFFFFFFFFFFFF - lastThreadRetiredInstructions[threadIdx]);
             if (aperf > lastThreadAperf[threadIdx])
                 elapsedAperf = aperf - lastThreadAperf[threadIdx];
+            else if (lastThreadAperf[threadIdx] > 0)
+                elapsedAperf = aperf + (0xFFFFFFFFFFFFFFFF - lastThreadAperf[threadIdx]);
             if (mperf > lastThreadMperf[threadIdx])
                 elapsedMperf = mperf - lastThreadMperf[threadIdx];
+            else if (lastThreadMperf[threadIdx] > 0)
+                elapsedMperf = mperf + (0xFFFFFFFFFFFFFFFF - lastThreadMperf[threadIdx]);
             if (tsc > lastThreadTsc[threadIdx])
                 elapsedTsc = tsc - lastThreadTsc[threadIdx];
+            else if (lastThreadTsc[threadIdx] > 0)
+                elapsedTsc = tsc + (0xFFFFFFFFFFFFFFFF - lastThreadTsc[threadIdx]);
 
             lastThreadAperf[threadIdx] = aperf;
             lastThreadMperf[threadIdx] = mperf;
@@ -254,7 +262,14 @@ namespace PmcReader.AMD
             elapsedEnergyStat = pkgEnergyStat;
             if (lastPkgPwr < pkgEnergyStat) elapsedEnergyStat = pkgEnergyStat - lastPkgPwr;
             lastPkgPwr = pkgEnergyStat;
-            return elapsedEnergyStat * energyStatusUnits * normalizationFactor;
+
+            float watts = elapsedEnergyStat * energyStatusUnits * normalizationFactor;
+            if (NormalizedTotalCounts != null)
+            {
+                NormalizedTotalCounts.watts = watts;
+            }
+
+            return watts;
         }
 
         /// <summary>

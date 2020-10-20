@@ -87,6 +87,23 @@ namespace PmcReader.AMD
             ccxTotals.ctr5 += ccxCounterData[ccxIdx].ctr5;
         }
 
+        public Tuple<string, float>[] GetOverallL3CounterValues(ulong aperf, ulong mperf, ulong irperfcount, ulong tsc,
+            string ctr0, string ctr1, string ctr2, string ctr3, string ctr4, string ctr5)
+        {
+            Tuple<string, float>[] retval = new Tuple<string, float>[10];
+            retval[0] = new Tuple<string, float>("APERF", aperf);
+            retval[1] = new Tuple<string, float>("MPERF", mperf);
+            retval[2] = new Tuple<string, float>("TSC", tsc);
+            retval[3] = new Tuple<string, float>("IRPerfCount", irperfcount);
+            retval[4] = new Tuple<string, float>(ctr0, ccxTotals.ctr0);
+            retval[5] = new Tuple<string, float>(ctr1, ccxTotals.ctr1);
+            retval[6] = new Tuple<string, float>(ctr2, ccxTotals.ctr2);
+            retval[7] = new Tuple<string, float>(ctr3, ccxTotals.ctr3);
+            retval[8] = new Tuple<string, float>(ctr4, ccxTotals.ctr4);
+            retval[9] = new Tuple<string, float>(ctr5, ccxTotals.ctr5);
+            return retval;
+        }
+
         public class HitRateLatencyConfig : MonitoringConfig
         {
             private Zen2L3Cache l3Cache;
@@ -121,6 +138,7 @@ namespace PmcReader.AMD
                 results.unitMetrics = new string[l3Cache.ccxSampleThreads.Count()][];
                 float[] ccxClocks = new float[l3Cache.allCcxThreads.Count()];
                 l3Cache.ClearTotals();
+                ulong totalAperf = 0, totalMperf = 0, totalTsc = 0, totalIrPerfCount = 0;
                 foreach (KeyValuePair<int, int> ccxThread in l3Cache.ccxSampleThreads)
                 {
                     // Try to determine frequency, by getting max frequency of cores in ccx
@@ -128,8 +146,12 @@ namespace PmcReader.AMD
                     {
                         ThreadAffinity.Set(1UL << ccxThreadIdx);
                         float normalizationFactor = l3Cache.GetNormalizationFactor(l3Cache.GetThreadCount() + ccxThreadIdx);
-                        ulong aperf, mperf, tsc;
-                        l3Cache.ReadFixedCounters(ccxThreadIdx, out aperf, out _, out tsc, out mperf);
+                        ulong aperf, mperf, tsc, irperfcount;
+                        l3Cache.ReadFixedCounters(ccxThreadIdx, out aperf, out irperfcount, out tsc, out mperf);
+                        totalAperf += aperf;
+                        totalIrPerfCount += irperfcount;
+                        totalTsc += tsc;
+                        totalMperf += mperf;
                         float clk = tsc * ((float)aperf / mperf) * normalizationFactor;
                         if (clk > ccxClocks[ccxThread.Key]) ccxClocks[ccxThread.Key] = clk;
                         if (ccxThreadIdx == ccxThread.Value)
@@ -144,6 +166,8 @@ namespace PmcReader.AMD
                 foreach (float ccxClock in ccxClocks) avgClk += ccxClock;
                 avgClk /= l3Cache.allCcxThreads.Count();
                 results.overallMetrics = computeMetrics("Overall", l3Cache.ccxTotals, avgClk);
+                results.overallCounterValues = l3Cache.GetOverallL3CounterValues(totalAperf, totalMperf, totalIrPerfCount, totalTsc, 
+                    "L3Access", "L3Miss", "L3MissLat/16", "L3MissSdpReq", "Unused", "Unused");
                 return results;
             }
 

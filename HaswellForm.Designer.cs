@@ -48,6 +48,9 @@
             this.logFilePathTextBox = new System.Windows.Forms.TextBox();
             this.stopLoggingButton = new System.Windows.Forms.Button();
             this.logFilePathLabel = new System.Windows.Forms.Label();
+            this.L3LogToFileButton = new System.Windows.Forms.Button();
+            this.L3LogToFileTextBox = new System.Windows.Forms.TextBox();
+            this.L3StopLoggingButton = new System.Windows.Forms.Button();
             this.SuspendLayout();
             // 
             // configSelect
@@ -240,11 +243,41 @@
             this.logFilePathLabel.TabIndex = 20;
             this.logFilePathLabel.Text = "Log File Path";
             // 
+            // L3LogToFileButton
+            // 
+            this.L3LogToFileButton.Location = new System.Drawing.Point(527, 528);
+            this.L3LogToFileButton.Name = "L3LogToFileButton";
+            this.L3LogToFileButton.Size = new System.Drawing.Size(75, 23);
+            this.L3LogToFileButton.TabIndex = 21;
+            this.L3LogToFileButton.Text = "Log To File";
+            this.L3LogToFileButton.UseVisualStyleBackColor = true;
+            this.L3LogToFileButton.Click += new System.EventHandler(this.L3LogToFileButton_Click);
+            // 
+            // L3LogToFileTextBox
+            // 
+            this.L3LogToFileTextBox.Location = new System.Drawing.Point(313, 530);
+            this.L3LogToFileTextBox.Name = "L3LogToFileTextBox";
+            this.L3LogToFileTextBox.Size = new System.Drawing.Size(208, 20);
+            this.L3LogToFileTextBox.TabIndex = 22;
+            // 
+            // L3StopLoggingButton
+            // 
+            this.L3StopLoggingButton.Location = new System.Drawing.Point(608, 528);
+            this.L3StopLoggingButton.Name = "L3StopLoggingButton";
+            this.L3StopLoggingButton.Size = new System.Drawing.Size(86, 23);
+            this.L3StopLoggingButton.TabIndex = 23;
+            this.L3StopLoggingButton.Text = "Stop Logging";
+            this.L3StopLoggingButton.UseVisualStyleBackColor = true;
+            this.L3StopLoggingButton.Click += new System.EventHandler(this.L3StopLoggingButton_Click);
+            // 
             // HaswellForm
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.ClientSize = new System.Drawing.Size(1197, 687);
+            this.Controls.Add(this.L3StopLoggingButton);
+            this.Controls.Add(this.L3LogToFileTextBox);
+            this.Controls.Add(this.L3LogToFileButton);
             this.Controls.Add(this.logFilePathLabel);
             this.Controls.Add(this.stopLoggingButton);
             this.Controls.Add(this.logFilePathTextBox);
@@ -294,6 +327,9 @@
         private System.Windows.Forms.TextBox logFilePathTextBox;
         private System.Windows.Forms.Button stopLoggingButton;
         private System.Windows.Forms.Label logFilePathLabel;
+        private System.Windows.Forms.Button L3LogToFileButton;
+        private System.Windows.Forms.TextBox L3LogToFileTextBox;
+        private System.Windows.Forms.Button L3StopLoggingButton;
     }
 }
 

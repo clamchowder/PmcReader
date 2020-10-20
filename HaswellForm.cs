@@ -147,15 +147,37 @@ namespace PmcReader
         private void logButton_Click(object sender, EventArgs e)
         {
             // Only log core events for now
-            coreMonitoring.monitoringArea.StopLoggingToFile();
-            string error = coreMonitoring.monitoringArea.StartLogToFile(logFilePathTextBox.Text);
-            if (error != null) errorLabel.Text = error;
-            else errorLabel.Text = "Logging started";
+            if (coreMonitoring.monitoringArea != null)
+            {
+                coreMonitoring.monitoringArea.StopLoggingToFile();
+                string error = coreMonitoring.monitoringArea.StartLogToFile(logFilePathTextBox.Text);
+                if (error != null) errorLabel.Text = error;
+                else errorLabel.Text = "Logging started";
+            }
+            else errorLabel.Text = "No core mon area selected";
         }
 
         private void stopLoggingButton_Click(object sender, EventArgs e)
         {
             coreMonitoring.monitoringArea.StopLoggingToFile();
+            errorLabel.Text = "Logging stopped";
+        }
+
+        private void L3LogToFileButton_Click(object sender, EventArgs e)
+        {
+            if (l3Monitoring.monitoringArea != null)
+            {
+                l3Monitoring.monitoringArea.StopLoggingToFile();
+                string error = l3Monitoring.monitoringArea.StartLogToFile(L3LogToFileTextBox.Text);
+                if (error != null) errorLabel.Text = error;
+                else errorLabel.Text = "L3 Logging Started";
+            }
+            else errorLabel.Text = "No L3 mon area selected";
+        }
+
+        private void L3StopLoggingButton_Click(object sender, EventArgs e)
+        {
+            if (l3Monitoring.monitoringArea != null) l3Monitoring.monitoringArea.StopLoggingToFile();
             errorLabel.Text = "Logging stopped";
         }
 
