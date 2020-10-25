@@ -59,7 +59,9 @@
       <DependentUpon>HaswellForm.cs</DependentUpon>
     </Compile>
     <Compile Include="Intel\HaswellClientArb.cs" />
+    <Compile Include="Intel\SkylakeClientL3.cs" />
     <Compile Include="Intel\HaswellClientL3.cs" />
+    <Compile Include="Intel\SkylakeClientUncore.cs" />
     <Compile Include="Intel\HaswellClientUncore.cs" />
     <Compile Include="Intel\SandyBridgePCU.cs" />
     <Compile Include="Intel\SandyBridgeEL3.cs" />

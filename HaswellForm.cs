@@ -56,6 +56,7 @@ namespace PmcReader
                     else if ((cpuModel & 0xF) == 0xE)
                     {
                         coreMonitoring.monitoringArea = new Intel.Skylake();
+                        l3Monitoring.monitoringArea = new Intel.SkylakeClientL3();
                     }
                 }
             }
