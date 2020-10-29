@@ -57,7 +57,9 @@ namespace PmcReader
                     {
                         coreMonitoring.monitoringArea = new Intel.Skylake();
                         l3Monitoring.monitoringArea = new Intel.SkylakeClientL3();
-                    }
+                        dfMonitoring.monitoringArea = new Intel.SkylakeClientArb();
+                        dfLabelOverride = "System Agent Monitoring Configs (pick one):";
+;                    }
                 }
             }
             else if (cpuManufacturer.Equals("AuthenticAMD"))

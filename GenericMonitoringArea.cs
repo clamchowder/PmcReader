@@ -216,7 +216,7 @@ namespace PmcReader
         /// <param name="monitoringListView">List view to update</param>
         public void SetMonitoringListView(MonitoringUpdateResults updateResults, ListView monitoringListView)
         {
-            if (monitoringListView.Items.Count == updateResults.unitMetrics.Length + 1)
+            if (updateResults.unitMetrics != null && monitoringListView.Items.Count == updateResults.unitMetrics.Length + 1)
             {
                 UpdateListViewItem(updateResults.overallMetrics, monitoringListView.Items[0]);
                 if (updateResults.unitMetrics != null)

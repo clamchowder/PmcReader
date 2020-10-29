@@ -1,9 +1,10 @@
 ﻿using PmcReader.Interop;
 using System;
+using System.Runtime.InteropServices.WindowsRuntime;
 
 namespace PmcReader.Intel
 {
-    public class SkylakeClientL3 : HaswellClientUncore
+    public class SkylakeClientL3 : SkylakeClientUncore
     {
         /// <summary>
         /// Number of L3 cache coherency boxes
@@ -23,7 +24,7 @@ namespace PmcReader.Intel
             CboCount = (int)((cboConfig & 0x7) - 1);
             cboData = new NormalizedCboCounterData[CboCount];
 
-            monitoringConfigs = new MonitoringConfig[3];
+            monitoringConfigs = new MonitoringConfig[1];
             monitoringConfigs[0] = new HitrateConfig(this);
         }
 
@@ -59,6 +60,14 @@ namespace PmcReader.Intel
             cboData[cboIdx].ctr1 = ctr1 * normalizationFactor;
             cboTotals.ctr0 += cboData[cboIdx].ctr0;
             cboTotals.ctr1 += cboData[cboIdx].ctr1;
+        }
+
+        public Tuple<string, float>[] GetOverallCounterValues(string ctr0, string ctr1)
+        {
+            Tuple<string, float>[] retval = new Tuple<string, float>[11];
+            retval[0] = new Tuple<string, float>(ctr0, cboTotals.ctr0);
+            retval[1] = new Tuple<string, float>(ctr1, cboTotals.ctr1);
+            return retval;
         }
 
         public class HitrateConfig : MonitoringConfig
@@ -112,6 +121,7 @@ namespace PmcReader.Intel
                 }
 
                 results.overallMetrics = computeMetrics("Overall", cpu.cboTotals);
+                results.overallCounterValues = cpu.GetOverallCounterValues("L3 Lookups", "L3 Misses");
                 return results;
             }
 
