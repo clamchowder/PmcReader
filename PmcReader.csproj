@@ -48,7 +48,9 @@
   <ItemGroup>
     <Compile Include="AMD\Amd17hCpu.cs" />
     <Compile Include="AMD\Zen2.cs" />
+    <Compile Include="AMD\Zen1.cs" />
     <Compile Include="AMD\Zen2DataFabric.cs" />
+    <Compile Include="AMD\ZenL3Cache.cs" />
     <Compile Include="AMD\Zen2L3Cache.cs" />
     <Compile Include="Cpu.cs" />
     <Compile Include="GenericMonitoringArea.cs" />
