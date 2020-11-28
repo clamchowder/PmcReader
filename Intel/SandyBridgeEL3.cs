@@ -1,5 +1,5 @@
 ﻿using PmcReader.Interop;
-using System.Runtime.Remoting.Messaging;
+using System;
 
 namespace PmcReader.Intel
 {
@@ -264,6 +264,16 @@ namespace PmcReader.Intel
                 (freezeEnable ? 1UL : 0UL) << 16;
         }
 
+        public Tuple<string, float>[] GetOverallL3CounterValues(string ctr0, string ctr1, string ctr2, string ctr3)
+        {
+            Tuple<string, float>[] retval = new Tuple<string, float>[4];
+            retval[0] = new Tuple<string, float>(ctr0, cboTotals.ctr0);
+            retval[1] = new Tuple<string, float>(ctr1, cboTotals.ctr1);
+            retval[2] = new Tuple<string, float>(ctr2, cboTotals.ctr2);
+            retval[3] = new Tuple<string, float>(ctr3, cboTotals.ctr3);
+            return retval;
+        }
+
         public class HitsBlConfig : MonitoringConfig
         {
             private SandyBridgeEL3 cpu;
@@ -304,6 +314,7 @@ namespace PmcReader.Intel
                 }
 
                 results.overallMetrics = computeMetrics("Overall", cpu.cboTotals);
+                results.overallCounterValues = cpu.GetOverallL3CounterValues("Clockticks", "LLC Hit", "BL Up Cycles", "BL Down Cycles");
                 return results;
             }
 
@@ -348,7 +359,7 @@ namespace PmcReader.Intel
                 // 0x13 = ingress allocations. umask = 1 = irq (Ingress Request Queue = core requests). must be in ctr0 or ctr1
                 ulong rxrInserts = GetUncorePerfEvtSelRegisterValue(0x13, 1, false, false, false, true, false, 0);
                 // 0x1F = counter 0 occupancy. cmask = 1 to count cycles when ingress queue isn't empty
-                ulong rxrEntryPresent = GetUncorePerfEvtSelRegisterValue(0x1D, 0xFF, false, false, false, true, false, 1);
+                ulong rxrEntryPresent = GetUncorePerfEvtSelRegisterValue(0x1F, 0xFF, false, false, false, true, false, 1);
                 ulong filter = GetUncoreFilterRegisterValue(0, 0x1, LLC_LOOKUP_E | LLC_LOOKUP_F | LLC_LOOKUP_M | LLC_LOOKUP_S, 0);
                 cpu.SetupMonitoringSession(rxrOccupancy, rxrInserts, clockticks, rxrEntryPresent, filter);
             }
@@ -365,6 +376,7 @@ namespace PmcReader.Intel
                 }
 
                 results.overallMetrics = computeMetrics("Overall", cpu.cboTotals);
+                results.overallCounterValues = cpu.GetOverallL3CounterValues("Ingress Occupancy", "Ingress Inserts", "Clockticks", "Ingress Entry Present");
                 return results;
             }
 
@@ -408,7 +420,7 @@ namespace PmcReader.Intel
                 // 0x35 = tor inserts, 0x1 = use opcode filter
                 ulong torInserts = GetUncorePerfEvtSelRegisterValue(0x35, 1, false, false, false, true, false, 0);
                 // 0x1F = counter 0 occupancy. cmask = 1 to count cycles when data read is present
-                ulong drdPresent = GetUncorePerfEvtSelRegisterValue(0x1D, 0xFF, false, false, false, true, false, 1);
+                ulong drdPresent = GetUncorePerfEvtSelRegisterValue(0x1F, 0xFF, false, false, false, true, false, 1);
                 // opcode 0x182 = demand data read, but opcode field is only 8 bits wide. wtf.
                 // try with just lower 8 bits
                 ulong filter = GetUncoreFilterRegisterValue(0, 0x1, LLC_LOOKUP_E | LLC_LOOKUP_F | LLC_LOOKUP_M | LLC_LOOKUP_S, 0x182);
@@ -427,6 +439,7 @@ namespace PmcReader.Intel
                 }
 
                 results.overallMetrics = computeMetrics("Overall", cpu.cboTotals, true);
+                results.overallCounterValues = cpu.GetOverallL3CounterValues("ToR Occupancy", "ToR Inserts", "Clockticks", "DRD Present");
                 return results;
             }
 
@@ -472,7 +485,7 @@ namespace PmcReader.Intel
                 // 0x35 = tor inserts, 0b11 = miss transactions, use opcode filter
                 ulong torInserts = GetUncorePerfEvtSelRegisterValue(0x35, 0b11, false, false, false, true, false, 0);
                 // 0x1F = counter 0 occupancy. cmask = 1 to count cycles when data read is present
-                ulong missPresent = GetUncorePerfEvtSelRegisterValue(0x1D, 0xFF, false, false, false, true, false, 1);
+                ulong missPresent = GetUncorePerfEvtSelRegisterValue(0x1F, 0xFF, false, false, false, true, false, 1);
                 // opcode 0x182 = demand data read, but opcode field is only 8 bits wide. wtf.
                 // try with just lower 8 bits
                 ulong filter = GetUncoreFilterRegisterValue(0, 0x1, LLC_LOOKUP_E | LLC_LOOKUP_F | LLC_LOOKUP_M | LLC_LOOKUP_S, 0x182);
@@ -491,6 +504,7 @@ namespace PmcReader.Intel
                 }
 
                 results.overallMetrics = computeMetrics("Overall", cpu.cboTotals, true);
+                results.overallCounterValues = cpu.GetOverallL3CounterValues("ToR Occupancy", "ToR Inserts", "Clockticks", "Miss Present");
                 return results;
             }
 
@@ -555,6 +569,7 @@ namespace PmcReader.Intel
                 }
 
                 results.overallMetrics = computeMetrics("Overall", cpu.cboTotals, true);
+                results.overallCounterValues = cpu.GetOverallL3CounterValues("ToR Occupancy", "ToR Inserts", "Clockticks", "ToR Entry Present");
                 return results;
             }
 
