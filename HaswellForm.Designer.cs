@@ -51,6 +51,9 @@
             this.L3LogToFileButton = new System.Windows.Forms.Button();
             this.L3LogToFileTextBox = new System.Windows.Forms.TextBox();
             this.L3StopLoggingButton = new System.Windows.Forms.Button();
+            this.DfStopLoggingButton = new System.Windows.Forms.Button();
+            this.DfLogToFileButton = new System.Windows.Forms.Button();
+            this.DfLogToFileTextBox = new System.Windows.Forms.TextBox();
             this.SuspendLayout();
             // 
             // configSelect
@@ -270,11 +273,41 @@
             this.L3StopLoggingButton.UseVisualStyleBackColor = true;
             this.L3StopLoggingButton.Click += new System.EventHandler(this.L3StopLoggingButton_Click);
             // 
+            // DfStopLoggingButton
+            // 
+            this.DfStopLoggingButton.Location = new System.Drawing.Point(1099, 528);
+            this.DfStopLoggingButton.Name = "DfStopLoggingButton";
+            this.DfStopLoggingButton.Size = new System.Drawing.Size(86, 23);
+            this.DfStopLoggingButton.TabIndex = 24;
+            this.DfStopLoggingButton.Text = "Stop Logging";
+            this.DfStopLoggingButton.UseVisualStyleBackColor = true;
+            this.DfStopLoggingButton.Click += new System.EventHandler(this.DfStopLoggingButton_Click);
+            // 
+            // DfLogToFileButton
+            // 
+            this.DfLogToFileButton.Location = new System.Drawing.Point(1018, 528);
+            this.DfLogToFileButton.Name = "DfLogToFileButton";
+            this.DfLogToFileButton.Size = new System.Drawing.Size(75, 23);
+            this.DfLogToFileButton.TabIndex = 25;
+            this.DfLogToFileButton.Text = "Log To File";
+            this.DfLogToFileButton.UseVisualStyleBackColor = true;
+            this.DfLogToFileButton.Click += new System.EventHandler(this.DfLogToFileButton_Click);
+            // 
+            // DfLogToFileTextBox
+            // 
+            this.DfLogToFileTextBox.Location = new System.Drawing.Point(818, 530);
+            this.DfLogToFileTextBox.Name = "DfLogToFileTextBox";
+            this.DfLogToFileTextBox.Size = new System.Drawing.Size(194, 20);
+            this.DfLogToFileTextBox.TabIndex = 26;
+            // 
             // HaswellForm
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.ClientSize = new System.Drawing.Size(1197, 687);
+            this.Controls.Add(this.DfLogToFileTextBox);
+            this.Controls.Add(this.DfLogToFileButton);
+            this.Controls.Add(this.DfStopLoggingButton);
             this.Controls.Add(this.L3StopLoggingButton);
             this.Controls.Add(this.L3LogToFileTextBox);
             this.Controls.Add(this.L3LogToFileButton);
@@ -330,6 +363,9 @@
         private System.Windows.Forms.Button L3LogToFileButton;
         private System.Windows.Forms.TextBox L3LogToFileTextBox;
         private System.Windows.Forms.Button L3StopLoggingButton;
+        private System.Windows.Forms.Button DfStopLoggingButton;
+        private System.Windows.Forms.Button DfLogToFileButton;
+        private System.Windows.Forms.TextBox DfLogToFileTextBox;
     }
 }
 

@@ -84,7 +84,7 @@ namespace PmcReader.AMD
             private long lastUpdateTime;
             private const int monitoringThread = 1;
 
-            public string[] columns = new string[] { "Item", "Count * 64B", "Count" };
+            public string[] columns = new string[] { "Item", "Count * 64B", "Count", "Pkg Pwr" };
             public string GetHelpText() { return ""; }
             public BwTestConfig(Zen2DataFabric dataFabric)
             {
@@ -106,6 +106,7 @@ namespace PmcReader.AMD
                 Ring0.WriteMsr(MSR_DF_PERF_CTL_2, mysteryDramBytes2);
                 Ring0.WriteMsr(MSR_DF_PERF_CTL_3, mysteryDramBytes3);
 
+                dataFabric.InitializeCoreTotals();
                 lastUpdateTime = DateTimeOffset.Now.ToUnixTimeMilliseconds();
             }
 
@@ -113,22 +114,31 @@ namespace PmcReader.AMD
             {
                 float normalizationFactor = dataFabric.GetNormalizationFactor(ref lastUpdateTime);
                 MonitoringUpdateResults results = new MonitoringUpdateResults();
-                results.unitMetrics = new string[4][];
                 ThreadAffinity.Set(1UL << monitoringThread);
                 ulong ctr0 = ReadAndClearMsr(MSR_DF_PERF_CTR_0);
                 ulong ctr1 = ReadAndClearMsr(MSR_DF_PERF_CTR_1);
                 ulong ctr2 = ReadAndClearMsr(MSR_DF_PERF_CTR_2);
                 ulong ctr3 = ReadAndClearMsr(MSR_DF_PERF_CTR_3);
 
-                results.unitMetrics[0] = new string[] { "Evt 0x07 Umask 2", FormatLargeNumber(ctr0 * normalizationFactor * 64) + "B/s", FormatLargeNumber(ctr0 * normalizationFactor) };
-                results.unitMetrics[1] = new string[] { "Evt 0x47 Umask 2", FormatLargeNumber(ctr1 * normalizationFactor * 64) + "B/s", FormatLargeNumber(ctr1 * normalizationFactor) };
-                results.unitMetrics[2] = new string[] { "Mem BW related?", FormatLargeNumber(ctr2 * normalizationFactor * 64) + "B/s", FormatLargeNumber(ctr2 * normalizationFactor) };
-                results.unitMetrics[3] = new string[] { "Wat Dis?", FormatLargeNumber(ctr3 * normalizationFactor * 64) + "B/s", FormatLargeNumber(ctr3 * normalizationFactor) };
+                dataFabric.ReadPackagePowerCounter();
+                results.unitMetrics = new string[4][];
+                results.unitMetrics[0] = new string[] { "Evt 0x07 Umask 2", FormatLargeNumber(ctr0 * normalizationFactor * 64) + "B/s", FormatLargeNumber(ctr0 * normalizationFactor), "N/A" };
+                results.unitMetrics[1] = new string[] { "Evt 0x47 Umask 2", FormatLargeNumber(ctr1 * normalizationFactor * 64) + "B/s", FormatLargeNumber(ctr1 * normalizationFactor), "N/A" };
+                results.unitMetrics[2] = new string[] { "Mem BW related?", FormatLargeNumber(ctr2 * normalizationFactor * 64) + "B/s", FormatLargeNumber(ctr2 * normalizationFactor), "N/A" };
+                results.unitMetrics[3] = new string[] { "Wat Dis?", FormatLargeNumber(ctr3 * normalizationFactor * 64) + "B/s", FormatLargeNumber(ctr3 * normalizationFactor), "N/A" };
 
                 results.overallMetrics = new string[] { "Overall",
                     FormatLargeNumber((ctr0 + ctr1 + ctr2 + ctr3) * normalizationFactor * 64) + "B/s",
-                    FormatLargeNumber(ctr0 + ctr1 + ctr2 + ctr3)
+                    FormatLargeNumber(ctr0 + ctr1 + ctr2 + ctr3),
+                    string.Format("{0:F2} W", dataFabric.NormalizedTotalCounts.watts)
                 };
+                
+                results.overallCounterValues = new Tuple<string, float>[5];
+                results.overallCounterValues[0] = new Tuple<string, float>("Package Power", dataFabric.NormalizedTotalCounts.watts);
+                results.overallCounterValues[1] = new Tuple<string, float>("Evt 0x07 Umask 2", ctr0);
+                results.overallCounterValues[2] = new Tuple<string, float>("Evt 0x47 Umask 2", ctr1);
+                results.overallCounterValues[3] = new Tuple<string, float>("Mem BW? 0x87 Umask 1", ctr2);
+                results.overallCounterValues[4] = new Tuple<string, float>("Evt 0xC7 Umask 4", ctr3);
                 return results;
             }
         }

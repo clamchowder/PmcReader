@@ -186,7 +186,24 @@ namespace PmcReader
         private void L3StopLoggingButton_Click(object sender, EventArgs e)
         {
             if (l3Monitoring.monitoringArea != null) l3Monitoring.monitoringArea.StopLoggingToFile();
-            errorLabel.Text = "Logging stopped";
+            errorLabel.Text = "L3 Logging stopped";
+        }
+
+        private void DfLogToFileButton_Click(object sender, EventArgs e)
+        {
+            if (dfMonitoring.monitoringArea != null)
+            {
+                string error = dfMonitoring.monitoringArea.StartLogToFile(DfLogToFileTextBox.Text);
+                if (error != null) errorLabel.Text = error;
+                else errorLabel.Text = "DF Logging Started";
+            }
+            else errorLabel.Text = "No DF mon area selected";
+        }
+
+        private void DfStopLoggingButton_Click(object sender, EventArgs e)
+        {
+            if (dfMonitoring.monitoringArea != null) dfMonitoring.monitoringArea.StopLoggingToFile();
+            errorLabel.Text = "DF Logging stopped";
         }
 
         private void applyConfigButton_Click(object sender, EventArgs e)

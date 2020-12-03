@@ -654,7 +654,7 @@ namespace PmcReader.AMD
             {
                 cpu.EnablePerformanceCounters();
                 ulong dcAccess = GetPerfCtlValue(0x40, 0, true, true, false, false, true, false, 0, 0, false, false);
-                ulong lsMabAlloc = GetPerfCtlValue(0x41, 0xB, true, true, false, false, true, false, 0, 0, false, false);
+                ulong lsMabAlloc = GetPerfCtlValue(0x41, 0x3, true, true, false, false, true, false, 0, 0, false, false);
                 ulong dcRefillFromL2 = GetPerfCtlValue(0x43, 0x1, true, true, false, false, true, false, 0, 0, false, false);
                 ulong dcRefillFromL3 = GetPerfCtlValue(0x43, 0x12, true, true, false, false, true, false, 0, 0, false, false);
                 ulong dcRefillFromDram = GetPerfCtlValue(0x43, 0x48, true, true, false, false, true, false, 0, 0, false, false);
@@ -688,7 +688,8 @@ namespace PmcReader.AMD
                 return results;
             }
 
-            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "L1D Hitrate?", "L1D Hit BW?", "L1D MPKI", "L2 Refill BW", "L3 Refill BW", "DRAM Refill BW", "Hw Prefetch BW" };
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "L1D Hitrate?", "L1D/MAB Hit BW?", "L1D MPKI", "L2 Refill BW", 
+                "Fill from L2/Ki", "L3 Refill BW", "Fill from L3/Ki", "DRAM Refill BW", "Fill from DRAM/Ki", "Hw Prefetch BW", };
 
             public string GetHelpText()
             {
@@ -719,10 +720,13 @@ namespace PmcReader.AMD
                     string.Format("{0:F2}", counterData.instr / counterData.aperf),
                     string.Format("{0:F2}%", dcHitrate),
                     FormatLargeNumber(dcHitBw) + "B/s",
-                    string.Format("{0:F2}", lsMabAlloc / counterData.instr * 1000),
+                    string.Format("{0:F2}", 1000 * lsMabAlloc / counterData.instr),
                     FormatLargeNumber(l2RefillBw) + "B/s",
+                    string.Format("{0:F2}", 1000 * dcRefillFromL2 / counterData.instr),
                     FormatLargeNumber(l3RefillBw) + "B/s",
+                    string.Format("{0:F2}", 1000 * dcRefillFromL3 / counterData.instr),
                     FormatLargeNumber(dramRefillBw) + "B/s",
+                    string.Format("{0:F2}", 1000 * dcRefillFromDram / counterData.instr),
                     FormatLargeNumber(prefetchBw) + "B/s"};
             }
         }
@@ -1381,16 +1385,16 @@ namespace PmcReader.AMD
                     ThreadAffinity.Set(1UL << threadIdx);
                     // uops from decoder, cmask 1
                     Ring0.WriteMsr(MSR_PERF_CTL_0, GetPerfCtlValue(0xAA, 1, true, true, false, false, true, false, cmask: 1, 0, false, false));
-                    // ret uops, cmask 2
+                    // ^^ cmask 2
                     Ring0.WriteMsr(MSR_PERF_CTL_1, GetPerfCtlValue(0xAA, 1, true, true, false, false, true, false, cmask: 2, 0, false, false));
                     // ^^ cmask 3
                     Ring0.WriteMsr(MSR_PERF_CTL_2, GetPerfCtlValue(0xAA, 1, true, true, false, false, true, false, cmask: 3, 0, false, false));
                     // ^^ cmask 4
                     Ring0.WriteMsr(MSR_PERF_CTL_3, GetPerfCtlValue(0xAA, 1, true, true, false, false, true, false, cmask: 4, 0, false, false));
-                    // ^^ cmask 5
-                    Ring0.WriteMsr(MSR_PERF_CTL_4, GetPerfCtlValue(0xAA, 1, true, true, false, false, true, false, cmask: 5 , 0, false, false));
-                    // all uops from decoder
-                    Ring0.WriteMsr(MSR_PERF_CTL_5, GetPerfCtlValue(0xAA, 1, true, true, false, false, true, false, cmask: 0, 0, false, false));
+                    // op cache active
+                    Ring0.WriteMsr(MSR_PERF_CTL_4, GetPerfCtlValue(0xAA, 2, true, true, false, false, true, false, cmask: 1 , 0, false, false));
+                    // all uops from op cache
+                    Ring0.WriteMsr(MSR_PERF_CTL_5, GetPerfCtlValue(0xAA, 2, true, true, false, false, true, false, cmask: 0, 0, false, false));
                 }
             }
 
@@ -1406,27 +1410,30 @@ namespace PmcReader.AMD
                 }
 
                 results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                results.overallCounterValues = cpu.GetOverallCounterValues("Decoder Ops cmask 1", "Decoder Ops cmask 2", "Decoder Ops cmask 3", "Decoder Ops cmask 4", "Op Cache cmask 1", "Op Cache Ops");
                 return results;
             }
 
-            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "Decoder Active", "1 op", "2 ops", "3 ops", "4 ops", ">4 ops", ">4 ops", "Decoder Ops/C", "Decoder Ops" };
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "OC Active", "Decoder Active", "1 op", "2 ops", "3 ops", "4 ops", "Decoder Ops/C", "Decoder Ops", "Op Cache Ops/C", "Op Cache Ops" };
 
             public string GetHelpText() { return "In theory the decoder can deliver >4 ops if instructions generate more than one op\nBut I guess that doesn't happen?"; }
 
             private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
             {
+                float decoderOps = 4 * counterData.ctr3 + 3 * (counterData.ctr2 - counterData.ctr3) + 2 * (counterData.ctr1 - counterData.ctr2) + (counterData.ctr0 - counterData.ctr1);
                 return new string[] { label,
                         FormatLargeNumber(counterData.aperf) + "/s",
                         FormatLargeNumber(counterData.instr) + "/s",
                         string.Format("{0:F2}", counterData.instr / counterData.aperf),
+                        string.Format("{0:F2}%", 100 * counterData.ctr4 / counterData.aperf),
                         string.Format("{0:F2}%", 100 * counterData.ctr0 / counterData.aperf),
                         string.Format("{0:F2}%", 100 * (counterData.ctr0 - counterData.ctr1) / counterData.ctr0),
                         string.Format("{0:F2}%", 100 * (counterData.ctr1 - counterData.ctr2) / counterData.ctr0),
                         string.Format("{0:F2}%", 100 * (counterData.ctr2 - counterData.ctr3) / counterData.ctr0),
-                        string.Format("{0:F2}%", 100 * (counterData.ctr3 - counterData.ctr4) / counterData.ctr0),
-                        string.Format("{0:F2}%", 100 * counterData.ctr4 / counterData.ctr0),
-                        FormatLargeNumber(counterData.ctr4),
-                        string.Format("{0:F2}", counterData.ctr5 / counterData.ctr0),
+                        string.Format("{0:F2}%", 100 * counterData.ctr3 / counterData.ctr0),
+                        string.Format("{0:F2}",  decoderOps / counterData.ctr0),
+                        FormatLargeNumber(decoderOps),
+                        string.Format("{0:F2}", counterData.ctr5 / counterData.ctr4),
                         FormatLargeNumber(counterData.ctr5)
                 };
             }
