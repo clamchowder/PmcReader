@@ -72,7 +72,7 @@ namespace PmcReader
                         l3Monitoring.monitoringArea = new AMD.Zen2L3Cache();
                         dfMonitoring.monitoringArea = new AMD.Zen2DataFabric();
                     }
-                    else if (cpuModel == 0x1 || cpuModel == 0x18)
+                    else if (cpuModel == 0x1 || cpuModel == 0x18 || cpuModel == 0x8)
                     {
                         coreMonitoring.monitoringArea = new AMD.Zen1();
                         l3Monitoring.monitoringArea = new AMD.ZenL3Cache();

@@ -126,10 +126,10 @@ namespace PmcReader.AMD
                     Ring0.WriteMsr(MSR_PERF_CTL_3, GetPerfCtlValue(0x43, 2, true, true, false, false, true, false, 0, 0, false, false));
 
                     // PERF_CTR4 = DC refills  from local dram
-                    Ring0.WriteMsr(MSR_PERF_CTL_4, GetPerfCtlValue(0x91, 4, true, true, false, false, true, false, 0, 0, false, false));
+                    Ring0.WriteMsr(MSR_PERF_CTL_4, GetPerfCtlValue(0x43, 4, true, true, false, false, true, false, 0, 0, false, false));
 
                     // PERF_CTR5 = remote refills
-                    Ring0.WriteMsr(MSR_PERF_CTL_5, GetPerfCtlValue(0xD0, 0x50, true, true, false, false, true, false, 0, 0, false, false));
+                    Ring0.WriteMsr(MSR_PERF_CTL_5, GetPerfCtlValue(0x43, 0x50, true, true, false, false, true, false, 0, 0, false, false));
                 }
             }
 

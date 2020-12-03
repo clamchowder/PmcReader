@@ -120,6 +120,7 @@ namespace PmcReader.Intel
             NormalizedTotalCounts.activeCycles = 0;
             NormalizedTotalCounts.instr = 0;
             NormalizedTotalCounts.refTsc = 0;
+            NormalizedTotalCounts.packagePower = 0;
             NormalizedTotalCounts.pmc0 = 0;
             NormalizedTotalCounts.pmc1 = 0;
             NormalizedTotalCounts.pmc2 = 0;
@@ -188,6 +189,10 @@ namespace PmcReader.Intel
             public float NormalizationFactor;
         }
 
+        /// <summary>
+        /// Read RAPL package power MSR. Should work on SNB and above
+        /// </summary>
+        /// <returns>Package power in watts</returns>
         public float ReadPackagePowerCounter()
         {
             if (energyStatusUnits == 0)
@@ -304,6 +309,7 @@ namespace PmcReader.Intel
                 }
 
                 results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                cpu.ReadPackagePowerCounter();
                 results.overallCounterValues = cpu.GetOverallCounterValues("Retired Branches", "Retired Mispredicted Branches", "BAClears", "Executed Branches");
                 return results;
             }
