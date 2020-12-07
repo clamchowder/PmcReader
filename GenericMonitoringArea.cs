@@ -14,7 +14,7 @@ namespace PmcReader
         private delegate void SafeSetMonitoringListViewColumns(string[] columns, ListView monitoringListView);
 
         public MonitoringConfig[] monitoringConfigs;
-        protected int threadCount = 0;
+        protected int threadCount = 0, coreCount = 0;
         protected string architectureName = "Generic";
         private Dictionary<int, Stopwatch> lastUpdateTimers;
         private string logFilePath = null;
@@ -24,6 +24,10 @@ namespace PmcReader
         public GenericMonitoringArea()
         {
             threadCount = Environment.ProcessorCount;
+            foreach (var item in new System.Management.ManagementObjectSearcher("Select * from Win32_Processor").Get())
+            {
+                coreCount += int.Parse(item["NumberOfCores"].ToString());
+            }
         }
 
         public int GetThreadCount()

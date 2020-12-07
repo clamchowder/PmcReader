@@ -32,6 +32,7 @@ namespace PmcReader.Intel
         private float energyStatusUnits = 0;
         private Stopwatch lastPkgPwrTime;
         private ulong lastPkgPwr = 0;
+        private ulong lastPp0Pwr = 0;
 
         public ModernIntelCpu()
         {
@@ -182,6 +183,7 @@ namespace PmcReader.Intel
             public float instr;
             public float refTsc;
             public float packagePower;
+            public float pp0Power;
             public float pmc0;
             public float pmc1;
             public float pmc2;
@@ -204,13 +206,20 @@ namespace PmcReader.Intel
                 energyStatusUnits = (float)Math.Pow(0.5, (float)energyStatusUnitsField);
             }
 
-            ulong pkgEnergyStatus, elapsedPkgEnergy;
+            ulong pkgEnergyStatus, pp0EnergyStatus, elapsedPkgEnergy, elapsedPp0Energy;
             Ring0.ReadMsr(MSR_PKG_ENERGY_STATUS, out pkgEnergyStatus);
+            Ring0.ReadMsr(MSR_PP0_ENERGY_STATUS, out pp0EnergyStatus);
             pkgEnergyStatus &= 0xFFFFFFFF;
             elapsedPkgEnergy = pkgEnergyStatus;
             if (pkgEnergyStatus > lastPkgPwr) elapsedPkgEnergy -= lastPkgPwr;
             else if (lastPkgPwr > 0) elapsedPkgEnergy += (0xFFFFFFFF - lastPkgPwr);
             lastPkgPwr = pkgEnergyStatus;
+
+            pp0EnergyStatus &= 0xFFFFFFFF;
+            elapsedPp0Energy = pp0EnergyStatus;
+            if (pp0EnergyStatus > lastPp0Pwr) elapsedPp0Energy -= lastPp0Pwr;
+            else if (lastPp0Pwr > 0) elapsedPp0Energy += (0xFFFFFFFF - lastPp0Pwr);
+            lastPp0Pwr = pp0EnergyStatus;
 
             float normalizationFactor = 1;
             if (lastPkgPwrTime == null)
@@ -226,7 +235,13 @@ namespace PmcReader.Intel
             }
 
             float packagePower = elapsedPkgEnergy * energyStatusUnits * normalizationFactor;
-            if (NormalizedTotalCounts != null) NormalizedTotalCounts.packagePower = packagePower;
+            float pp0Power = elapsedPp0Energy * energyStatusUnits * normalizationFactor;
+            if (NormalizedTotalCounts != null)
+            {
+                NormalizedTotalCounts.packagePower = packagePower;
+                NormalizedTotalCounts.pp0Power = pp0Power;
+            }
+
             return packagePower;
         }
 
