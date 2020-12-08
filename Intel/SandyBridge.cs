@@ -441,7 +441,7 @@ namespace PmcReader.Intel
                 float sseFlops = counterData.pmc1 * 4;
                 float avxFlops = counterData.pmc2 * 8;
                 return new string[] { label,
-                        total ? string.Format("{0:F2} W", counterData.packagePower) : "N/A",
+                        string.Format("{0:F2} W", total ? counterData.packagePower : (counterData.pp0Power / cpu.coreCount)),
                         FormatLargeNumber(counterData.activeCycles),
                         FormatLargeNumber(counterData.instr),
                         string.Format("{0:F2}", counterData.instr / counterData.activeCycles),
