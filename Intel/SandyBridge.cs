@@ -426,13 +426,13 @@ namespace PmcReader.Intel
                     results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx], false);
                 }
 
-                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts, true);
                 cpu.ReadPackagePowerCounter();
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts, true);
                 results.overallCounterValues = cpu.GetOverallCounterValues("Scalar SSE FP32", "Packed SSE FP32", "Packed AVX-256 FP32", "X87 Ops");
                 return results;
             }
 
-            public string[] columns = new string[] { "Item", "Pkg Power", "Active Cycles", "Instructions", "IPC", "Instr/Watt", "FP32/X87 Flops", "Flops/C", "SSE Scalar FP32 Flops", "128B FP32 Flops", "256B FP32 Flops", "x87 Ops" };
+            public string[] columns = new string[] { "Item", "Pkg Power", "PP0 Power", "Active Cycles", "Instructions", "IPC", "Instr/Watt", "FP32/X87 Flops", "Flops/C", "SSE Scalar FP32 Flops", "128B FP32 Flops", "256B FP32 Flops", "x87 Ops" };
             public string GetHelpText() { return ""; }
 
             private string[] computeMetrics(string label, NormalizedCoreCounterData counterData, bool total)
@@ -441,7 +441,8 @@ namespace PmcReader.Intel
                 float sseFlops = counterData.pmc1 * 4;
                 float avxFlops = counterData.pmc2 * 8;
                 return new string[] { label,
-                        string.Format("{0:F2} W", total ? counterData.packagePower : (counterData.pp0Power / cpu.coreCount)),
+                        total ? string.Format("{0:F2} W", counterData.packagePower) : "N/A",
+                        total ? string.Format("{0:F2} W", counterData.pp0Power) : "N/A",
                         FormatLargeNumber(counterData.activeCycles),
                         FormatLargeNumber(counterData.instr),
                         string.Format("{0:F2}", counterData.instr / counterData.activeCycles),

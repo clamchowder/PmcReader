@@ -77,7 +77,7 @@ namespace PmcReader.Intel
                 return results;
             }
 
-            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "Pkg Pwr", "Instr/Watt", "Port 0", "Port 1", "Port 5", "Port 6" };
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "Pkg Pwr", "PP0 Pwr", "Instr/Watt", "Cores Instr/Watt", "Port 0", "Port 1", "Port 5", "Port 6" };
 
             public string GetHelpText()
             {
@@ -94,8 +94,10 @@ namespace PmcReader.Intel
                     FormatLargeNumber(counterData.activeCycles),
                     FormatLargeNumber(counterData.instr),
                     string.Format("{0:F2}", ipc),
-                    string.Format("{0:F2} W", overall ? counterData.packagePower : counterData.pp0Power / cpu.coreCount),
-                    FormatLargeNumber(overall ? counterData.instr / counterData.packagePower : counterData.pp0Power / cpu.coreCount),
+                    overall ? string.Format("{0:F2} W", counterData.packagePower) : "N/A",
+                    overall ? string.Format("{0:F2} W", counterData.pp0Power) : "N/A",
+                    overall ? FormatLargeNumber(counterData.instr / counterData.packagePower) : "N/A",
+                    overall ? FormatLargeNumber(counterData.instr / counterData.pp0Power) : "N/A",
                     string.Format("{0:F2}%", 100 * counterData.pmc0 / counterData.activeCycles),
                     string.Format("{0:F2}%", 100 * counterData.pmc1 / counterData.activeCycles),
                     string.Format("{0:F2}%", 100 * counterData.pmc2 / counterData.activeCycles),
