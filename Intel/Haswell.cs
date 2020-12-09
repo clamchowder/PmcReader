@@ -475,6 +475,8 @@ namespace PmcReader.Intel
                 return new string[] { label,
                         FormatLargeNumber(counterData.activeCycles),
                         FormatLargeNumber(counterData.instr),
+                        string.Format("{0:F2} W", counterData.packagePower),
+                        FormatLargeNumber(counterData.instr / counterData.packagePower),
                         string.Format("{0:F2}", counterData.instr / counterData.activeCycles),
                         string.Format("{0:F2}%", 100 * (counterData.pmc0 - counterData.pmc1) / counterData.pmc0),
                         FormatLargeNumber((counterData.pmc0 - counterData.pmc1) * 64) + "B",

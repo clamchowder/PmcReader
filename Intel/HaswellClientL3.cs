@@ -63,6 +63,14 @@ namespace PmcReader.Intel
             cboTotals.ctr1 += cboData[cboIdx].ctr1;
         }
 
+        public Tuple<string, float>[] GetCboOverallCounterValues(string ctr0, string ctr1)
+        {
+            Tuple<string, float>[] retval = new Tuple<string, float>[2];
+            retval[0] = new Tuple<string, float>(ctr0, cboTotals.ctr0);
+            retval[1] = new Tuple<string, float>(ctr1, cboTotals.ctr1);
+            return retval;
+        }
+
         public class HitrateConfig : MonitoringConfig
         {
             private HaswellClientL3 cpu;
@@ -106,10 +114,11 @@ namespace PmcReader.Intel
                 }
 
                 results.overallMetrics = computeMetrics("Overall", cpu.cboTotals);
+                results.overallCounterValues = cpu.GetCboOverallCounterValues("L3 Lookups", "L3 Miss");
                 return results;
             }
 
-            public string[] columns = new string[] { "Item", "Hitrate", "Hit BW", "All Lookups", "I state" };
+            public string[] columns = new string[] { "Item", "Hitrate", "Hit BW", "All Lookups", "L3 Miss" };
 
             public string GetHelpText() { return ""; }
 

@@ -38,8 +38,8 @@ namespace PmcReader.AMD
                     // PERF_CTR2 = active cycles
                     Ring0.WriteMsr(MSR_PERF_CTL_0, GetPerfCtlValue(0x76, 0, true, true, false, false, true, false, 0, 0, false, false));
 
-                    // PERF_CTR3 = ret instr
-                    Ring0.WriteMsr(MSR_PERF_CTL_1, GetPerfCtlValue(0xC0, 0, true, true, false, false, true, false, 0, 0, false, false));
+                    // PERF_CTR3 = L1 BTB overrides
+                    Ring0.WriteMsr(MSR_PERF_CTL_1, GetPerfCtlValue(0x8A, 0, true, true, false, false, true, false, 0, 0, false, false));
 
                     // Set PERF_CTR0 to count retired branches
                     Ring0.WriteMsr(MSR_PERF_CTL_2, GetPerfCtlValue(0xC2, 0, true, true, false, false, true, false, 0, 0, false, false));
@@ -50,8 +50,8 @@ namespace PmcReader.AMD
                     // PERF_CTR4 = decoder overrides existing prediction
                     Ring0.WriteMsr(MSR_PERF_CTL_4, GetPerfCtlValue(0x91, 0, true, true, false, false, true, false, 0, 0, false, false));
 
-                    // PERF_CTR5 = retired fused branch instructions
-                    Ring0.WriteMsr(MSR_PERF_CTL_5, GetPerfCtlValue(0xD0, 0, true, true, false, false, true, false, 0, 1, false, false));
+                    // PERF_CTR5 = L2 BTB overrides
+                    Ring0.WriteMsr(MSR_PERF_CTL_5, GetPerfCtlValue(0x8B, 0, true, true, false, false, true, false, 0, 0, false, false));
                 }
             }
 
@@ -67,11 +67,12 @@ namespace PmcReader.AMD
                 }
 
                 results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
-                results.overallCounterValues = cpu.GetOverallCounterValues("Cycles Not In Halt", "Retired Instr", "Ret Branches", "Ret Misp Branches", "Decoder Override", "Fused Branches");
+                results.overallCounterValues = cpu.GetOverallCounterValues("Cycles Not In Halt", "L1 BTB Override", "Ret Branches", "Ret Misp Branches", "Decoder Override", "L2 BTB Override");
                 return results;
             }
 
-            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "BPU Accuracy", "BPU MPKI", "Decoder Overrides/1K Instr", "% Branches Fused" };
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", 
+                "BPU Accuracy", "BPU MPKI", "L1 BTB Overrides/Ki", "L2 BTB Overrides/Ki", "Decoder Overrides/Ki", "% Branches" };
             
             public string GetHelpText()
             {
@@ -82,13 +83,15 @@ namespace PmcReader.AMD
             {
 
                 return new string[] { label,
-                        FormatLargeNumber(counterData.ctr0),
-                        FormatLargeNumber(counterData.ctr1),
-                        string.Format("{0:F2}", counterData.ctr1 / counterData.ctr0),
-                        string.Format("{0:F2}%", 100 * (1 - counterData.ctr3 / counterData.ctr2)),
-                        string.Format("{0:F2}", counterData.ctr1 / counterData.ctr3 * 1000),
-                        string.Format("{0:F2}", counterData.ctr4 / counterData.ctr2 * 1000),
-                        string.Format("{0:F2}%", counterData.ctr5 / counterData.ctr0 * 100) };
+                        FormatLargeNumber(counterData.ctr0), 
+                        FormatLargeNumber(counterData.instr),
+                        string.Format("{0:F2}", counterData.instr / counterData.ctr0),
+                        string.Format("{0:F2}%", 100 * (1 - counterData.ctr3 / counterData.ctr2)), // BPU Acc
+                        string.Format("{0:F2}", counterData.ctr3 / counterData.instr * 1000),     // BPU MPKI
+                        string.Format("{0:F2}", counterData.ctr1 / counterData.instr * 1000),      // L1 BTB Overrides
+                        string.Format("{0:F2}", counterData.ctr5 / counterData.instr * 1000),      // L2 BTB Overrides
+                        string.Format("{0:F2}", counterData.ctr4 / counterData.instr * 1000),      // Decoder Overrides
+                        string.Format("{0:F2}%", counterData.ctr2 / counterData.instr * 100) };   // Branch %
             }
         }
 

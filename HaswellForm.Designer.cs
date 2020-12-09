@@ -80,6 +80,9 @@
             // 
             // monitoringListView
             // 
+            this.monitoringListView.Anchor = ((System.Windows.Forms.AnchorStyles)((((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom) 
+            | System.Windows.Forms.AnchorStyles.Left) 
+            | System.Windows.Forms.AnchorStyles.Right)));
             this.monitoringListView.HideSelection = false;
             this.monitoringListView.Location = new System.Drawing.Point(12, 154);
             this.monitoringListView.Name = "monitoringListView";
@@ -117,6 +120,8 @@
             // 
             // L3ConfigSelect
             // 
+            this.L3ConfigSelect.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Left) 
+            | System.Windows.Forms.AnchorStyles.Right)));
             this.L3ConfigSelect.HideSelection = false;
             this.L3ConfigSelect.Location = new System.Drawing.Point(13, 457);
             this.L3ConfigSelect.Name = "L3ConfigSelect";
@@ -127,6 +132,8 @@
             // 
             // L3CacheConfigLabel
             // 
+            this.L3CacheConfigLabel.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Left) 
+            | System.Windows.Forms.AnchorStyles.Right)));
             this.L3CacheConfigLabel.AutoSize = true;
             this.L3CacheConfigLabel.Location = new System.Drawing.Point(10, 441);
             this.L3CacheConfigLabel.Name = "L3CacheConfigLabel";
@@ -136,6 +143,7 @@
             // 
             // applyL3ConfigButton
             // 
+            this.applyL3ConfigButton.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Left)));
             this.applyL3ConfigButton.Location = new System.Drawing.Point(13, 527);
             this.applyL3ConfigButton.Name = "applyL3ConfigButton";
             this.applyL3ConfigButton.Size = new System.Drawing.Size(94, 23);
@@ -146,6 +154,8 @@
             // 
             // L3MonitoringListView
             // 
+            this.L3MonitoringListView.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Left) 
+            | System.Windows.Forms.AnchorStyles.Right)));
             this.L3MonitoringListView.HideSelection = false;
             this.L3MonitoringListView.Location = new System.Drawing.Point(12, 557);
             this.L3MonitoringListView.Name = "L3MonitoringListView";
@@ -156,6 +166,7 @@
             // 
             // dfConfigSelect
             // 
+            this.dfConfigSelect.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Right)));
             this.dfConfigSelect.HideSelection = false;
             this.dfConfigSelect.Location = new System.Drawing.Point(700, 457);
             this.dfConfigSelect.Name = "dfConfigSelect";
@@ -166,6 +177,7 @@
             // 
             // DataFabricConfigLabel
             // 
+            this.DataFabricConfigLabel.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Right)));
             this.DataFabricConfigLabel.AutoSize = true;
             this.DataFabricConfigLabel.Location = new System.Drawing.Point(697, 441);
             this.DataFabricConfigLabel.Name = "DataFabricConfigLabel";
@@ -175,6 +187,7 @@
             // 
             // applyDfConfigButton
             // 
+            this.applyDfConfigButton.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Right)));
             this.applyDfConfigButton.Location = new System.Drawing.Point(700, 528);
             this.applyDfConfigButton.Name = "applyDfConfigButton";
             this.applyDfConfigButton.Size = new System.Drawing.Size(102, 23);
@@ -186,6 +199,7 @@
             // dfMonitoringListView
             // 
             this.dfMonitoringListView.Activation = System.Windows.Forms.ItemActivation.OneClick;
+            this.dfMonitoringListView.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Right)));
             this.dfMonitoringListView.HideSelection = false;
             this.dfMonitoringListView.Location = new System.Drawing.Point(700, 557);
             this.dfMonitoringListView.Name = "dfMonitoringListView";
@@ -248,6 +262,7 @@
             // 
             // L3LogToFileButton
             // 
+            this.L3LogToFileButton.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Left)));
             this.L3LogToFileButton.Location = new System.Drawing.Point(527, 528);
             this.L3LogToFileButton.Name = "L3LogToFileButton";
             this.L3LogToFileButton.Size = new System.Drawing.Size(75, 23);
@@ -258,6 +273,7 @@
             // 
             // L3LogToFileTextBox
             // 
+            this.L3LogToFileTextBox.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Left)));
             this.L3LogToFileTextBox.Location = new System.Drawing.Point(313, 530);
             this.L3LogToFileTextBox.Name = "L3LogToFileTextBox";
             this.L3LogToFileTextBox.Size = new System.Drawing.Size(208, 20);
@@ -265,6 +281,7 @@
             // 
             // L3StopLoggingButton
             // 
+            this.L3StopLoggingButton.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Left)));
             this.L3StopLoggingButton.Location = new System.Drawing.Point(608, 528);
             this.L3StopLoggingButton.Name = "L3StopLoggingButton";
             this.L3StopLoggingButton.Size = new System.Drawing.Size(86, 23);
@@ -275,6 +292,7 @@
             // 
             // DfStopLoggingButton
             // 
+            this.DfStopLoggingButton.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Right)));
             this.DfStopLoggingButton.Location = new System.Drawing.Point(1099, 528);
             this.DfStopLoggingButton.Name = "DfStopLoggingButton";
             this.DfStopLoggingButton.Size = new System.Drawing.Size(86, 23);
@@ -285,6 +303,7 @@
             // 
             // DfLogToFileButton
             // 
+            this.DfLogToFileButton.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Right)));
             this.DfLogToFileButton.Location = new System.Drawing.Point(1018, 528);
             this.DfLogToFileButton.Name = "DfLogToFileButton";
             this.DfLogToFileButton.Size = new System.Drawing.Size(75, 23);
@@ -295,6 +314,7 @@
             // 
             // DfLogToFileTextBox
             // 
+            this.DfLogToFileTextBox.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Right)));
             this.DfLogToFileTextBox.Location = new System.Drawing.Point(818, 530);
             this.DfLogToFileTextBox.Name = "DfLogToFileTextBox";
             this.DfLogToFileTextBox.Size = new System.Drawing.Size(194, 20);
@@ -331,6 +351,7 @@
             this.Controls.Add(this.monitoringListView);
             this.Controls.Add(this.applyConfigButton);
             this.Controls.Add(this.configSelect);
+            this.MinimumSize = new System.Drawing.Size(1213, 500);
             this.Name = "HaswellForm";
             this.Text = "CPU Performance Monitoring";
             this.Load += new System.EventHandler(this.HaswellForm_Load);

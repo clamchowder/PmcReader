@@ -255,15 +255,16 @@ namespace PmcReader.Intel
         /// <returns>Array to put in results object</returns>
         public Tuple<string, float>[] GetOverallCounterValues(string pmc0, string pmc1, string pmc2, string pmc3)
         {
-            Tuple<string, float>[] retval = new Tuple<string, float>[8];
+            Tuple<string, float>[] retval = new Tuple<string, float>[9];
             retval[0] = new Tuple<string, float>("Active Cycles", NormalizedTotalCounts.activeCycles);
             retval[1] = new Tuple<string, float>("REF_TSC", NormalizedTotalCounts.refTsc);
-            retval[2] = new Tuple<string, float>("Instructions,", NormalizedTotalCounts.instr);
+            retval[2] = new Tuple<string, float>("Instructions", NormalizedTotalCounts.instr);
             retval[3] = new Tuple<string, float>("Package Power", NormalizedTotalCounts.packagePower);
-            retval[4] = new Tuple<string, float>(pmc0, NormalizedTotalCounts.pmc0);
-            retval[5] = new Tuple<string, float>(pmc1, NormalizedTotalCounts.pmc1);
-            retval[6] = new Tuple<string, float>(pmc2, NormalizedTotalCounts.pmc2);
-            retval[7] = new Tuple<string, float>(pmc3, NormalizedTotalCounts.pmc3);
+            retval[4] = new Tuple<string, float>("PP0 Power", NormalizedTotalCounts.pp0Power);
+            retval[5] = new Tuple<string, float>(pmc0, NormalizedTotalCounts.pmc0);
+            retval[6] = new Tuple<string, float>(pmc1, NormalizedTotalCounts.pmc1);
+            retval[7] = new Tuple<string, float>(pmc2, NormalizedTotalCounts.pmc2);
+            retval[8] = new Tuple<string, float>(pmc3, NormalizedTotalCounts.pmc3);
             return retval;
         }
 
