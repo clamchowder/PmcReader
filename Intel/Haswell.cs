@@ -6,7 +6,7 @@ namespace PmcReader.Intel
     {
         public Haswell()
         {
-            monitoringConfigs = new MonitoringConfig[12];
+            monitoringConfigs = new MonitoringConfig[13];
             monitoringConfigs[0] = new BpuMonitoringConfig(this);
             monitoringConfigs[1] = new OpCachePerformance(this);
             monitoringConfigs[2] = new OpDelivery(this);
@@ -19,6 +19,7 @@ namespace PmcReader.Intel
             monitoringConfigs[9] = new L2Cache(this);
             monitoringConfigs[10] = new L1DFill(this);
             monitoringConfigs[11] = new Rename(this);
+            monitoringConfigs[12] = new ArchitecturalCounters(this);
             architectureName = "Haswell";
         }
 

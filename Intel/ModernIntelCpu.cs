@@ -36,7 +36,9 @@ namespace PmcReader.Intel
 
         public ModernIntelCpu()
         {
-            this.architectureName = "Intel Core";
+            this.architectureName = "Modern P6 Family CPU";
+            monitoringConfigs = new MonitoringConfig[1];
+            monitoringConfigs[0] = new ArchitecturalCounters(this);
         }
 
         /// <summary>
@@ -582,6 +584,82 @@ namespace PmcReader.Intel
                         FormatLargeNumber(counterData.pmc1),
                         string.Format("{0:F2}%", 100 * counterData.pmc3 / counterData.activeCycles),
                         string.Format("{0:F2} clk", counterData.pmc2 / counterData.pmc0)
+                };
+            }
+        }
+
+        public class ArchitecturalCounters : MonitoringConfig
+        {
+            private ModernIntelCpu cpu;
+            public string GetConfigName() { return "Arch Counters"; }
+
+            public ArchitecturalCounters(ModernIntelCpu intelCpu)
+            {
+                cpu = intelCpu;
+            }
+
+            public string[] GetColumns()
+            {
+                return columns;
+            }
+
+            public void Initialize()
+            {
+                cpu.EnablePerformanceCounters();
+
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    ThreadAffinity.Set(1UL << threadIdx);
+                    // PMC0 - Retired Branches
+                    Ring0.WriteMsr(IA32_PERFEVTSEL0, GetPerfEvtSelRegisterValue(0xC4, 0, true, true, false, false, false, false, true, false, 0));
+
+                    // PMC1 - Retired Mispredicted Branches
+                    Ring0.WriteMsr(IA32_PERFEVTSEL1, GetPerfEvtSelRegisterValue(0xC5, 0, true, true, false, false, false, false, true, false, 0));
+
+                    // PMC2 - LLC References
+                    Ring0.WriteMsr(IA32_PERFEVTSEL2, GetPerfEvtSelRegisterValue(0x2E, 0x4F, true, true, false, false, false, false, true, false, 0));
+
+                    // PMC2 - LLC Misses
+                    Ring0.WriteMsr(IA32_PERFEVTSEL3, GetPerfEvtSelRegisterValue(0x2E, 0x41, true, true, false, false, false, false, true, false, 0));
+                }
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[cpu.GetThreadCount()][];
+                cpu.InitializeCoreTotals();
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    cpu.UpdateThreadCoreCounterData(threadIdx);
+                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
+                }
+
+                cpu.ReadPackagePowerCounter();
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                results.overallCounterValues = cpu.GetOverallCounterValues("Retired Branches", "Retired Misp Branches", "LLC References", "LLC Misses");
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "BPU Accuracy", "Branch MPKI", "% Branches", "LLC MPKI", "LLC References" };
+
+            public string GetHelpText()
+            {
+                return "";
+            }
+
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
+            {
+                float totalOps = counterData.pmc0 + counterData.pmc1 + counterData.pmc2 + counterData.pmc3;
+                return new string[] { label,
+                        FormatLargeNumber(counterData.activeCycles),
+                        FormatLargeNumber(counterData.instr),
+                        string.Format("{0:F2}", counterData.instr / counterData.activeCycles),
+                        string.Format("{0:F2}%", 100 * (1 - counterData.pmc1 / counterData.pmc0)),
+                        string.Format("{0:F2}", 1000 * counterData.pmc1 / counterData.instr),
+                        string.Format("{0:F2}%", 100 * counterData.pmc0 / counterData.instr),
+                        string.Format("{0:F2}", 1000 * counterData.pmc3 / counterData.instr),
+                        FormatLargeNumber(counterData.pmc3)
                 };
             }
         }

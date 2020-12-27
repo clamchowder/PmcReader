@@ -35,20 +35,20 @@ namespace PmcReader.AMD
                 for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
                 {
                     ThreadAffinity.Set(1UL << threadIdx);
-                    // PERF_CTR2 = active cycles
+                    // PERF_CTR0 = active cycles
                     Ring0.WriteMsr(MSR_PERF_CTL_0, GetPerfCtlValue(0x76, 0, true, true, false, false, true, false, 0, 0, false, false));
 
-                    // PERF_CTR3 = L1 BTB overrides
-                    Ring0.WriteMsr(MSR_PERF_CTL_1, GetPerfCtlValue(0x8A, 0, true, true, false, false, true, false, 0, 0, false, false));
+                    // PERF_CTR1 = retired instructions
+                    Ring0.WriteMsr(MSR_PERF_CTL_1, GetPerfCtlValue(0xC0, 0, true, true, false, false, true, false, 0, 0, false, false));
 
-                    // Set PERF_CTR0 to count retired branches
+                    // PERF_CTR2 to count retired branches
                     Ring0.WriteMsr(MSR_PERF_CTL_2, GetPerfCtlValue(0xC2, 0, true, true, false, false, true, false, 0, 0, false, false));
 
-                    // PERF_CTR1 = mispredicted retired branches
+                    // PERF_CTR3 = mispredicted retired branches
                     Ring0.WriteMsr(MSR_PERF_CTL_3, GetPerfCtlValue(0xC3, 0, true, true, false, false, true, false, 0, 0, false, false));
 
-                    // PERF_CTR4 = decoder overrides existing prediction
-                    Ring0.WriteMsr(MSR_PERF_CTL_4, GetPerfCtlValue(0x91, 0, true, true, false, false, true, false, 0, 0, false, false));
+                    // PERF_CTR4 = L1 BTB Overrides
+                    Ring0.WriteMsr(MSR_PERF_CTL_4, GetPerfCtlValue(0x8A, 0, true, true, false, false, true, false, 0, 0, false, false));
 
                     // PERF_CTR5 = L2 BTB overrides
                     Ring0.WriteMsr(MSR_PERF_CTL_5, GetPerfCtlValue(0x8B, 0, true, true, false, false, true, false, 0, 0, false, false));
@@ -66,32 +66,39 @@ namespace PmcReader.AMD
                     results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
                 }
 
+                cpu.ReadPackagePowerCounter();
                 results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
-                results.overallCounterValues = cpu.GetOverallCounterValues("Cycles Not In Halt", "L1 BTB Override", "Ret Branches", "Ret Misp Branches", "Decoder Override", "L2 BTB Override");
+                results.overallCounterValues = cpu.GetOverallCounterValues("Cycles Not In Halt", "Instructions Retired", "Ret Branches", "Ret Misp Branches", "L1 BTB Overrides", "L2 BTB Overrides");
                 return results;
             }
 
-            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", 
-                "BPU Accuracy", "BPU MPKI", "L1 BTB Overrides/Ki", "L2 BTB Overrides/Ki", "Decoder Overrides/Ki", "% Branches" };
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "Power", "Instr/Watt",
+                "BPU Accuracy", "BPU MPKI", "L1 BTB Overrides/Ki", "L2 BTB Overrides/Ki", "% Branches" };
             
             public string GetHelpText()
             {
-                return "Zen 1 APERF/IrPerfCount being reset by something else?";
+                return "aaaaaa";
             }
 
             private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
             {
-
+                float cycles = counterData.ctr0;
+                float instr = counterData.ctr1;
+                float branches = counterData.ctr2;
+                float mispBranches = counterData.ctr3;
+                float l1BtbOverrides = counterData.ctr4;
+                float l2BtbOverrides = counterData.ctr5;
                 return new string[] { label,
-                        FormatLargeNumber(counterData.ctr0), 
-                        FormatLargeNumber(counterData.instr),
-                        string.Format("{0:F2}", counterData.instr / counterData.ctr0),
-                        string.Format("{0:F2}%", 100 * (1 - counterData.ctr3 / counterData.ctr2)), // BPU Acc
-                        string.Format("{0:F2}", counterData.ctr3 / counterData.instr * 1000),     // BPU MPKI
-                        string.Format("{0:F2}", counterData.ctr1 / counterData.instr * 1000),      // L1 BTB Overrides
-                        string.Format("{0:F2}", counterData.ctr5 / counterData.instr * 1000),      // L2 BTB Overrides
-                        string.Format("{0:F2}", counterData.ctr4 / counterData.instr * 1000),      // Decoder Overrides
-                        string.Format("{0:F2}%", counterData.ctr2 / counterData.instr * 100) };   // Branch %
+                        FormatLargeNumber(cycles),
+                        FormatLargeNumber(instr),
+                        string.Format("{0:F2}", instr / cycles),
+                        string.Format("{0:F2} W", counterData.watts),
+                        FormatLargeNumber(instr / counterData.watts),
+                        string.Format("{0:F2}%", 100 * (1 - mispBranches / branches)), // BPU Acc
+                        string.Format("{0:F2}", mispBranches / instr * 1000),     // BPU MPKI
+                        string.Format("{0:F2}", l1BtbOverrides / instr * 1000),      // L1 BTB Overrides
+                        string.Format("{0:F2}", l2BtbOverrides / instr * 1000),      // L2 BTB Overrides
+                        string.Format("{0:F2}%", branches / instr * 100) };   // Branch %
             }
         }
 
