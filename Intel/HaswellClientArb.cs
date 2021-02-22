@@ -45,6 +45,15 @@ namespace PmcReader.Intel
             return rc;
         }
 
+        public Tuple<string, float>[] GetOverallCounterValues(NormalizedArbCounterData data, string ctr0, string ctr1)
+        {
+            Tuple<string, float>[] retval = new Tuple<string, float>[3];
+            retval[0] = new Tuple<string, float>("Uncore Clk", data.uncoreClock);
+            retval[1] = new Tuple<string, float>(ctr0, data.ctr0);
+            retval[2] = new Tuple<string, float>(ctr1, data.ctr1);
+            return retval;
+        }
+
         public class MCRequests : MonitoringConfig
         {
             private HaswellClientArb cpu;
@@ -86,6 +95,7 @@ namespace PmcReader.Intel
                     string.Format("{0:F2} clk", counterData.ctr0 / counterData.ctr1),
                     string.Format("{0:F2} ns", (1000000000 / counterData.uncoreClock) * (counterData.ctr0 / counterData.ctr1))
                 };
+                results.overallCounterValues = cpu.GetOverallCounterValues(counterData, "Pending Requests Per Cycle", "Requests");
                 return results;
             }
 

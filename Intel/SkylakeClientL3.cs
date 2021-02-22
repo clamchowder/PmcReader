@@ -64,7 +64,7 @@ namespace PmcReader.Intel
 
         public Tuple<string, float>[] GetOverallCounterValues(string ctr0, string ctr1)
         {
-            Tuple<string, float>[] retval = new Tuple<string, float>[11];
+            Tuple<string, float>[] retval = new Tuple<string, float>[2];
             retval[0] = new Tuple<string, float>(ctr0, cboTotals.ctr0);
             retval[1] = new Tuple<string, float>(ctr1, cboTotals.ctr1);
             return retval;
