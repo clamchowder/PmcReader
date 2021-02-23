@@ -188,16 +188,16 @@ namespace PmcReader.Intel
                 {
                     ThreadAffinity.Set(1UL << threadIdx);
                     // PMC0: L2 code reads
-                    Ring0.WriteMsr(IA32_PERFEVTSEL0, GetPerfEvtSelRegisterValue(0xA1, 0x1, true, true, false, false, false, false, true, false, 0));
+                    Ring0.WriteMsr(IA32_PERFEVTSEL0, GetPerfEvtSelRegisterValue(0x24, 0xE4, true, true, false, false, false, false, true, false, 0));
 
                     // PMC1: L2 code read miss
-                    Ring0.WriteMsr(IA32_PERFEVTSEL1, GetPerfEvtSelRegisterValue(0xA1, 0x2, true, true, false, false, false, false, true, false, 0));
+                    Ring0.WriteMsr(IA32_PERFEVTSEL1, GetPerfEvtSelRegisterValue(0x24, 0x24, true, true, false, false, false, false, true, false, 0));
 
-                    // PMC1: Demand/RFO reads. Demand data read = bit 0, RFO = bit 1
-                    Ring0.WriteMsr(IA32_PERFEVTSEL2, GetPerfEvtSelRegisterValue(0xA1, 0x20, true, true, false, false, false, false, true, false, 0));
+                    // PMC2: L2 demand references
+                    Ring0.WriteMsr(IA32_PERFEVTSEL2, GetPerfEvtSelRegisterValue(0x24, 0xE7, true, true, false, false, false, false, true, false, 0));
 
-                    // PMC3: Demand/RFO reads. 0x20 is common for miss for both
-                    Ring0.WriteMsr(IA32_PERFEVTSEL3, GetPerfEvtSelRegisterValue(0xA1, 0x40, true, true, false, false, false, false, true, false, 0));
+                    // PMC3: L2 demand miss
+                    Ring0.WriteMsr(IA32_PERFEVTSEL3, GetPerfEvtSelRegisterValue(0x24, 0x27, true, true, false, false, false, false, true, false, 0));
                 }
             }
 
