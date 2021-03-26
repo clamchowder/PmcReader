@@ -8,7 +8,7 @@ namespace PmcReader.AMD
     {
         public Zen2()
         {
-            monitoringConfigs = new MonitoringConfig[19];
+            monitoringConfigs = new MonitoringConfig[20];
             monitoringConfigs[0] = new BpuMonitoringConfig(this);
             monitoringConfigs[1] = new BPUMonitoringConfig1(this);
             monitoringConfigs[2] = new ICMonitoringConfig(this);
@@ -26,8 +26,9 @@ namespace PmcReader.AMD
             monitoringConfigs[14] = new RetireBurstConfig(this);
             monitoringConfigs[15] = new PowerConfig(this);
             monitoringConfigs[16] = new TestConfig(this);
-            monitoringConfigs[17] = new RemoteCacheFills(this);
+            monitoringConfigs[17] = new Locks(this);
             monitoringConfigs[18] = new TestConfig1(this);
+            monitoringConfigs[19] = new FpDispFault(this);
             architectureName = "Zen 2";
         }
 
@@ -1064,7 +1065,7 @@ namespace PmcReader.AMD
         public class TestConfig1 : MonitoringConfig
         {
             private Zen2 cpu;
-            public string GetConfigName() { return "FP FMA+FADD"; }
+            public string GetConfigName() { return "Misc"; }
 
             public TestConfig1(Zen2 amdCpu)
             {
@@ -1082,18 +1083,18 @@ namespace PmcReader.AMD
                 for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
                 {
                     ThreadAffinity.Set(1UL << threadIdx);
-                    // zen 1 fpu pipe assignment, pipe 0/1/2 cmask 3
-                    Ring0.WriteMsr(MSR_PERF_CTL_0, GetPerfCtlValue(0x0, 0x1 | 0x2 | 0x4, true, true, false, false, true, false, cmask: 3, 0, false, false));
-                    // pipe 0/1/3, cmask 3
-                    Ring0.WriteMsr(MSR_PERF_CTL_1, GetPerfCtlValue(0x0, 0x1 | 0x2 | 0x8, true, true, false, false, true, false, cmask: 3, 0, false, false));
-                    // all pipes cmask 3
-                    Ring0.WriteMsr(MSR_PERF_CTL_2, GetPerfCtlValue(0x0, 0xF, true, true, false, false, true, false, cmask: 3, 0, false, false));
-                    // all pipes
-                    Ring0.WriteMsr(MSR_PERF_CTL_3, GetPerfCtlValue(0x0, 0xF, true, true, false, false, true, false, 0, 0, false, false));
-                    // pipe 1/2/3 cmask 3
-                    Ring0.WriteMsr(MSR_PERF_CTL_4, GetPerfCtlValue(0x0, 0x2 | 0x4 | 0x8, true, true, false, false, true, false, cmask: 3, 0, false, false));
-                    // pipe 0/2/3 cmask 3
-                    Ring0.WriteMsr(MSR_PERF_CTL_5, GetPerfCtlValue(0x0, 0x1 | 0x4 | 0x8, true, true, false, false, true, false, cmask: 3, 0, false, false));
+                    // WCB Full
+                    Ring0.WriteMsr(MSR_PERF_CTL_0, GetPerfCtlValue(0x37, 1, true, true, false, false, true, false, cmask: 0, 0, false, false));
+                    // Interrupts Taken
+                    Ring0.WriteMsr(MSR_PERF_CTL_1, GetPerfCtlValue(0x2C, 0, true, true, false, false, true, false, cmask: 0, 0, false, false));
+                    // Far control transfers
+                    Ring0.WriteMsr(MSR_PERF_CTL_2, GetPerfCtlValue(0xC6, 0, true, true, false, false, true, false, cmask: 0, 0, false, false));
+                    // Divider busy cycles
+                    Ring0.WriteMsr(MSR_PERF_CTL_3, GetPerfCtlValue(0xD3, 0, true, true, false, false, true, false, 0, 0, false, false));
+                    // Divider ops
+                    Ring0.WriteMsr(MSR_PERF_CTL_4, GetPerfCtlValue(0xD4, 0, true, true, false, false, true, false, cmask: 0, 0, false, false));
+                    // rdtsc
+                    Ring0.WriteMsr(MSR_PERF_CTL_5, GetPerfCtlValue(0x2D, 0, true, true, false, false, true, false, cmask: 0, 0, false, false));
                 }
             }
 
@@ -1109,13 +1110,13 @@ namespace PmcReader.AMD
                 }
 
                 results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts, true, cpu.ReadPackagePowerCounter());
-                results.overallCounterValues = cpu.GetOverallCounterValues("FP Dispatch/C", "FP Dispatch > 2/C", "FP012 2xFMA+FADD", "FP013 2xFMA+FADD", "FP123 FMA+2xFADD", "FP023 FMA+2xFADD");
+                results.overallCounterValues = cpu.GetOverallCounterValues("WCB Full Store Commit Cancel", "Interrupts", "Far Control Transfer", "Divider Busy Cycles", "Divider Ops", "TSC Read");
                 return results;
             }
 
-            public string[] columns = new string[] { "Item", "Clk", "TSC", "MPERF", "APERF", "Power", "Instr", "IPC", "Instr/Watt", "FP Dispatch/C", "FP Dispatch > 2/C", "FP012 2xFMA+FADD", "FP013 2xFMA+FADD", "FP123 FMA+2xFADD", "FP023 FMA+2xFADD" };
+            public string[] columns = new string[] { "Item", "Clk", "TSC", "MPERF", "APERF", "Power", "Instr", "IPC", "Instr/Watt", "WCB Full/Ki", "WCB Full", "Interrupts/Ki", "Interrupts", "Far Calls/Ki", "Divder Busy", "Divides/Ki", "TSC Read/Ki", "TSC Reads" };
 
-            public string GetHelpText() { return "Brrrr"; }
+            public string GetHelpText() { return "Not brrrr"; }
 
             private string[] computeMetrics(string label, NormalizedCoreCounterData counterData, bool total, float pwr = 0)
             {
@@ -1131,12 +1132,16 @@ namespace PmcReader.AMD
                         FormatLargeNumber(counterData.instr),
                         string.Format("{0:F2}", counterData.instr / counterData.aperf),
                         FormatLargeNumber(counterData.instr / watts),
-                        string.Format("{0:F2}", counterData.ctr3 / counterData.aperf),
-                        string.Format("{0:F2}%", 100 * counterData.ctr2 / counterData.aperf),
-                        string.Format("{0:F2}%", 100 * counterData.ctr0 / counterData.aperf),
-                        string.Format("{0:F2}%", 100 * counterData.ctr1 / counterData.aperf),
-                        string.Format("{0:F2}%", 100 * counterData.ctr4 / counterData.aperf),
-                        string.Format("{0:F2}%", 100 * counterData.ctr5 / counterData.aperf) };
+                        string.Format("{0:F2}", 1000 * counterData.ctr0 / counterData.instr),
+                        FormatLargeNumber(counterData.ctr0),
+                        string.Format("{0:F2}", 1000 * counterData.ctr1 / counterData.instr),
+                        FormatLargeNumber(counterData.ctr1),
+                        string.Format("{0:F2}", 1000 * counterData.ctr2 / counterData.instr),
+                        string.Format("{0:F2}%", 100 * counterData.ctr3 / counterData.aperf),
+                        string.Format("{0:F2}", 1000 * counterData.ctr4 / counterData.instr),
+                        string.Format("{0:F2}", 100 * counterData.ctr5 / counterData.instr),
+                        FormatLargeNumber(counterData.ctr5)
+                };
             }
         }
 
@@ -1678,12 +1683,12 @@ namespace PmcReader.AMD
             }
         }
 
-        public class RemoteCacheFills : MonitoringConfig
+        public class Locks : MonitoringConfig
         {
             private Zen2 cpu;
-            public string GetConfigName() { return "Remote Cache Fills"; }
+            public string GetConfigName() { return "Locks"; }
 
-            public RemoteCacheFills(Zen2 amdCpu)
+            public Locks(Zen2 amdCpu)
             {
                 cpu = amdCpu;
             }
@@ -1703,10 +1708,10 @@ namespace PmcReader.AMD
                     Ring0.WriteMsr(MSR_PERF_CTL_0, GetPerfCtlValue(0x43, 0x50, true, true, false, false, true, false, 0, 0, false, false));
                     // sw prefetch, remote cache/dram
                     Ring0.WriteMsr(MSR_PERF_CTL_1, GetPerfCtlValue(0x59, 0x50, true, true, false, false, true, false, 0, 0, false, false));
-                    // hw prefetch, remote cache/dram
-                    Ring0.WriteMsr(MSR_PERF_CTL_2, GetPerfCtlValue(0x5A, 0x50, true, true, false, false, true, false, 0, 0, false, false));
-                    // cacheable lock speculation succeeded
-                    Ring0.WriteMsr(MSR_PERF_CTL_3, GetPerfCtlValue(0x25, 0b1100, true, true, false, false, true, false, 0, 0, false, false));
+                    // cacheable lock speculation succeeded (lo)
+                    Ring0.WriteMsr(MSR_PERF_CTL_2, GetPerfCtlValue(0x25, 0b0100, true, true, false, false, true, false, 0, 0, false, false));
+                    // cacheable lock speculation succeeded (high)
+                    Ring0.WriteMsr(MSR_PERF_CTL_3, GetPerfCtlValue(0x25, 0b1000, true, true, false, false, true, false, 0, 0, false, false));
                     // non-speculative lock
                     Ring0.WriteMsr(MSR_PERF_CTL_4, GetPerfCtlValue(0x25, 0x2, true, true, false, false, true, false, 0, 0, false, false));
                     // bus lock
@@ -1730,12 +1735,86 @@ namespace PmcReader.AMD
                 return results;
             }
 
-            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "DC Refill, Remote", "SW Prefetch, Remote", "Hw Prefetch, Remote", "SpecLock", "NonSpecLock", "BusLock" };
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "DC Refill, Remote", "SW Prefetch, Remote", "SpecLockLo", "SpecLockHi", "NonSpecLock", "BusLock" };
 
             public string GetHelpText()
             {
-                return "Useless SwPf, DC hit - requested data already in L1D\n" +
-                    "Useless SwPf, MAB hit - request for data already pending";
+                return "?";
+            }
+
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
+            {
+                return new string[] { label,
+                        FormatLargeNumber(counterData.aperf) + "/s",
+                        FormatLargeNumber(counterData.instr) + "/s",
+                        string.Format("{0:F2}", counterData.instr / counterData.aperf),
+                        FormatLargeNumber(counterData.ctr0),
+                        FormatLargeNumber(counterData.ctr1),
+                        FormatLargeNumber(counterData.ctr2),
+                        FormatLargeNumber(counterData.ctr3),
+                        FormatLargeNumber(counterData.ctr4),
+                        FormatLargeNumber(counterData.ctr5)
+                };
+            }
+        }
+
+        public class FpDispFault : MonitoringConfig
+        {
+            private Zen2 cpu;
+            public string GetConfigName() { return "FP Dispatch Faults"; }
+
+            public FpDispFault(Zen2 amdCpu)
+            {
+                cpu = amdCpu;
+            }
+
+            public string[] GetColumns()
+            {
+                return columns;
+            }
+
+            public void Initialize()
+            {
+                cpu.EnablePerformanceCounters();
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    ThreadAffinity.Set(1UL << threadIdx);
+                    // ymm spill fault
+                    Ring0.WriteMsr(MSR_PERF_CTL_0, GetPerfCtlValue(0xE, 0b1000, true, true, false, false, true, false, 0, 0, false, false));
+                    // ymm fill fault
+                    Ring0.WriteMsr(MSR_PERF_CTL_1, GetPerfCtlValue(0xE, 0b0100, true, true, false, false, true, false, 0, 0, false, false));
+                    // xmm fill fault
+                    Ring0.WriteMsr(MSR_PERF_CTL_2, GetPerfCtlValue(0xE, 0b0010, true, true, false, false, true, false, 0, 0, false, false));
+                    // x87 fill fault
+                    Ring0.WriteMsr(MSR_PERF_CTL_3, GetPerfCtlValue(0xE, 1, true, true, false, false, true, false, 0, 0, false, false));
+                    // SSE serializing op
+                    Ring0.WriteMsr(MSR_PERF_CTL_4, GetPerfCtlValue(0x5, 0b1100, true, true, false, false, true, false, 0, 0, false, false));
+                    // x87 serializing op
+                    Ring0.WriteMsr(MSR_PERF_CTL_5, GetPerfCtlValue(0x5, 0b0011, true, true, false, false, true, false, 0, 0, false, false));
+                }
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[cpu.GetThreadCount()][];
+                cpu.InitializeCoreTotals();
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    cpu.UpdateThreadCoreCounterData(threadIdx);
+                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
+                }
+
+                results.overallCounterValues = cpu.GetOverallCounterValues("YMM Spill Fault", "YMM Fill Fault", "XMM Fill Fault", "x87 Fill Fault", "SSE Serializing", "x87 Serializing");
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "YMM Spill Fault", "YMM Fill Fault", "XMM Fill Fault", "x87 Fill Fault", "SSE Serializing", "x87 Serializing" };
+
+            public string GetHelpText()
+            {
+                return "?";
             }
 
             private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
