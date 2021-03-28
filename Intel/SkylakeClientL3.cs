@@ -18,7 +18,7 @@ namespace PmcReader.Intel
             ulong cboConfig;
             architectureName = "Skylake Client L3";
 
-            // intel developer manual table 2-30 syas bits 0-3 encode number of C-Box
+            // intel developer manual table 2-30 says bits 0-3 encode number of C-Box
             // "subtract one to determine number of CBo units"
             Ring0.ReadMsr(MSR_UNC_CBO_CONFIG, out cboConfig);
             CboCount = (int)((cboConfig & 0x7) - 1);

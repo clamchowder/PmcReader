@@ -236,10 +236,10 @@ namespace PmcReader.Intel
                         string.Format("{0:F2} W", counterData.packagePower),
                         FormatLargeNumber(counterData.instr / counterData.packagePower),
                         string.Format("{0:F2}%", 100 * (1 - (counterData.pmc1 / counterData.pmc0))),
-                        string.Format("{0:F2} GB/s", 64 * (counterData.pmc0 - counterData.pmc1)),
+                        FormatLargeNumber(64 * (counterData.pmc0 - counterData.pmc1)) + "B/s",
                         string.Format("{0:F2}", 1000 * counterData.pmc1 / counterData.instr),
                         string.Format("{0:F2}%", 100 * (1 - (counterData.pmc3 / counterData.pmc2))),
-                        string.Format("{0:F2} GB/s", 64 * (counterData.pmc2 - counterData.pmc3)),
+                        FormatLargeNumber(64 * (counterData.pmc2 - counterData.pmc3)) + "B/s",
                         string.Format("{0:F2}", 1000 * counterData.pmc3 / counterData.instr)
                 };
             }
