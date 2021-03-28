@@ -48,6 +48,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="AMD\Amd17hCpu.cs" />
+    <Compile Include="AMD\Zen3.cs" />
     <Compile Include="AMD\Zen2.cs" />
     <Compile Include="AMD\Zen1.cs" />
     <Compile Include="AMD\Zen2DataFabric.cs" />

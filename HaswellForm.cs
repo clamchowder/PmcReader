@@ -82,6 +82,10 @@ namespace PmcReader
                         l3Monitoring.monitoringArea = new AMD.ZenL3Cache();
                     }
                 }
+                else if (cpuFamily == 0x19)
+                {
+                    coreMonitoring.monitoringArea = new AMD.Zen3();
+                }
             }
 
             InitializeComponent();

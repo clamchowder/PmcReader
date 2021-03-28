@@ -44,6 +44,15 @@ namespace PmcReader.Intel
             return rc;
         }
 
+        public Tuple<string, float>[] GetOverallCounterValuesFromArbData(NormalizedArbCounterData data, string ctr0, string ctr1)
+        {
+            Tuple<string, float>[] retval = new Tuple<string, float>[3];
+            retval[0] = new Tuple<string, float>("Uncore Clk", data.uncoreClock);
+            retval[1] = new Tuple<string, float>(ctr0, data.ctr0);
+            retval[2] = new Tuple<string, float>(ctr1, data.ctr1);
+            return retval;
+        }
+
         public class MCRequests : MonitoringConfig
         {
             private SkylakeClientArb cpu;
@@ -79,6 +88,7 @@ namespace PmcReader.Intel
                 results.unitMetrics = null;
                 NormalizedArbCounterData counterData = cpu.UpdateArbCounterData();
 
+                results.overallCounterValues = cpu.GetOverallCounterValuesFromArbData(counterData, "Arb Queue Occupancy", "Reqs");
                 results.overallMetrics = new string[] { FormatLargeNumber(counterData.uncoreClock),
                     FormatLargeNumber(counterData.ctr1),
                     FormatLargeNumber(counterData.ctr1 * 64) + "B/s",
