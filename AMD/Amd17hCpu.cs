@@ -168,6 +168,31 @@ namespace PmcReader.AMD
             }
         }
 
+        public void ProgramPerfCounters(ulong ctr0, ulong ctr1, ulong ctr2, ulong ctr3, ulong ctr4, ulong ctr5)
+        {
+            for (int threadIdx = 0; threadIdx < this.GetThreadCount(); threadIdx++)
+            {
+                ThreadAffinity.Set(1UL << threadIdx);
+                ulong hwcrValue;
+                Ring0.ReadMsr(HWCR, out hwcrValue);
+                hwcrValue |= 1UL << 30;
+                Ring0.WriteMsr(HWCR, hwcrValue);
+
+                // Initialize fixed counter values
+                Ring0.ReadMsr(MSR_APERF, out lastThreadAperf[threadIdx]);
+                Ring0.ReadMsr(MSR_INSTR_RETIRED, out lastThreadRetiredInstructions[threadIdx]);
+                Ring0.ReadMsr(MSR_TSC, out lastThreadTsc[threadIdx]);
+                Ring0.ReadMsr(MSR_MPERF, out lastThreadMperf[threadIdx]);
+
+                Ring0.WriteMsr(MSR_PERF_CTL_0, ctr0);
+                Ring0.WriteMsr(MSR_PERF_CTL_1, ctr1);
+                Ring0.WriteMsr(MSR_PERF_CTL_2, ctr2);
+                Ring0.WriteMsr(MSR_PERF_CTL_3, ctr3);
+                Ring0.WriteMsr(MSR_PERF_CTL_4, ctr4);
+                Ring0.WriteMsr(MSR_PERF_CTL_5, ctr5);
+            }
+        }
+
         /// <summary>
         /// Get a thread's LLC/CCX ID 
         /// </summary>

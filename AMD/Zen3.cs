@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Runtime.InteropServices.WindowsRuntime;
 using PmcReader.Interop;
 
 namespace PmcReader.AMD
@@ -12,6 +11,7 @@ namespace PmcReader.AMD
             monitoringConfigs[0] = new BpuMonitoringConfig(this);
             architectureName = "Zen 3";
         }
+
         public class BpuMonitoringConfig : MonitoringConfig
         {
             private Zen3 cpu;
@@ -23,28 +23,12 @@ namespace PmcReader.AMD
 
             public void Initialize()
             {
-                cpu.EnablePerformanceCounters();
-                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
-                {
-                    ThreadAffinity.Set(1UL << threadIdx);
-                    // PERF_CTR0 = count retired branches
-                    Ring0.WriteMsr(MSR_PERF_CTL_0, GetPerfCtlValue(0xC2, 0, true, true, false, false, true, false, 0, 0, false, false));
-
-                    // PERF_CTR1 = mispredicted retired branches
-                    Ring0.WriteMsr(MSR_PERF_CTL_1, GetPerfCtlValue(0xC3, 0, true, true, false, false, true, false, 0, 0, false, false));
-
-                    // PERF_CTR2 = L2 BTB Override
-                    Ring0.WriteMsr(MSR_PERF_CTL_2, GetPerfCtlValue(0x8B, 0, true, true, false, false, true, false, 0, 0, false, false));
-
-                    // PERF_CTR3 = Indirect prediction
-                    Ring0.WriteMsr(MSR_PERF_CTL_3, GetPerfCtlValue(0x8E, 0, true, true, false, false, true, false, 0, 0, false, false));
-
-                    // PERF_CTR4 = decoder overrides existing prediction
-                    Ring0.WriteMsr(MSR_PERF_CTL_4, GetPerfCtlValue(0x91, 0, true, true, false, false, true, false, 0, 0, false, false));
-
-                    // PERF_CTR5 = retired fused branch instructions
-                    Ring0.WriteMsr(MSR_PERF_CTL_5, GetPerfCtlValue(0xD0, 0, true, true, false, false, true, false, 0, 1, false, false));
-                }
+                cpu.ProgramPerfCounters(GetPerfCtlValue(0xC2, 0, true, true, false, false, true, false, 0, 0, false, false), // retired branches
+                    GetPerfCtlValue(0xC3, 0, true, true, false, false, true, false, 0, 0, false, false),  // mispredicted retired branches
+                    GetPerfCtlValue(0x8B, 0, true, true, false, false, true, false, 0, 0, false, false),  // L2 BTB override
+                    GetPerfCtlValue(0x8E, 0, true, true, false, false, true, false, 0, 0, false, false),  // indirect prediction
+                    GetPerfCtlValue(0x91, 0, true, true, false, false, true, false, 0, 0, false, false),  // decoder override
+                    GetPerfCtlValue(0xD0, 0, true, true, false, false, true, false, 0, 1, false, false)); // retired fused branches
             }
 
             public MonitoringUpdateResults Update()

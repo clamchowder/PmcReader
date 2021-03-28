@@ -137,28 +137,12 @@ namespace PmcReader.AMD
 
             public void Initialize()
             {
-                cpu.EnablePerformanceCounters();
-                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
-                {
-                    ThreadAffinity.Set(1UL << threadIdx);
-                    // Set PERF_CTR0 to count retired branches
-                    Ring0.WriteMsr(MSR_PERF_CTL_0, GetPerfCtlValue(0xC2, 0, true, true, false, false, true, false, 0, 0, false, false));
-
-                    // PERF_CTR1 = mispredicted retired branches
-                    Ring0.WriteMsr(MSR_PERF_CTL_1, GetPerfCtlValue(0xC3, 0, true, true, false, false, true, false, 0, 0, false, false));
-
-                    // PERF_CTR2 = L1 BTB overrides existing prediction
-                    Ring0.WriteMsr(MSR_PERF_CTL_2, GetPerfCtlValue(0x8A, 0, true, true, false, false, true, false, 0, 0, false, false));
-
-                    // PERF_CTR3 = L2 BTB overrides existing prediction
-                    Ring0.WriteMsr(MSR_PERF_CTL_3, GetPerfCtlValue(0x8B, 0, true, true, false, false, true, false, 0, 0, false, false));
-
-                    // PERF_CTR4 = decoder overrides existing prediction
-                    Ring0.WriteMsr(MSR_PERF_CTL_4, GetPerfCtlValue(0x91, 0, true, true, false, false, true, false, 0, 0, false, false));
-
-                    // PERF_CTR5 = retired fused branch instructions
-                    Ring0.WriteMsr(MSR_PERF_CTL_5, GetPerfCtlValue(0xD0, 0, true, true, false, false, true, false, 0, 1, false, false));
-                }
+                cpu.ProgramPerfCounters(GetPerfCtlValue(0xC2, 0, true, true, false, false, true, false, 0, 0, false, false),
+                    GetPerfCtlValue(0xC3, 0, true, true, false, false, true, false, 0, 0, false, false),
+                    GetPerfCtlValue(0x8A, 0, true, true, false, false, true, false, 0, 0, false, false),
+                    GetPerfCtlValue(0x8B, 0, true, true, false, false, true, false, 0, 0, false, false),
+                    GetPerfCtlValue(0x91, 0, true, true, false, false, true, false, 0, 0, false, false),
+                    GetPerfCtlValue(0xD0, 0, true, true, false, false, true, false, 0, 1, false, false));
             }
 
             public MonitoringUpdateResults Update()
