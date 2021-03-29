@@ -82,22 +82,9 @@ namespace PmcReader.AMD
             public void Initialize()
             {
                 ulong merge = GetPerfCtlValue(0xFF, 0, false, false, false, false, true, false, 0, 0xF, false, false);
-                cpu.EnablePerformanceCounters();
-                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
-                {
-                    ThreadAffinity.Set(1UL << threadIdx);
-                    // PERF_CTR0 = MacFlops, merge with ctr1
-                    Ring0.WriteMsr(MSR_PERF_CTL_0, GetPerfCtlValue(0x3, 0b1000, true, true, false, false, true, false, 0, 0, false, false));
-                    Ring0.WriteMsr(MSR_PERF_CTL_1, merge);
-
-                    // PERF_CTR2 = mul/add flops
-                    Ring0.WriteMsr(MSR_PERF_CTL_2, GetPerfCtlValue(0x3, 0b11, true, true, false, false, true, false, 0, 0, false, false));
-                    Ring0.WriteMsr(MSR_PERF_CTL_3, merge);
-
-                    // PERF_CTR4 = div flops
-                    Ring0.WriteMsr(MSR_PERF_CTL_4, GetPerfCtlValue(0x3, 0b100, true, true, false, false, true, false, 0, 0, false, false));
-                    Ring0.WriteMsr(MSR_PERF_CTL_5, merge);
-                }
+                cpu.ProgramPerfCounters(GetPerfCtlValue(0x3, 0b1000, true, true, false, false, true, false, 0, 0, false, false), merge, // fma flops, merge
+                    GetPerfCtlValue(0x3, 0b11, true, true, false, false, true, false, 0, 0, false, false), merge,  // add/mul flops, merge
+                    GetPerfCtlValue(0x3, 0b100, true, true, false, false, true, false, 0, 0, false, false), merge);// div flops, merge
             }
 
             public MonitoringUpdateResults Update()
