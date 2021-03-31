@@ -129,6 +129,32 @@ namespace PmcReader.AMD
         }
 
         /// <summary>
+        /// Gets L3 perf ctl value for 19h CPUs.
+        /// About the only thing different for 19h (Zen 3) vs 17h (Zen 1/2)
+        /// </summary>
+        /// <param name="perfEvent">Event select</param>
+        /// <param name="umask">unit mask</param>
+        /// <param name="enable">enable perf counter</param>
+        /// <param name="coreId">Core select</param>
+        /// <param name="enableAllCores">Count for all cores</param>
+        /// <param name="enableAllSlices">Count for all slices</param>
+        /// <param name="sliceId">Slice select</param>
+        /// <param name="threadMask">Which SMT thread to count for</param>
+        /// <returns></returns>
+        public static ulong Get19hL3PerfCtlValue(byte perfEvent, 
+            byte umask, bool enable, byte coreId, bool enableAllCores, bool enableAllSlices, byte sliceId, byte threadMask)
+        {
+            return perfEvent |
+                (ulong)umask << 8 |
+                (enable ? 1UL : 0UL) << 22 |
+                (ulong)(coreId & 0x7) << 42 |
+                (enableAllSlices ? 1UL : 0UL) << 46 |
+                (enableAllCores ? 1UL : 0UL) << 47 |
+                (ulong)(sliceId & 0x7) << 48 |
+                (ulong)threadMask << 56;
+        }
+
+        /// <summary>
         /// Get data fabric performance event select MSR value
         /// </summary>
         /// <param name="perfEventLow">Low 8 bits of performance event select</param>
@@ -205,6 +231,17 @@ namespace PmcReader.AMD
 
             // linux arch/x86/kernel/cpu/cacheinfo.c:666 does this and it seems to work?
             return (int)(extendedApicId >> 3);
+        }
+
+        /// <summary>
+        /// Get thread CCX ID
+        /// </summary>
+        /// <param name="threadId"></param>
+        /// <returns></returns>
+        public static int Get19hCcxId(int threadId)
+        {
+            // placeholder until I figure this out
+            return threadId > 15 ? 0 : 1;
         }
 
         /// <summary>

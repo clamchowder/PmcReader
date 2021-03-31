@@ -91,6 +91,7 @@ namespace PmcReader.Intel
 
                 results.overallMetrics = new string[] { FormatLargeNumber(counterData.uncoreClock),
                     FormatLargeNumber(counterData.ctr1),
+                    FormatLargeNumber(counterData.ctr1 * 64) + "B/s",
                     string.Format("{0:F2}", counterData.ctr0 / counterData.uncoreClock),
                     string.Format("{0:F2} clk", counterData.ctr0 / counterData.ctr1),
                     string.Format("{0:F2} ns", (1000000000 / counterData.uncoreClock) * (counterData.ctr0 / counterData.ctr1))
@@ -100,7 +101,7 @@ namespace PmcReader.Intel
             }
 
             public string GetHelpText() { return ""; }
-            public string[] columns = new string[] { "Clk", "Requests", "Q Occupancy", "Req Latency", "Req Latency" };
+            public string[] columns = new string[] { "Clk", "Requests", "Req*64B", "Q Occupancy", "Req Latency", "Req Latency" };
         }
 
         public class CoherencyRequests : MonitoringConfig
@@ -138,6 +139,7 @@ namespace PmcReader.Intel
 
                 results.overallMetrics = new string[] { FormatLargeNumber(counterData.uncoreClock),
                     FormatLargeNumber(counterData.ctr1),
+                    FormatLargeNumber(counterData.ctr1 * 64) + "B/s",
                     string.Format("{0:F2}", counterData.ctr0 / counterData.uncoreClock),
                     string.Format("{0:F2} clk", counterData.ctr0 / counterData.ctr1),
                     string.Format("{0:F2} ns", (1000000000 / counterData.uncoreClock) * (counterData.ctr0 / counterData.ctr1))
@@ -146,7 +148,7 @@ namespace PmcReader.Intel
             }
 
             public string GetHelpText() { return ""; }
-            public string[] columns = new string[] { "Clk", "Requests", "Q Occupancy", "Req Latency", "Req Latency" };
+            public string[] columns = new string[] { "Clk", "Requests", "Req*64B", "Q Occupancy", "Req Latency", "Req Latency" };
         }
     }
 }
