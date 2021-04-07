@@ -6,7 +6,7 @@ namespace PmcReader.Intel
     {
         public Haswell()
         {
-            monitoringConfigs = new MonitoringConfig[13];
+            monitoringConfigs = new MonitoringConfig[15];
             monitoringConfigs[0] = new BpuMonitoringConfig(this);
             monitoringConfigs[1] = new OpCachePerformance(this);
             monitoringConfigs[2] = new OpDelivery(this);
@@ -19,7 +19,9 @@ namespace PmcReader.Intel
             monitoringConfigs[9] = new L2Cache(this);
             monitoringConfigs[10] = new L1DFill(this);
             monitoringConfigs[11] = new Rename(this);
-            monitoringConfigs[12] = new ArchitecturalCounters(this);
+            monitoringConfigs[12] = new IFetch(this);
+            monitoringConfigs[13] = new MemBound(this);
+            monitoringConfigs[14] = new ArchitecturalCounters(this);
             architectureName = "Haswell";
         }
 
@@ -538,7 +540,7 @@ namespace PmcReader.Intel
                 return results;
             }
 
-            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "Ret. Loads", "L1/LFB %", "L2 %", "L3 %", "DRAM %" };
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "Ret. Loads", "L1/LFB %", "L1 MPKI", "L2 %", "L2 MPKI", "L3 %", "L3 MPKI", "DRAM %" };
 
             public string GetHelpText()
             {
@@ -556,9 +558,12 @@ namespace PmcReader.Intel
                         string.Format("{0:F2}", counterData.instr / counterData.activeCycles),
                         FormatLargeNumber(counterData.pmc0),
                         string.Format("{0:F2}%", 100 * l1LfbHit / counterData.pmc0),
+                        string.Format("{0:F2}", 1000 * counterData.pmc1 / counterData.instr),
                         string.Format("{0:F2}%", 100 * l2Hit / counterData.pmc0),
+                        string.Format("{0:F2}", 1000 * counterData.pmc2 / counterData.instr),
                         string.Format("{0:F2}%", 100 * l3hit / counterData.pmc0),
-                        string.Format("{0:F2}%", 100 * counterData.pmc3 / counterData.pmc0)
+                        string.Format("{0:F2}", 1000 * counterData.pmc3 / counterData.instr),
+                        string.Format("{0:F2}%", 100 * counterData.pmc3 / counterData.pmc0),
                 };
             }
         }
@@ -634,6 +639,145 @@ namespace PmcReader.Intel
                         string.Format("{0:F2}%", 100 * threeOps / counterData.activeCycles),
                         string.Format("{0:F2}%", 100 * counterData.pmc3 / counterData.activeCycles),
                         string.Format("{0:F2}%", 100 * counterData.pmc0 / counterData.activeCycles),
+                };
+            }
+        }
+
+        public class IFetch : MonitoringConfig
+        {
+            private Haswell cpu;
+            public string GetConfigName() { return "Instruction Fetch"; }
+
+            public IFetch(Haswell intelCpu)
+            {
+                cpu = intelCpu;
+            }
+
+            public string[] GetColumns()
+            {
+                return columns;
+            }
+
+            public void Initialize()
+            {
+                cpu.EnablePerformanceCounters();
+
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    ThreadAffinity.Set(1UL << threadIdx);
+                    Ring0.WriteMsr(IA32_PERFEVTSEL0, GetPerfEvtSelRegisterValue(0x80, 0x1, true, true, false, false, false, false, true, false, 0)); // ic hit
+                    Ring0.WriteMsr(IA32_PERFEVTSEL1, GetPerfEvtSelRegisterValue(0x80, 0x2, true, true, false, false, false, false, true, false, 0)); // ic miss
+                    Ring0.WriteMsr(IA32_PERFEVTSEL2, GetPerfEvtSelRegisterValue(0x80, 0x4, true, true, false, false, false, false, true, false, 0)); // ifetch stall
+                    Ring0.WriteMsr(IA32_PERFEVTSEL3, GetPerfEvtSelRegisterValue(0x87, 0x4, true, true, false, false, false, false, true, false, 0)); // iq full
+                }
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[cpu.GetThreadCount()][];
+                cpu.InitializeCoreTotals();
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    cpu.UpdateThreadCoreCounterData(threadIdx);
+                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
+                }
+
+                cpu.ReadPackagePowerCounter();
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                results.overallCounterValues = cpu.GetOverallCounterValues("IC Hit", "IC Miss", "IFetch Stall Cycles", "IQ Full Stall Cycles");
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "PkgPower", "Instr/Watt", "IC Hitrate", "IC MPKI", "IC Hits", "IFetch Stall", "IQ Full Stall" };
+
+            public string GetHelpText()
+            {
+                return "";
+            }
+
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
+            {
+                return new string[] { label,
+                        FormatLargeNumber(counterData.activeCycles),
+                        FormatLargeNumber(counterData.instr),
+                        string.Format("{0:F2}", counterData.instr / counterData.activeCycles),
+                        string.Format("{0:F2} W", counterData.packagePower),
+                        FormatLargeNumber(counterData.instr / counterData.packagePower),
+                        FormatPercentage(counterData.pmc0, counterData.pmc0 + counterData.pmc1),
+                        string.Format("{0:F2}", 1000 * counterData.pmc1 / counterData.instr),
+                        FormatLargeNumber(counterData.pmc0),
+                        FormatPercentage(counterData.pmc2, counterData.activeCycles),
+                        FormatPercentage(counterData.pmc3, counterData.activeCycles)
+                };
+            }
+        }
+
+        public class MemBound : MonitoringConfig
+        {
+            private Haswell cpu;
+            public string GetConfigName() { return "Memory Bound"; }
+
+            public MemBound(Haswell intelCpu)
+            {
+                cpu = intelCpu;
+            }
+
+            public string[] GetColumns()
+            {
+                return columns;
+            }
+
+            public void Initialize()
+            {
+                cpu.EnablePerformanceCounters();
+
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    ThreadAffinity.Set(1UL << threadIdx);
+                    Ring0.WriteMsr(IA32_PERFEVTSEL0, GetPerfEvtSelRegisterValue(0xA3, 0x4, true, true, false, false, false, false, true, false, cmask: 4)); // no execute
+                    Ring0.WriteMsr(IA32_PERFEVTSEL1, GetPerfEvtSelRegisterValue(0xA3, 0x6, true, true, false, false, false, false, true, false, cmask: 6)); // LDM pending
+                    Ring0.WriteMsr(IA32_PERFEVTSEL2, GetPerfEvtSelRegisterValue(0xA3, 0xC, true, true, false, false, false, false, true, false, cmask: 0xC)); // L1D pending, pmc2 only
+                    Ring0.WriteMsr(IA32_PERFEVTSEL3, GetPerfEvtSelRegisterValue(0xA3, 0x5, true, true, false, false, false, false, true, false, cmask: 5)); // L2 Pending
+                }
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[cpu.GetThreadCount()][];
+                cpu.InitializeCoreTotals();
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    cpu.UpdateThreadCoreCounterData(threadIdx);
+                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
+                }
+
+                cpu.ReadPackagePowerCounter();
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                results.overallCounterValues = cpu.GetOverallCounterValues("No execute cycles", "LDM Pending Cycles", "Stall L1D Miss Pending Cycles", "Stall L2 Miss Pending cycles");
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "PkgPower", "Instr/Watt", "No Execute", "Stall LDM Pending", "Stall, L1D Miss", "(Stall, L2 Miss)" };
+
+            public string GetHelpText()
+            {
+                return "";
+            }
+
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
+            {
+                return new string[] { label,
+                        FormatLargeNumber(counterData.activeCycles),
+                        FormatLargeNumber(counterData.instr),
+                        string.Format("{0:F2}", counterData.instr / counterData.activeCycles),
+                        string.Format("{0:F2} W", counterData.packagePower),
+                        FormatLargeNumber(counterData.instr / counterData.packagePower),
+                        FormatPercentage(counterData.pmc0, counterData.activeCycles),
+                        FormatPercentage(counterData.pmc1, counterData.activeCycles),
+                        FormatPercentage(counterData.pmc2, counterData.activeCycles),
+                        FormatPercentage(counterData.pmc3, counterData.activeCycles)
                 };
             }
         }

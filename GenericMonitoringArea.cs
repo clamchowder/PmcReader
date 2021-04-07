@@ -211,6 +211,13 @@ namespace PmcReader
             {
                 monitoringListView.Columns.Add(column);
             }
+
+            foreach (ColumnHeader column in monitoringListView.Columns)
+            {
+                // nasty heuristic
+                if (column.Text.Length < 10) column.Width = 65;
+                else column.Width = -2;
+            }
         }
 
         /// <summary>
@@ -298,6 +305,11 @@ namespace PmcReader
             }
 
             return string.Format("{0:F2} ", n);
+        }
+
+        public static string FormatPercentage(float n, float total)
+        {
+            return string.Format("{0:F2}%", 100 * n / total);
         }
 
         /// <summary>
