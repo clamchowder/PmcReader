@@ -116,16 +116,20 @@ namespace PmcReader.AMD
             public string[] GetColumns() { return columns; }
             public void Initialize()
             {
-                ulong L3AccessPerfCtl = Get19hL3PerfCtlValue(0x4, 0xFF, true, 0, true, true, 0, 0);
+                ulong L3AccessPerfCtl = Get19hL3PerfCtlValue(0x4, 0xFF, true, 0, true, true, 0, 0b11);
                 ulong L3MissLatencyCtl = Get19hL3PerfCtlValue(0x90, 0, true, 0, true, true, 0, 0);
                 ulong L3MissSdpRequestPerfCtl = Get19hL3PerfCtlValue(0x9A, 0xFF, true, 0, true, true, 0, 0);
+                ulong L3MissesForLatencyCalculation = 0x0300C00000401F9a;
+                ulong L3Miss = 0x0300C00000400104;
 
-                foreach(KeyValuePair<int, int> ccxThread in l3Cache.ccxSampleThreads)
+                foreach (KeyValuePair<int, int> ccxThread in l3Cache.ccxSampleThreads)
                 {
                     ThreadAffinity.Set(1UL << ccxThread.Value);
                     Ring0.WriteMsr(MSR_L3_PERF_CTL_0, L3AccessPerfCtl);
                     Ring0.WriteMsr(MSR_L3_PERF_CTL_1, L3MissLatencyCtl);
                     Ring0.WriteMsr(MSR_L3_PERF_CTL_2, L3MissSdpRequestPerfCtl);
+                    Ring0.WriteMsr(MSR_L3_PERF_CTL_3, L3MissesForLatencyCalculation);
+                    Ring0.WriteMsr(MSR_L3_PERF_CTL_4, L3Miss);
                 }
             }
 
@@ -164,7 +168,7 @@ namespace PmcReader.AMD
                 avgClk /= l3Cache.allCcxThreads.Count();
                 results.overallMetrics = computeMetrics("Overall", l3Cache.ccxTotals, avgClk);
                 results.overallCounterValues = l3Cache.GetOverallL3CounterValues(totalAperf, totalMperf, totalIrPerfCount, totalTsc, 
-                    "L3Access", "L3MissLat/16", "L3MissSdpReq", "Unused", "Unused", "Unused");
+                    "L3Access", "L3MissLat/16", "L3MissSdpReq", "L3MissesForLatencyCalculation", "L3Miss", "Unused");
                 return results;
             }
 
@@ -175,16 +179,16 @@ namespace PmcReader.AMD
             private string[] computeMetrics(string label, L3CounterData counterData, float clk)
             {
                 // event 0x90 counts "total cycles for all transactions divided by 16"
-                float ccxL3MissLatency = (float)counterData.ctr1 * 16 / counterData.ctr2;
-                float ccxL3Hitrate = (1 - (float)counterData.ctr2 / counterData.ctr0) * 100;
-                float ccxL3HitBw = ((float)counterData.ctr0 - counterData.ctr2) * 64;
+                float ccxL3MissLatency = (float)counterData.ctr1 * 16 / counterData.ctr3;
+                float ccxL3Hitrate = (1 - (float)counterData.ctr4 / counterData.ctr0) * 100;
+                float ccxL3HitBw = ((float)counterData.ctr0 - counterData.ctr4) * 64;
                 return new string[] { label,
                         FormatLargeNumber(clk),
                         string.Format("{0:F2}%", ccxL3Hitrate),
                         FormatLargeNumber(ccxL3HitBw) + "B/s",
                         string.Format("{0:F1} clks", ccxL3MissLatency),
                         string.Format("{0:F1} ns", (1000000000 / clk) * ccxL3MissLatency),
-                        string.Format("{0:F2}", counterData.ctr2 * 16 / clk),
+                        string.Format("{0:F2}", counterData.ctr1 * 16 / clk),
                         FormatLargeNumber(counterData.ctr2),
                         FormatLargeNumber(counterData.ctr2 * 64) + "B/s"};
             }

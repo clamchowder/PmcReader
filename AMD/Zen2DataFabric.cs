@@ -73,7 +73,7 @@ namespace PmcReader.AMD
                 results.unitMetrics[3] = new string[] { "DF Evt 0xC7 Umask 0x38", FormatLargeNumber(mysteryDramBytes3 * normalizationFactor) + "B/s" };
 
                 results.overallMetrics = new string[] { "Overall",
-                    FormatLargeNumber((mysteryDramBytes0 + mysteryDramBytes1 + mysteryDramBytes2 + mysteryDramBytes3) * normalizationFactor) + "B/s" };
+                    FormatLargeNumber((mysteryDramBytes0 + mysteryDramBytes1) * normalizationFactor) + "B/s" };
                 return results;
             }
         }
@@ -149,31 +149,22 @@ namespace PmcReader.AMD
             private long lastUpdateTime;
             private const int monitoringThread = 1;
 
-            public string[] columns = new string[] { "Item", "DRAM BW 1" };
+            public string[] columns = new string[] { "Item", "BW?" };
             public string GetHelpText() { return ""; }
             public DramBw1Config(Zen2DataFabric dataFabric)
             {
                 this.dataFabric = dataFabric;
             }
 
-            public string GetConfigName() { return "DRAM Bandwidth, upper half???"; }
+            public string GetConfigName() { return "DRAM Bandwidth 19h Evts"; }
             public string[] GetColumns() { return columns; }
             public void Initialize()
             {
-                // Undocumented data fabric mentioned in prelimary PPR, but removed in the latest one
-                // prelimary PPR suggests calculating DRAM bandwidth by adding up all these events and
-                // multiplying by 64
-                // These four are always zero on the 3950X. Possibly for quad channel?
-                ulong mysteryDramBytes7 = 0x00000001004038C7;
-                ulong mysteryDramBytes6 = 0x0000000100403887;
-                ulong mysteryDramBytes5 = 0x0000000100403847;
-                ulong mysteryDramBytes4 = 0x0000000100403807;
-
                 ThreadAffinity.Set(1UL << monitoringThread);
-                Ring0.WriteMsr(MSR_DF_PERF_CTL_0, mysteryDramBytes4);
-                Ring0.WriteMsr(MSR_DF_PERF_CTL_1, mysteryDramBytes5);
-                Ring0.WriteMsr(MSR_DF_PERF_CTL_2, mysteryDramBytes6);
-                Ring0.WriteMsr(MSR_DF_PERF_CTL_3, mysteryDramBytes7);
+                Ring0.WriteMsr(MSR_DF_PERF_CTL_0, GetDFPerfCtlValue(0x7 | 0, 0x38, true, 0, 0));
+                Ring0.WriteMsr(MSR_DF_PERF_CTL_1, GetDFPerfCtlValue(0x7 | (1 << 6), 0x38, true, 0, 0));
+                Ring0.WriteMsr(MSR_DF_PERF_CTL_2, GetDFPerfCtlValue(0x7 | (2 << 6), 0x38, true, 0, 0));
+                Ring0.WriteMsr(MSR_DF_PERF_CTL_3, GetDFPerfCtlValue(0x7 | (3 << 6), 0x38, true, 0, 0));
 
                 lastUpdateTime = DateTimeOffset.Now.ToUnixTimeMilliseconds();
             }
@@ -189,10 +180,10 @@ namespace PmcReader.AMD
                 ulong mysteryDramBytes2 = ReadAndClearMsr(MSR_DF_PERF_CTR_2) * 64;
                 ulong mysteryDramBytes3 = ReadAndClearMsr(MSR_DF_PERF_CTR_3) * 64;
 
-                results.unitMetrics[0] = new string[] { "DF Evt 0x107 Umask 0x38", FormatLargeNumber(mysteryDramBytes0 * normalizationFactor) + "B/s" };
-                results.unitMetrics[1] = new string[] { "DF Evt 0x147 Umask 0x38", FormatLargeNumber(mysteryDramBytes1 * normalizationFactor) + "B/s" };
-                results.unitMetrics[2] = new string[] { "DF Evt 0x187 Umask 0x38", FormatLargeNumber(mysteryDramBytes2 * normalizationFactor) + "B/s" };
-                results.unitMetrics[3] = new string[] { "DF Evt 0x1C7 Umask 0x38", FormatLargeNumber(mysteryDramBytes3 * normalizationFactor) + "B/s" };
+                results.unitMetrics[0] = new string[] { "DRAM Ch 0", FormatLargeNumber(mysteryDramBytes0 * normalizationFactor) + "B/s" };
+                results.unitMetrics[1] = new string[] { "DRAM Ch 1", FormatLargeNumber(mysteryDramBytes1 * normalizationFactor) + "B/s" };
+                results.unitMetrics[2] = new string[] { "DRAM Ch 2", FormatLargeNumber(mysteryDramBytes2 * normalizationFactor) + "B/s" };
+                results.unitMetrics[3] = new string[] { "DRAM Ch 3", FormatLargeNumber(mysteryDramBytes3 * normalizationFactor) + "B/s" };
 
                 results.overallMetrics = new string[] { "Overall",
                     FormatLargeNumber((mysteryDramBytes0 + mysteryDramBytes1 + mysteryDramBytes2 + mysteryDramBytes3) * normalizationFactor) + "B/s" };
