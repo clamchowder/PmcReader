@@ -7,8 +7,9 @@ namespace PmcReader.AMD
 {
     public class Amd15hCpu : GenericMonitoringArea
     {
-        public const uint MSR_APERF = 0x000000E8;
-        public const uint MSR_MPERF = 0x000000E7;
+        // someone else really likes resetting aperf
+        public const uint MSR_APERF_READONLY = 0xC00000E8;
+        public const uint MSR_MPERF_READONLY = 0xC00000E7;
         public const uint MSR_TSC = 0x00000010;
         public const uint MSR_PERF_CTR_0 = 0xC0010201;
         public const uint MSR_PERF_CTR_1 = 0xC0010203;
@@ -75,9 +76,9 @@ namespace PmcReader.AMD
         public void ReadFixedCounters(int threadIdx, out ulong elapsedAperf, out ulong elapsedTsc, out ulong elapsedMperf)
         {
             ulong aperf, tsc, mperf;
-            Ring0.ReadMsr(MSR_APERF, out aperf);
+            Ring0.ReadMsr(MSR_APERF_READONLY, out aperf);
             Ring0.ReadMsr(MSR_TSC, out tsc);
-            Ring0.ReadMsr(MSR_MPERF, out mperf);
+            Ring0.ReadMsr(MSR_MPERF_READONLY, out mperf);
 
             elapsedAperf = aperf;
             elapsedTsc = tsc;
