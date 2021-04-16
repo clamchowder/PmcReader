@@ -348,10 +348,7 @@ namespace PmcReader
         /// <returns>normalization factor</returns>
         public float GetNormalizationFactor(int index)
         {
-            if (lastUpdateTimers == null)
-            {
-                lastUpdateTimers = new Dictionary<int, Stopwatch>();
-            }
+            if (lastUpdateTimers == null) lastUpdateTimers = new Dictionary<int, Stopwatch>();
 
             Stopwatch sw;
             if (! lastUpdateTimers.TryGetValue(index, out sw))

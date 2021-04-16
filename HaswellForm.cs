@@ -88,6 +88,10 @@ namespace PmcReader
                     l3Monitoring.monitoringArea = new AMD.Zen3L3Cache();
                     dfMonitoring.monitoringArea = new AMD.Zen2DataFabric();
                 }
+                else if (cpuFamily == 0x15 && cpuModel == 0x2)
+                {
+                    coreMonitoring.monitoringArea = new AMD.Piledriver();
+                }
             }
 
             InitializeComponent();

@@ -62,11 +62,6 @@ namespace PmcReader
     public class MonitoringUpdateResults
     {
         /// <summary>
-        /// Unit name, i.e. thread, core, ccx, etc.
-        /// </summary>
-        public string unitName;
-
-        /// <summary>
         /// Aggregated metrics
         /// </summary>
         public string[] overallMetrics;

@@ -1688,8 +1688,8 @@ namespace PmcReader.AMD
                 for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
                 {
                     ThreadAffinity.Set(1UL << threadIdx);
-                    // dc refill, remote cache/dram
-                    Ring0.WriteMsr(MSR_PERF_CTL_0, GetPerfCtlValue(0x43, 0x50, true, true, false, false, true, false, 0, 0, false, false));
+                    // dc refill, umask bit 2 (0x4) from zen 3 ppr
+                    Ring0.WriteMsr(MSR_PERF_CTL_0, GetPerfCtlValue(0x44, 0x4, true, true, false, false, true, false, 0, 0, false, false));
                     // sw prefetch, remote cache/dram
                     Ring0.WriteMsr(MSR_PERF_CTL_1, GetPerfCtlValue(0x59, 0x50, true, true, false, false, true, false, 0, 0, false, false));
                     // cacheable lock speculation succeeded (lo)
@@ -1714,12 +1714,12 @@ namespace PmcReader.AMD
                     results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
                 }
 
-                results.overallCounterValues = cpu.GetOverallCounterValues("DC Refill Remote Cache/DRAM", "SW Prefetch Remote Cache/DRAM", "HW Prefetch Remote Cache/DRAM", "Speculative cacheable lock", "NonSpecLock", "BusLock");
+                results.overallCounterValues = cpu.GetOverallCounterValues("(DC Fill ExtCacheLocal)", "SW Prefetch Remote Cache/DRAM", "HW Prefetch Remote Cache/DRAM", "Speculative cacheable lock", "NonSpecLock", "BusLock");
                 results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
                 return results;
             }
 
-            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "DC Refill, Remote", "SW Prefetch, Remote", "SpecLockLo", "SpecLockHi", "NonSpecLock", "BusLock" };
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "(DC Fill ExtCacheLocal)", "SW Prefetch, Remote", "SpecLockLo", "SpecLockHi", "NonSpecLock", "BusLock" };
 
             public string GetHelpText()
             {
