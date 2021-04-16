@@ -30,7 +30,7 @@ namespace PmcReader.Intel
         {
             private SandyBridge cpu;
             public string GetConfigName() { return "Per-Core ALU Port Utilization"; }
-            public string[] columns = new string[] { "Item", "Core Instructions", "Core IPC", "P0 ALU/FADD", "P1 ALU/FMUL", "P5 ALU/Branch" };
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "Core IPC", "P0 ALU/FADD", "P1 ALU/FMUL", "P5 ALU/Branch" };
             public string GetHelpText() { return ""; }
 
             public ALUPortUtilization(SandyBridge intelCpu)
@@ -78,58 +78,30 @@ namespace PmcReader.Intel
             public MonitoringUpdateResults Update()
             {
                 MonitoringUpdateResults results = new MonitoringUpdateResults();
-                results.unitMetrics = new string[cpu.GetThreadCount()][];
-                ulong totalP0Uops = 0;
-                ulong totalP1Uops = 0;
-                ulong totalP5Uops = 0;
-                ulong totalRetiredInstructions = 0;
-                ulong totalActiveCycles = 0;
-                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                results.unitMetrics = new string[cpu.coreCount][];
+                cpu.InitializeCoreTotals();
+                // hehe only deal with cores
+                for (int coreIdx = 0; coreIdx < cpu.coreCount; coreIdx++)
                 {
-                    ulong p0Uops, p1Uops, p5Uops;
-                    ulong retiredInstructions, activeCycles;
-
-                    ThreadAffinity.Set(1UL << threadIdx);
-                    Ring0.ReadMsr(IA32_FIXED_CTR0, out retiredInstructions);
-                    Ring0.ReadMsr(IA32_FIXED_CTR1, out activeCycles);
-                    Ring0.ReadMsr(IA32_A_PMC0, out p0Uops);
-                    Ring0.ReadMsr(IA32_A_PMC1, out p1Uops);
-                    Ring0.ReadMsr(IA32_A_PMC2, out p5Uops);
-                    Ring0.WriteMsr(IA32_FIXED_CTR0, 0);
-                    Ring0.WriteMsr(IA32_FIXED_CTR1, 0);
-                    Ring0.WriteMsr(IA32_A_PMC0, 0);
-                    Ring0.WriteMsr(IA32_A_PMC1, 0);
-                    Ring0.WriteMsr(IA32_A_PMC2, 0);
-
-                    totalP0Uops += p0Uops;
-                    totalP1Uops += p1Uops;
-                    totalP5Uops += p5Uops;
-                    totalRetiredInstructions += retiredInstructions;
-                    totalActiveCycles += activeCycles;
-
-                    float ipc = (float)retiredInstructions / activeCycles;
-                    float p0Util = (float)p0Uops / activeCycles * 100;
-                    float p1Util = (float)p1Uops / activeCycles * 100;
-                    float p5Util = (float)p5Uops / activeCycles * 100;
-                    results.unitMetrics[threadIdx] = new string[] { "Thread " + threadIdx,
-                        FormatLargeNumber(retiredInstructions),
-                        string.Format("{0:F2}", ipc),
-                        string.Format("{0:F2}%", p0Util),
-                        string.Format("{0:F2}%", p1Util),
-                        string.Format("{0:F2}%", p5Util) };
+                    int threadIdx = cpu.coreCount == cpu.threadCount ? coreIdx : coreIdx * 2;
+                    cpu.UpdateThreadCoreCounterData(threadIdx);
+                    results.unitMetrics[coreIdx] = computeMetrics("Core " + coreIdx, cpu.NormalizedThreadCounts[threadIdx]);
                 }
 
-                float overallIpc = (float)totalRetiredInstructions / totalActiveCycles;
-                float overallP0Util = (float)totalP0Uops / totalActiveCycles * 100;
-                float overallP1Util = (float)totalP1Uops / totalActiveCycles * 100;
-                float overallP5Util = (float)totalP5Uops / totalActiveCycles * 100;
-                results.overallMetrics = new string[] { "Overall",
-                    "N/A",
-                    string.Format("{0:F2}", overallIpc),
-                    string.Format("{0:F2}%", overallP0Util),
-                    string.Format("{0:F2}%", overallP1Util),
-                    string.Format("{0:F2}%", overallP5Util) };
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                results.overallCounterValues = cpu.GetOverallCounterValues("Port 0 Ops", "Port 1 Ops", "Port 5 Ops", "Unused");
                 return results;
+            }
+
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
+            {
+                return new string[] { label,
+                        FormatLargeNumber(counterData.activeCycles),
+                        FormatLargeNumber(counterData.instr),
+                        string.Format("{0:F2}", counterData.instr / counterData.activeCycles),
+                        string.Format("{0:F2}%", counterData.pmc0 / counterData.activeCycles * 100),
+                        string.Format("{0:F2}%", counterData.pmc1 / counterData.activeCycles * 100),
+                        string.Format("{0:F2}%", counterData.pmc2 / counterData.activeCycles * 100)};
             }
         }
 
@@ -137,7 +109,7 @@ namespace PmcReader.Intel
         {
             private SandyBridge cpu;
             public string GetConfigName() { return "Per-Core LS Port Utilization"; }
-            public string[] columns = new string[] { "Item", "Core Instructions", "Core IPC", "P2 AGU", "P3 AGU", "P4 StoreData" };
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "Core IPC", "P2 AGU", "P3 AGU", "P4 StoreData" };
             public string GetHelpText() { return ""; }
 
             public LSPortUtilization(SandyBridge intelCpu)
@@ -185,53 +157,29 @@ namespace PmcReader.Intel
             public MonitoringUpdateResults Update()
             {
                 MonitoringUpdateResults results = new MonitoringUpdateResults();
-                results.unitMetrics = new string[cpu.GetThreadCount()][];
-                ulong totalP2Uops = 0;
-                ulong totalP3Uops = 0;
-                ulong totalP4Uops = 0;
-                ulong totalRetiredInstructions = 0;
-                ulong totalActiveCycles = 0;
-                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                results.unitMetrics = new string[cpu.coreCount][];
+                cpu.InitializeCoreTotals();
+                for (int coreIdx = 0; coreIdx < cpu.coreCount; coreIdx++)
                 {
-                    ulong p2Uops, p3Uops, p4Uops;
-                    ulong retiredInstructions, activeCycles;
-
-                    ThreadAffinity.Set(1UL << threadIdx);
-                    p2Uops = ReadAndClearMsr(IA32_A_PMC0);
-                    p3Uops = ReadAndClearMsr(IA32_A_PMC1);
-                    p4Uops = ReadAndClearMsr(IA32_A_PMC2);
-                    retiredInstructions = ReadAndClearMsr(IA32_FIXED_CTR0);
-                    activeCycles = ReadAndClearMsr(IA32_FIXED_CTR1);
-
-                    totalP2Uops += p2Uops;
-                    totalP3Uops += p3Uops;
-                    totalP4Uops += p4Uops;
-                    totalRetiredInstructions += retiredInstructions;
-                    totalActiveCycles += activeCycles;
-
-                    float ipc = (float)retiredInstructions / activeCycles;
-                    float p2Util = (float)p2Uops / activeCycles * 100;
-                    float p3Util = (float)p3Uops / activeCycles * 100;
-                    float p4Util = (float)p4Uops / activeCycles * 100;
-                    results.unitMetrics[threadIdx] = new string[] { "Thread " + threadIdx,
-                        FormatLargeNumber(retiredInstructions),
-                        string.Format("{0:F2}", ipc),
-                        string.Format("{0:F2}%", p2Util),
-                        string.Format("{0:F2}%", p3Util),
-                        string.Format("{0:F2}%", p4Util) };
+                    int threadIdx = cpu.coreCount == cpu.threadCount ? coreIdx : coreIdx * 2;
+                    cpu.UpdateThreadCoreCounterData(threadIdx);
+                    results.unitMetrics[coreIdx] = computeMetrics("Core " + coreIdx, cpu.NormalizedThreadCounts[threadIdx]);
                 }
 
-                float overallIpc = (float)totalRetiredInstructions / totalActiveCycles;
-                float overallP2Util = (float)totalP2Uops / totalActiveCycles * 100;
-                float overallP3Util = (float)totalP3Uops / totalActiveCycles * 100;
-                float overallP4Util = (float)totalP4Uops / totalActiveCycles * 100;
-                results.overallMetrics = new string[] { "Overall",
-                    "N/A",
-                    string.Format("{0:F2}", overallIpc),
-                    string.Format("{0:F2}%", overallP2Util),
-                    string.Format("{0:F2}%", overallP3Util),
-                    string.Format("{0:F2}%", overallP4Util) };
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                results.overallCounterValues = cpu.GetOverallCounterValues("Port 2 Ops", "Port 3 Ops", "Port 4 Ops", "Unused");
                 return results;
+            }
+
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
+            {
+                return new string[] { label,
+                        FormatLargeNumber(counterData.activeCycles),
+                        FormatLargeNumber(counterData.instr),
+                        string.Format("{0:F2}", counterData.instr / counterData.activeCycles),
+                        string.Format("{0:F2}%", counterData.pmc0 / counterData.activeCycles * 100),
+                        string.Format("{0:F2}%", counterData.pmc1 / counterData.activeCycles * 100),
+                        string.Format("{0:F2}%", counterData.pmc2 / counterData.activeCycles * 100)};
             }
         }
 
@@ -287,6 +235,7 @@ namespace PmcReader.Intel
                 }
 
                 results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                results.overallCounterValues = cpu.GetOverallCounterValues("LDQ Full", "STQ Full", "RS Full", "ROB Full");
                 return results;
             }
 
