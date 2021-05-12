@@ -23,14 +23,14 @@ namespace PmcReader.AMD
         public const uint MSR_PERF_CTL_3 = 0xC0010206;
         public const uint MSR_PERF_CTL_4 = 0xC0010208;
         public const uint MSR_PERF_CTL_5 = 0xC001020A;
-        public const uint MSR_DF_PERF_CTL_0 = 0xC0010240;
-        public const uint MSR_DF_PERF_CTL_1 = 0xC0010242;
-        public const uint MSR_DF_PERF_CTL_2 = 0xC0010244;
-        public const uint MSR_DF_PERF_CTL_3 = 0xC0010246;
-        public const uint MSR_DF_PERF_CTR_0 = 0xC0010241;
-        public const uint MSR_DF_PERF_CTR_1 = 0xC0010243;
-        public const uint MSR_DF_PERF_CTR_2 = 0xC0010245;
-        public const uint MSR_DF_PERF_CTR_3 = 0xC0010247;
+        public const uint MSR_NB_PERF_CTL_0 = 0xC0010240;
+        public const uint MSR_NB_PERF_CTL_1 = 0xC0010242;
+        public const uint MSR_NB_PERF_CTL_2 = 0xC0010244;
+        public const uint MSR_NB_PERF_CTL_3 = 0xC0010246;
+        public const uint MSR_NB_PERF_CTR_0 = 0xC0010241;
+        public const uint MSR_NB_PERF_CTR_1 = 0xC0010243;
+        public const uint MSR_NB_PERF_CTR_2 = 0xC0010245;
+        public const uint MSR_NB_PERF_CTR_3 = 0xC0010247;
 
         public NormalizedCoreCounterData[] NormalizedThreadCounts;
         public NormalizedCoreCounterData NormalizedTotalCounts;
@@ -270,7 +270,7 @@ namespace PmcReader.AMD
         /// <param name="enable">enable perf counter</param>
         /// <param name="perfEventHi">bits 8-11 of performance event select</param>
         /// <returns>value to put in DF_PERF_CTL</returns>
-        public static ulong GetDFPerfCtlValue(byte perfEventLow, byte umask, bool enable, byte perfEventHi)
+        public static ulong GetNBPerfCtlValue(byte perfEventLow, byte umask, bool enable, byte perfEventHi)
         {
             // bit 20 enables interrupt on overflow, bit 36 enables interrupt to a core, and bits 37-40 select a core, but we don't care about that
             return perfEventLow |

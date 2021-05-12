@@ -402,7 +402,7 @@ namespace PmcReader.AMD
 
                 cpu.ReadPackagePowerCounter();
                 results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
-                results.overallCounterValues = cpu.GetOverallCounterValues("SwPf LclL2", "SwPf IntCache", "SwPf ExtCacheLocal", "SwPf MemIoLocal", "SwPf ExtCacheRemote", "SwPf MemIoRemote");
+                results.overallCounterValues = cpu.GetOverallCounterValues("LclL2", "IntCache", "ExtCacheLocal", "MemIoLocal", "ExtCacheRemote", "MemIoRemote");
                 return results;
             }
 

@@ -50,6 +50,7 @@
     <Compile Include="AMD\Amd15hCpu.cs" />
     <Compile Include="AMD\Amd17hCpu.cs" />
     <Compile Include="AMD\Piledriver.cs" />
+    <Compile Include="AMD\PiledriverNorthbridge.cs" />
     <Compile Include="AMD\Zen3L3Cache.cs" />
     <Compile Include="AMD\Zen3.cs" />
     <Compile Include="AMD\Zen2.cs" />

@@ -28,6 +28,7 @@ namespace PmcReader
             // Override the "data fabric" label since I want to monitor different
             // things on different CPUs, and 'uncore' architectures vary a lot
             string dfLabelOverride = null;
+            string l3LabelOverride = null; // thanks piledriver
 
             if (cpuManufacturer.Equals("GenuineIntel"))
             {
@@ -91,6 +92,9 @@ namespace PmcReader
                 else if (cpuFamily == 0x15 && cpuModel == 0x2)
                 {
                     coreMonitoring.monitoringArea = new AMD.Piledriver();
+                    l3Monitoring.monitoringArea = new AMD.PiledriverNorthbridge();
+                    dfLabelOverride = "Unused";
+                    l3LabelOverride = "Northbridge PMC Configurations (pick one):";
                 }
             }
 
@@ -102,6 +106,7 @@ namespace PmcReader
             L3MonitoringListView.FullRowSelect = true;
             dfMonitoringListView.FullRowSelect = true;
             if (dfLabelOverride != null) DataFabricConfigLabel.Text = dfLabelOverride;
+            if (l3LabelOverride != null) L3CacheConfigLabel.Text = l3LabelOverride;
 
             cpuidLabel.Text = string.Format("CPU: {0} Family 0x{1:X}, Model 0x{2:X}, Stepping 0x{3:x} - {4}", 
                 cpuManufacturer, 

@@ -8,7 +8,7 @@ namespace PmcReader.AMD
     {
         public Piledriver()
         {
-            monitoringConfigs = new MonitoringConfig[7];
+            monitoringConfigs = new MonitoringConfig[8];
             monitoringConfigs[0] = new BpuMonitoringConfig(this);
             monitoringConfigs[1] = new IFetch(this);
             monitoringConfigs[2] = new DataCache(this);
@@ -16,6 +16,7 @@ namespace PmcReader.AMD
             monitoringConfigs[4] = new DispatchStall(this);
             monitoringConfigs[5] = new DispatchStall1(this);
             monitoringConfigs[6] = new DispatchStallFP(this);
+            monitoringConfigs[7] = new DispatchStallMisc(this);
             architectureName = "Piledriver";
         }
 
@@ -136,7 +137,7 @@ namespace PmcReader.AMD
                         FormatLargeNumber(counterData.aperf),
                         FormatLargeNumber(instr),
                         string.Format("{0:F2}", instr / counterData.aperf),                       // IPC
-                        FormatPercentage(counterData.ctr4, counterData.aperf),                    // Uops/c
+                        string.Format("{0:F2}", counterData.ctr4 / counterData.aperf),                    // Uops/c
                         string.Format("{0:F2}", counterData.ctr4 / instr),                                // Uops/instr
                         FormatPercentage(counterData.ctr0 - (counterData.ctr1 + counterData.ctr2), counterData.ctr0),  // IC hitrate
                         FormatLargeNumber(32 * icHits) + "B/s",                                   // IC Hit BW
@@ -462,6 +463,74 @@ namespace PmcReader.AMD
                         FormatLargeNumber(counterData.ctr3),
                         string.Format("{0:F2}", counterData.ctr3 / counterData.aperf),
                         FormatLargeNumber(counterData.ctr5)
+                        };
+            }
+        }
+
+        public class DispatchStallMisc : MonitoringConfig
+        {
+            private Piledriver cpu;
+            public string GetConfigName() { return "Dispatch Stall Misc"; }
+
+            public DispatchStallMisc(Piledriver amdCpu)
+            {
+                cpu = amdCpu;
+            }
+
+            public string[] GetColumns() { return columns; }
+
+            public void Initialize()
+            {
+                cpu.ProgramPerfCounters(
+                    GetPerfCtlValue(0xD9, 0, false, 0, 0), // Waiting for All Quiet
+                    GetPerfCtlValue(0xD3, 0, false, 0, 0), // Stall for serialization
+                    GetPerfCtlValue(0x87, 0, false, 0, 0), // Instruction fetch stall
+                    GetPerfCtlValue(0x04, 1, false, 0, 0), // SSE Moves eliminated
+                    GetPerfCtlValue(0xC0, 0, false, 0, 0), // Instr
+                    GetPerfCtlValue(0x34, 0, false, 0, 0));  // FP + Load buffer stall
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[cpu.GetThreadCount()][];
+                cpu.InitializeCoreTotals();
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    cpu.UpdateThreadCoreCounterData(threadIdx);
+                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
+                }
+
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                results.overallCounterValues = cpu.GetOverallCounterValues("Dispatch Stall Waiting for All Quiet", 
+                    "Dispatch Stall for Serialization", 
+                    "Instruction fetch stall", 
+                    "SSE Moves Eliminated", 
+                    "Instructions", 
+                    "FP+Load Buffer Stall");
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC",
+                "Waiting for All Quiet", "Serialization Stall", "Instruction Fetch Stall", "SSE Movs Eliminated", "FP+Load Buffer Stall" };
+
+            public string GetHelpText()
+            {
+                return "aaaaaa";
+            }
+
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
+            {
+                float instr = counterData.ctr4;
+                return new string[] { label,
+                        FormatLargeNumber(counterData.aperf),
+                        FormatLargeNumber(instr),
+                        string.Format("{0:F2}", instr / counterData.aperf),
+                        FormatPercentage(counterData.ctr0, counterData.aperf),
+                        FormatPercentage(counterData.ctr1, counterData.aperf),
+                        FormatPercentage(counterData.ctr2, counterData.aperf),
+                        FormatLargeNumber(counterData.ctr3),
+                        FormatPercentage(counterData.ctr5, counterData.aperf)
                         };
             }
         }
