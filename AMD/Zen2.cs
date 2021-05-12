@@ -8,7 +8,7 @@ namespace PmcReader.AMD
     {
         public Zen2()
         {
-            monitoringConfigs = new MonitoringConfig[20];
+            monitoringConfigs = new MonitoringConfig[21];
             monitoringConfigs[0] = new BpuMonitoringConfig(this);
             monitoringConfigs[1] = new BPUMonitoringConfig1(this);
             monitoringConfigs[2] = new ICMonitoringConfig(this);
@@ -20,15 +20,16 @@ namespace PmcReader.AMD
             monitoringConfigs[8] = new LSConfig(this);
             monitoringConfigs[9] = new LSSwPrefetch(this);
             monitoringConfigs[10] = new DCMonitoringConfig(this);
-            monitoringConfigs[11] = new L2MonitoringConfig(this);
-            monitoringConfigs[12] = new FlopsMonitoringConfig(this);
-            monitoringConfigs[13] = new RetireConfig(this);
-            monitoringConfigs[14] = new RetireBurstConfig(this);
-            monitoringConfigs[15] = new PowerConfig(this);
-            monitoringConfigs[16] = new TestConfig(this);
-            monitoringConfigs[17] = new Locks(this);
-            monitoringConfigs[18] = new TestConfig1(this);
-            monitoringConfigs[19] = new FpDispFault(this);
+            monitoringConfigs[11] = new DCBWMonitoringConfig(this);
+            monitoringConfigs[12] = new L2MonitoringConfig(this);
+            monitoringConfigs[13] = new FlopsMonitoringConfig(this);
+            monitoringConfigs[14] = new RetireConfig(this);
+            monitoringConfigs[15] = new RetireBurstConfig(this);
+            monitoringConfigs[16] = new PowerConfig(this);
+            monitoringConfigs[17] = new TestConfig(this);
+            monitoringConfigs[18] = new Locks(this);
+            monitoringConfigs[19] = new TestConfig1(this);
+            monitoringConfigs[20] = new FpDispFault(this);
             architectureName = "Zen 2";
         }
 
@@ -713,6 +714,84 @@ namespace PmcReader.AMD
                     FormatLargeNumber(dramRefillBw) + "B/s",
                     string.Format("{0:F2}", 1000 * dcRefillFromDram / counterData.instr),
                     FormatLargeNumber(prefetchBw) + "B/s"};
+            }
+        }
+
+        public class DCBWMonitoringConfig : MonitoringConfig
+        {
+            private Zen2 cpu;
+            public string GetConfigName() { return "L1D BW"; }
+
+            public DCBWMonitoringConfig(Zen2 amdCpu)
+            {
+                cpu = amdCpu;
+            }
+
+            public string[] GetColumns()
+            {
+                return columns;
+            }
+
+            public void Initialize()
+            {
+                cpu.ProgramPerfCounters(GetPerfCtlValue(0x40, 0, true, true, false, false, true, false, cmask: 1, 0, false, false), // dc access cmask 1
+                    GetPerfCtlValue(0x40, 0, true, true, false, false, true, false, cmask: 2, 0, false, false),  // dc access cmask 2
+                    GetPerfCtlValue(0x40, 0, true, true, false, false, true, false, cmask: 3, 0, false, false),  // dc access cmask 3
+                    GetPerfCtlValue(0x29, 0b11, true, true, false, false, true, false, cmask: 1, 0, false, false),  // ls dispatch cmask 1
+                    GetPerfCtlValue(0x29, 0b11, true, true, false, false, true, false, cmask: 2, 0, false, false),  // ls dispatch cmask 2
+                    GetPerfCtlValue(0x29, 0b11, true, true, false, false, true, false, cmask: 3, 0, false, false)); // ls dispatch cmask 3
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[cpu.GetThreadCount()][];
+                cpu.InitializeCoreTotals();
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    cpu.UpdateThreadCoreCounterData(threadIdx);
+                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
+                }
+
+                cpu.ReadPackagePowerCounter();
+                results.overallCounterValues = cpu.GetOverallCounterValues("DC Access Cmask 1", "DC Access Cmask 2", "DC Access Cmask 3", "LS Dispatch Cmask 1", "LS Dispatch Cmask 2", "LS Dispatch Cmask 3");
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Power", "Active Cycles", "Instructions", "IPC", "Instr/Watt", 
+                "L1D Lookups", "L1D Active", "L1D 2 Access", "L1D 3 Access", "LS Dispatches", "LS Active", "LS 2 Dispatch", "LS 3 Dispatch" };
+
+            public string GetHelpText()
+            {
+                return "cmask on LS/L1 events";
+            }
+
+            public string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
+            {
+                float dc1Access = counterData.ctr0 - counterData.ctr1; // cycles with 1 dc access
+                float dc2Access = counterData.ctr1 - counterData.ctr2;
+                float dc3Access = counterData.ctr2;
+                float ls1Dispatch = counterData.ctr3 - counterData.ctr4; // cycles with 1 ls dispatch
+                float ls2Dispatch = counterData.ctr4 - counterData.ctr5;
+                float ls3Dispatch = counterData.ctr5;
+                float dcAccess = dc1Access + 2 * dc2Access + 3 * dc3Access;
+                float lsDispatch = ls1Dispatch + 2 * ls2Dispatch + 3 * ls3Dispatch;
+                return new string[] { label,
+                    string.Format("{0:F2} W", counterData.watts),
+                    FormatLargeNumber(counterData.aperf),
+                    FormatLargeNumber(counterData.instr),
+                    string.Format("{0:F2}", counterData.instr / counterData.aperf),
+                    FormatLargeNumber(counterData.instr / counterData.watts),
+                    FormatLargeNumber(dcAccess),
+                    FormatPercentage(counterData.ctr0, counterData.aperf),
+                    FormatPercentage(dc2Access, counterData.aperf),
+                    FormatPercentage(dc3Access, counterData.aperf),
+                    FormatLargeNumber(lsDispatch),
+                    FormatPercentage(counterData.ctr3, counterData.aperf),
+                    FormatPercentage(ls2Dispatch, counterData.aperf),
+                    FormatPercentage(ls3Dispatch, counterData.aperf)
+                    };
             }
         }
 
