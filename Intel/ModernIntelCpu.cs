@@ -459,8 +459,8 @@ namespace PmcReader.Intel
                 for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
                 {
                     ThreadAffinity.Set(1UL << threadIdx);
-                    // Set PMC0 to count retired uops (retire slots)
-                    Ring0.WriteMsr(IA32_PERFEVTSEL0, GetPerfEvtSelRegisterValue(0xC2, 0x2, true, true, false, false, false, false, true, false, 0));
+                    // Set PMC0 to count LSD uops
+                    Ring0.WriteMsr(IA32_PERFEVTSEL0, GetPerfEvtSelRegisterValue(0xA8, 0x1, true, true, false, false, false, false, true, false, 0));
 
                     // Set PMC1 to count DSB uops
                     Ring0.WriteMsr(IA32_PERFEVTSEL1, GetPerfEvtSelRegisterValue(0x79, 0x8, true, true, false, false, false, false, true, false, 0));
@@ -489,7 +489,7 @@ namespace PmcReader.Intel
                 return results;
             }
 
-            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "Retired Ops", "Ops/Instr", "Op$ Ops", "Op$ %", "Decoder Ops", "Decoder %", "MS Ops", "MS %" };
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "LSD Ops", "LSD %", "Op$ Ops", "Op$ %", "Decoder Ops", "Decoder %", "MS Ops", "MS %" };
 
             public string GetHelpText()
             {
@@ -504,13 +504,13 @@ namespace PmcReader.Intel
                         FormatLargeNumber(counterData.instr),
                         string.Format("{0:F2}", counterData.instr / counterData.activeCycles),
                         FormatLargeNumber(counterData.pmc0),
-                        string.Format("{0:F2}", counterData.pmc0 / counterData.instr),
+                        FormatPercentage(counterData.pmc0, totalOps),
                         FormatLargeNumber(counterData.pmc1),
-                        string.Format("{0:F2}%", 100 * counterData.pmc1 / totalOps),
+                        FormatPercentage(counterData.pmc1, totalOps),
                         FormatLargeNumber(counterData.pmc2),
-                        string.Format("{0:F2}%", 100 * counterData.pmc2 / totalOps),
+                        FormatPercentage(counterData.pmc2, totalOps),
                         FormatLargeNumber(counterData.pmc3),
-                        string.Format("{0:F2}%", 100 * counterData.pmc3 / totalOps)
+                        FormatPercentage(counterData.pmc3, totalOps)
                 };
             }
         }
