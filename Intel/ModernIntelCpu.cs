@@ -111,6 +111,27 @@ namespace PmcReader.Intel
         }
 
         /// <summary>
+        /// Set up programmable perf counters. All modern Intel CPUs have 4 perf counters.
+        /// Ice Lake or >Haswell with SMT off have 8 programmable counters but too much trouble to do that detection
+        /// </summary>
+        /// <param name="pmc0">counter 0 config</param>
+        /// <param name="pmc1">counter 1 config</param>
+        /// <param name="pmc2">counter 2 config</param>
+        /// <param name="pmc3">counter 3 config</param>
+        public void ProgramPerfCounters(ulong pmc0, ulong pmc1, ulong pmc2, ulong pmc3)
+        {
+            EnablePerformanceCounters();
+            for (int threadIdx = 0; threadIdx < GetThreadCount(); threadIdx++)
+            {
+                ThreadAffinity.Set(1UL << threadIdx);
+                Ring0.WriteMsr(IA32_PERFEVTSEL0, pmc0);
+                Ring0.WriteMsr(IA32_PERFEVTSEL1, pmc1);
+                Ring0.WriteMsr(IA32_PERFEVTSEL2, pmc2);
+                Ring0.WriteMsr(IA32_PERFEVTSEL3, pmc3);
+            }
+        }
+
+        /// <summary>
         /// Reset accumulated totals for core counter data
         /// </summary>
         public void InitializeCoreTotals()
@@ -485,7 +506,7 @@ namespace PmcReader.Intel
                 }
 
                 results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
-                results.overallCounterValues = cpu.GetOverallCounterValues("Retired Ops", "DSB Ops", "MITE Ops", "MS Ops");
+                results.overallCounterValues = cpu.GetOverallCounterValues("LSD Ops", "DSB Ops", "MITE Ops", "MS Ops");
                 return results;
             }
 
@@ -511,6 +532,172 @@ namespace PmcReader.Intel
                         FormatPercentage(counterData.pmc2, totalOps),
                         FormatLargeNumber(counterData.pmc3),
                         FormatPercentage(counterData.pmc3, totalOps)
+                };
+            }
+        }
+
+        public class DecodeHistogram : MonitoringConfig
+        {
+            private ModernIntelCpu cpu;
+            public string GetConfigName() { return "Decode Histogram"; }
+
+            public DecodeHistogram(ModernIntelCpu intelCpu)
+            {
+                cpu = intelCpu;
+            }
+
+            public string[] GetColumns()
+            {
+                return columns;
+            }
+
+            public void Initialize()
+            {
+                cpu.EnablePerformanceCounters();
+
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    ThreadAffinity.Set(1UL << threadIdx);
+                    // MITE cmask 1
+                    Ring0.WriteMsr(IA32_PERFEVTSEL0, GetPerfEvtSelRegisterValue(0x79, 0x4, true, true, false, false, false, false, true, false, 1));
+
+                    // MITE cmask 2
+                    Ring0.WriteMsr(IA32_PERFEVTSEL1, GetPerfEvtSelRegisterValue(0x79, 0x4, true, true, false, false, false, false, true, false, 2));
+
+                    // MITE cmask 3
+                    Ring0.WriteMsr(IA32_PERFEVTSEL2, GetPerfEvtSelRegisterValue(0x79, 0x4, true, true, false, false, false, false, true, false, 3));
+
+                    // MITE cmaks 4
+                    Ring0.WriteMsr(IA32_PERFEVTSEL3, GetPerfEvtSelRegisterValue(0x79, 0x4, true, true, false, false, false, false, true, false, 4));
+                }
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[cpu.GetThreadCount()][];
+                cpu.InitializeCoreTotals();
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    cpu.UpdateThreadCoreCounterData(threadIdx);
+                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx], false);
+                }
+
+                cpu.ReadPackagePowerCounter();
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts, true);
+                results.overallCounterValues = cpu.GetOverallCounterValues("MITE cmask 1", "MITE cmask 2", "MITE cmask 3", "MITE cmask 4");
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "Pkg Pwr", "Instr/Watt", "Decode Active", "Decode Ops", "Decode Ops/C", "1 Op", "2 Ops", "3 Ops", "4 Ops" };
+
+            public string GetHelpText()
+            {
+                return "";
+            }
+
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData, bool overall)
+            {
+                float oneOp = counterData.pmc0 - counterData.pmc1;
+                float twoOps = counterData.pmc1 - counterData.pmc2;
+                float threeOps = counterData.pmc2 - counterData.pmc3;
+                float decoderOps = oneOp + 2 * twoOps + 3 * threeOps + 4 * counterData.pmc3;
+                return new string[] { label,
+                       FormatLargeNumber(counterData.activeCycles),
+                       FormatLargeNumber(counterData.instr),
+                       string.Format("{0:F2}", counterData.instr / counterData.activeCycles),
+                       overall ? string.Format("{0:F2} W", counterData.packagePower) : "N/A",
+                       overall ? FormatLargeNumber(counterData.instr / counterData.packagePower) : "N/A",
+                       FormatPercentage(counterData.pmc0, counterData.activeCycles),
+                       FormatLargeNumber(decoderOps),
+                       string.Format("{0:F2}", decoderOps / counterData.pmc0),
+                       FormatPercentage(oneOp, counterData.pmc0),
+                       FormatPercentage(twoOps, counterData.pmc0),
+                       FormatPercentage(threeOps, counterData.pmc0),
+                       FormatPercentage(counterData.pmc3, counterData.pmc0),
+                };
+            }
+        }
+
+        public class OCHistogram : MonitoringConfig
+        {
+            private ModernIntelCpu cpu;
+            public string GetConfigName() { return "Op Cache Histogram"; }
+
+            public OCHistogram(ModernIntelCpu intelCpu)
+            {
+                cpu = intelCpu;
+            }
+
+            public string[] GetColumns()
+            {
+                return columns;
+            }
+
+            public void Initialize()
+            {
+                cpu.EnablePerformanceCounters();
+
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    ThreadAffinity.Set(1UL << threadIdx);
+                    // DSB cmask 1
+                    Ring0.WriteMsr(IA32_PERFEVTSEL0, GetPerfEvtSelRegisterValue(0x79, 0x8, true, true, false, false, false, false, true, false, 1));
+
+                    // DSB cmask 2
+                    Ring0.WriteMsr(IA32_PERFEVTSEL1, GetPerfEvtSelRegisterValue(0x79, 0x8, true, true, false, false, false, false, true, false, 2));
+
+                    // DSB cmask 3
+                    Ring0.WriteMsr(IA32_PERFEVTSEL2, GetPerfEvtSelRegisterValue(0x79, 0x8, true, true, false, false, false, false, true, false, 3));
+
+                    // DSB cmaks 4
+                    Ring0.WriteMsr(IA32_PERFEVTSEL3, GetPerfEvtSelRegisterValue(0x79, 0x8, true, true, false, false, false, false, true, false, 4));
+                }
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[cpu.GetThreadCount()][];
+                cpu.InitializeCoreTotals();
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    cpu.UpdateThreadCoreCounterData(threadIdx);
+                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx], false);
+                }
+
+                cpu.ReadPackagePowerCounter();
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts, true);
+                results.overallCounterValues = cpu.GetOverallCounterValues("DSB cmask 1", "DSB cmask 2", "DSB cmask 3", "DSB cmask 4");
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "Pkg Pwr", "Instr/Watt", "OC Active", "OC Ops", "OC Ops/C", "1 Op", "2 Ops", "3 Ops", "4 Ops" };
+
+            public string GetHelpText()
+            {
+                return "";
+            }
+
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData, bool overall)
+            {
+                float oneOp = counterData.pmc0 - counterData.pmc1;
+                float twoOps = counterData.pmc1 - counterData.pmc2;
+                float threeOps = counterData.pmc2 - counterData.pmc3;
+                float opCacheOps = oneOp + 2 * twoOps + 3 * threeOps + 4 * counterData.pmc3;
+                return new string[] { label,
+                       FormatLargeNumber(counterData.activeCycles),
+                       FormatLargeNumber(counterData.instr),
+                       string.Format("{0:F2}", counterData.instr / counterData.activeCycles),
+                       overall ? string.Format("{0:F2} W", counterData.packagePower) : "N/A",
+                       overall ? FormatLargeNumber(counterData.instr / counterData.packagePower) : "N/A",
+                       FormatPercentage(counterData.pmc0, counterData.activeCycles),
+                       FormatLargeNumber(opCacheOps),
+                       string.Format("{0:F2}", opCacheOps / counterData.pmc0),
+                       FormatPercentage(oneOp, counterData.pmc0),
+                       FormatPercentage(twoOps, counterData.pmc0),
+                       FormatPercentage(threeOps, counterData.pmc0),
+                       FormatPercentage(counterData.pmc3, counterData.pmc0),
                 };
             }
         }

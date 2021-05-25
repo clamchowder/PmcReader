@@ -6,7 +6,7 @@ namespace PmcReader.Intel
     {
         public Haswell()
         {
-            monitoringConfigs = new MonitoringConfig[15];
+            monitoringConfigs = new MonitoringConfig[18];
             monitoringConfigs[0] = new BpuMonitoringConfig(this);
             monitoringConfigs[1] = new OpCachePerformance(this);
             monitoringConfigs[2] = new OpDelivery(this);
@@ -22,6 +22,9 @@ namespace PmcReader.Intel
             monitoringConfigs[12] = new IFetch(this);
             monitoringConfigs[13] = new MemBound(this);
             monitoringConfigs[14] = new ArchitecturalCounters(this);
+            monitoringConfigs[15] = new RetireSlots(this);
+            monitoringConfigs[16] = new DecodeHistogram(this);
+            monitoringConfigs[17] = new OCHistogram(this);
             architectureName = "Haswell";
         }
 
@@ -778,6 +781,79 @@ namespace PmcReader.Intel
                         FormatPercentage(counterData.pmc1, counterData.activeCycles),
                         FormatPercentage(counterData.pmc2, counterData.activeCycles),
                         FormatPercentage(counterData.pmc3, counterData.activeCycles)
+                };
+            }
+        }
+
+        public class RetireSlots : MonitoringConfig
+        {
+            private Haswell cpu;
+            public string GetConfigName() { return "Retire BW"; }
+
+            public RetireSlots(Haswell intelCpu)
+            {
+                cpu = intelCpu;
+            }
+
+            public string[] GetColumns()
+            {
+                return columns;
+            }
+
+            public void Initialize()
+            {
+                // up to 4 retire slots used each cycle
+                cpu.ProgramPerfCounters(GetPerfEvtSelRegisterValue(0xC2, 0x2, true, true, false, false, false, false, true, false, cmask: 1),
+                    GetPerfEvtSelRegisterValue(0xC2, 0x2, true, true, false, false, false, false, true, false, cmask: 2),
+                    GetPerfEvtSelRegisterValue(0xC2, 0x2, true, true, false, false, false, false, true, false, cmask: 3),
+                    GetPerfEvtSelRegisterValue(0xC2, 0x2, true, true, false, false, false, false, true, false, cmask: 4));
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[cpu.GetThreadCount()][];
+                cpu.InitializeCoreTotals();
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    cpu.UpdateThreadCoreCounterData(threadIdx);
+                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
+                }
+
+                cpu.ReadPackagePowerCounter();
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                results.overallCounterValues = cpu.GetOverallCounterValues("Retire slots cmask 1", "Retire slots cmask 2", "Retire slots cmask 3", "Retire slots cmask 4");
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "PkgPower", "Instr/Watt", "Retire Slots Used", "Retire Slots/Instr", "Retire Slots/Clk", "Retire Active", "1 Slot", "2 Slots", "3 Slots", "4 Slots" };
+
+            public string GetHelpText()
+            {
+                return "";
+            }
+
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
+            {
+                float retireSlotsUsed = (counterData.pmc0 - counterData.pmc1) + 
+                    2 * (counterData.pmc1 - counterData.pmc2) + 
+                    3 * (counterData.pmc2 - counterData.pmc3) + 
+                    4 * counterData.pmc3;
+
+                return new string[] { label,
+                        FormatLargeNumber(counterData.activeCycles),
+                        FormatLargeNumber(counterData.instr),
+                        string.Format("{0:F2}", counterData.instr / counterData.activeCycles),
+                        string.Format("{0:F2} W", counterData.packagePower),
+                        FormatLargeNumber(counterData.instr / counterData.packagePower),
+                        FormatLargeNumber(retireSlotsUsed),
+                        string.Format("{0:F2}", retireSlotsUsed / counterData.instr),
+                        string.Format("{0:F2}", retireSlotsUsed / counterData.activeCycles),
+                        FormatPercentage(counterData.pmc0, counterData.activeCycles), // retire active - at least 1 slot used
+                        FormatPercentage(counterData.pmc0 - counterData.pmc1, counterData.activeCycles), // 1 slot
+                        FormatPercentage(counterData.pmc1 - counterData.pmc2, counterData.activeCycles), // 2 slots
+                        FormatPercentage(counterData.pmc2 - counterData.pmc3, counterData.activeCycles), // 3 slots
+                        FormatPercentage(counterData.pmc3, counterData.activeCycles) // 4 slots
                 };
             }
         }
