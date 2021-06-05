@@ -49,8 +49,9 @@ namespace PmcReader.AMD
         public const uint MSR_CORE_ENERGY_STAT = 0xC001029A;
         public const uint MSR_PKG_ENERGY_STAT = 0xC001029B;
 
-        public const uint MSR_LS_CFG = 0xC0011020; // bit 4 = zen 1 lock errata, 
+        public const uint MSR_LS_CFG = 0xC0011020; // bit 4 = zen 1 lock errata 
         public const uint MSR_IC_CFG = 0xC0011021; // bit 5 = disable OC
+        public const uint MSR_FP_CFG = 0xC0011028; // bit 4 = zen 1 FCMOV errata
         public const uint MSR_DE_CFG = 0xC0011029; // bit 13 = zen 1 stale store forward errata
 
         public NormalizedCoreCounterData[] NormalizedThreadCounts;

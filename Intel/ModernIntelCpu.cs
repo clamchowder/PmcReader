@@ -373,7 +373,7 @@ namespace PmcReader.Intel
             {
                 ThreadAffinity.Set(1UL << threadIdx);
                 Ring0.ReadMsr(MSR_PF_CTL, out ulong pfCtl);
-                pfCtl |= (1UL << 1);
+                pfCtl |= 1UL;
                 Ring0.WriteMsr(MSR_PF_CTL, pfCtl);
             }
 
@@ -451,7 +451,7 @@ namespace PmcReader.Intel
             {
                 ThreadAffinity.Set(1UL << threadIdx);
                 Ring0.ReadMsr(MSR_PF_CTL, out ulong pfCtl);
-                pfCtl |= (1UL << 2);
+                pfCtl |= (1UL << 3);
                 Ring0.WriteMsr(MSR_PF_CTL, pfCtl);
             }
 
