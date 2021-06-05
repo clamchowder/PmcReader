@@ -364,5 +364,7 @@ namespace PmcReader
             sw.Restart();
             return retval;
         }
+
+        public virtual void InitializeCrazyControls(FlowLayoutPanel flowLayoutPanel, Label errorLabel) {}
     }
 }

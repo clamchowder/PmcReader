@@ -10,6 +10,7 @@ namespace PmcReader
         private string cpuManufacturer;
         private byte cpuFamily, cpuModel, cpuStepping;
         MonitoringSetup coreMonitoring, l3Monitoring, dfMonitoring;
+        GenericMonitoringArea crazyThings;
 
         /// <summary>
         /// Yeah it's called haswell because I started there first
@@ -64,7 +65,11 @@ namespace PmcReader
                     else
                     {
                         coreMonitoring.monitoringArea = new Intel.ModernIntelCpu();
+                        dfLabelOverride = "Unused";
+                        l3LabelOverride = "Unused";
                     }
+
+                    crazyThings = new Intel.ModernIntelCpu();
                 }
             }
             else if (cpuManufacturer.Equals("AuthenticAMD"))
@@ -82,6 +87,8 @@ namespace PmcReader
                         coreMonitoring.monitoringArea = new AMD.Zen1();
                         l3Monitoring.monitoringArea = new AMD.ZenL3Cache();
                     }
+
+                    crazyThings = new AMD.Amd17hCpu();
                 }
                 else if (cpuFamily == 0x19)
                 {
@@ -107,6 +114,8 @@ namespace PmcReader
             dfMonitoringListView.FullRowSelect = true;
             if (dfLabelOverride != null) DataFabricConfigLabel.Text = dfLabelOverride;
             if (l3LabelOverride != null) L3CacheConfigLabel.Text = l3LabelOverride;
+
+            if (crazyThings != null) crazyThings.InitializeCrazyControls(crazyThingsPanel, errorLabel);
 
             cpuidLabel.Text = string.Format("CPU: {0} Family 0x{1:X}, Model 0x{2:X}, Stepping 0x{3:x} - {4}", 
                 cpuManufacturer, 
@@ -227,7 +236,7 @@ namespace PmcReader
 
         private void applyConfigButton_Click(object sender, EventArgs e)
         {
-            applyMonitoringConfig(coreMonitoring, configSelect, helpTextLabel);
+            applyMonitoringConfig(coreMonitoring, configSelect);
         }
 
         /// <summary>
@@ -258,7 +267,7 @@ namespace PmcReader
         /// <param name="setup">Monitoring setup</param>
         /// <param name="configSelectListView">Target list view for monitoring thread to send output to</param>
         /// <param name="helpLabel">Label to put help text in</param>
-        private void applyMonitoringConfig(MonitoringSetup setup, ListView configSelectListView, Label helpLabel = null)
+        private void applyMonitoringConfig(MonitoringSetup setup, ListView configSelectListView)
         {
             lock (cpuManufacturer)
             {
@@ -283,11 +292,6 @@ namespace PmcReader
                 errorLabel.Text = "";
 
                 MonitoringConfig[] configs = setup.monitoringArea.GetMonitoringConfigs();
-                if (helpLabel != null)
-                {
-                    helpLabel.Text = "";
-                    if (configs[cfgIdx].GetHelpText() != null) helpLabel.Text = "Notes:\n" + configs[cfgIdx].GetHelpText();
-                }
             }
         }
 

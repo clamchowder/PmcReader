@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Diagnostics;
 using PmcReader.Interop;
+using System.Windows.Forms;
 
 namespace PmcReader.Intel
 {
@@ -25,6 +26,9 @@ namespace PmcReader.Intel
         public const uint MSR_PKG_ENERGY_STATUS = 0x611;
         public const uint MSR_PP0_ENERGY_STATUS = 0x639;
         public const uint MSR_DRAM_ENERGY_STATUS = 0x619;
+
+        // Hardware prefetch control
+        public const uint MSR_PF_CTL = 0x1A4;
 
         public NormalizedCoreCounterData[] NormalizedThreadCounts;
         public NormalizedCoreCounterData NormalizedTotalCounts;
@@ -289,6 +293,169 @@ namespace PmcReader.Intel
             retval[7] = new Tuple<string, float>(pmc2, NormalizedTotalCounts.pmc2);
             retval[8] = new Tuple<string, float>(pmc3, NormalizedTotalCounts.pmc3);
             return retval;
+        }
+
+        private Label errorLabel;
+        public override void InitializeCrazyControls(FlowLayoutPanel flowLayoutPanel, Label errLabel)
+        {
+            flowLayoutPanel.Controls.Clear();
+
+            Button enableL2HwPfButton = CreateButton("Enable L2 HW PF", EnableL2HwPf);
+            Button disableL2HwPfButton = CreateButton("Disable L2 HW PF", DisableL2HwPf);
+            Button enableL2AdjacentPfButton = CreateButton("Enable L2 Adj PF", EnableL2AdjPf);
+            Button disableL2AdjacentPfButton = CreateButton("Enable L2 Adj PF", DisableL2AdjPf);
+            Button enableDcuPf = CreateButton("Enable L1D Adj Pf", EnableDcuPf);
+            Button disableDcuPf = CreateButton("Disable L1D Adj Pf", DisableDcuPf);
+            Button enableDcuIpPf = CreateButton("Enable L1D IP Pf", EnableDcuIpPf);
+            Button disableDcuIpPf = CreateButton("Disable L1D IP Pf", DisableDcuIpPf);
+
+
+            flowLayoutPanel.Controls.Add(enableL2HwPfButton);
+            flowLayoutPanel.Controls.Add(disableL2HwPfButton);
+            flowLayoutPanel.Controls.Add(enableL2AdjacentPfButton);
+            flowLayoutPanel.Controls.Add(disableL2AdjacentPfButton);
+            flowLayoutPanel.Controls.Add(enableDcuPf);
+            flowLayoutPanel.Controls.Add(disableDcuPf);
+            flowLayoutPanel.Controls.Add(enableDcuIpPf);
+            flowLayoutPanel.Controls.Add(disableDcuIpPf);
+            errorLabel = errLabel;
+        }
+
+        private Button CreateButton(string buttonText, EventHandler handler)
+        {
+            Button button = new Button();
+            button.Text = buttonText;
+            button.AutoSize = true;
+            button.Click += handler;
+            return button;
+        }
+
+        private void GetHwPfStatus(out bool l2, out bool l2Adj, out bool dcu, out bool dcuIp)
+        {
+            Ring0.ReadMsr(MSR_PF_CTL, out ulong pfCtl);
+            l2 = (pfCtl & 0x1) == 0;
+            l2Adj = (pfCtl & 0x2) == 0;
+            dcu = (pfCtl & 0x4) == 0;
+            dcuIp = (pfCtl & 0x8) == 0;
+        }
+
+        private void ReportHwPfStatus()
+        {
+            bool l2, l2Adj, dcu, dcuIp;
+            bool l2AllEnabled = true, l2AdjAllEnabled = true, dcuAllEnabled = true, dcuIpAllEnabled = true;
+            for (int threadIdx = 0; threadIdx < GetThreadCount(); threadIdx++)
+            {
+                GetHwPfStatus(out l2, out l2Adj, out dcu, out dcuIp);
+                l2AllEnabled &= l2;
+                l2AdjAllEnabled &= l2Adj;
+                dcuAllEnabled &= dcu;
+                dcuIpAllEnabled &= dcuIp;
+            }
+            errorLabel.Text = string.Format($"L2 HW Prefetcher: {l2AllEnabled}, L2 Adjacent Line Pf: {l2AdjAllEnabled}, L1D Adjacent Line Pf: {dcuAllEnabled}, L1D IP Pf: {dcuIpAllEnabled}");
+        }
+
+        public void EnableL2HwPf(object sender, EventArgs e)
+        {
+            for (int threadIdx = 0; threadIdx < GetThreadCount(); threadIdx++)
+            {
+                ThreadAffinity.Set(1UL << threadIdx);
+                Ring0.ReadMsr(MSR_PF_CTL, out ulong pfCtl);
+                pfCtl &= ~(1UL);
+                Ring0.WriteMsr(MSR_PF_CTL, pfCtl);
+            }
+
+            ReportHwPfStatus();
+        }
+
+        public void DisableL2HwPf(object sender, EventArgs e)
+        {
+            for (int threadIdx = 0; threadIdx < GetThreadCount(); threadIdx++)
+            {
+                ThreadAffinity.Set(1UL << threadIdx);
+                Ring0.ReadMsr(MSR_PF_CTL, out ulong pfCtl);
+                pfCtl |= (1UL << 1);
+                Ring0.WriteMsr(MSR_PF_CTL, pfCtl);
+            }
+
+            ReportHwPfStatus();
+        }
+
+        public void EnableL2AdjPf(object sender, EventArgs e)
+        {
+            for (int threadIdx = 0; threadIdx < GetThreadCount(); threadIdx++)
+            {
+                ThreadAffinity.Set(1UL << threadIdx);
+                Ring0.ReadMsr(MSR_PF_CTL, out ulong pfCtl);
+                pfCtl &= ~(1UL << 1);
+                Ring0.WriteMsr(MSR_PF_CTL, pfCtl);
+            }
+
+            ReportHwPfStatus();
+        }
+
+        public void DisableL2AdjPf(object sender, EventArgs e)
+        {
+            for (int threadIdx = 0; threadIdx < GetThreadCount(); threadIdx++)
+            {
+                ThreadAffinity.Set(1UL << threadIdx);
+                Ring0.ReadMsr(MSR_PF_CTL, out ulong pfCtl);
+                pfCtl |= (1UL << 1);
+                Ring0.WriteMsr(MSR_PF_CTL, pfCtl);
+            }
+
+            ReportHwPfStatus();
+        }
+
+        public void EnableDcuPf(object sender, EventArgs e)
+        {
+            for (int threadIdx = 0; threadIdx < GetThreadCount(); threadIdx++)
+            {
+                ThreadAffinity.Set(1UL << threadIdx);
+                Ring0.ReadMsr(MSR_PF_CTL, out ulong pfCtl);
+                pfCtl &= ~(1UL << 2);
+                Ring0.WriteMsr(MSR_PF_CTL, pfCtl);
+            }
+
+            ReportHwPfStatus();
+        }
+
+        public void DisableDcuPf(object sender, EventArgs e)
+        {
+            for (int threadIdx = 0; threadIdx < GetThreadCount(); threadIdx++)
+            {
+                ThreadAffinity.Set(1UL << threadIdx);
+                Ring0.ReadMsr(MSR_PF_CTL, out ulong pfCtl);
+                pfCtl |= (1UL << 2);
+                Ring0.WriteMsr(MSR_PF_CTL, pfCtl);
+            }
+
+            ReportHwPfStatus();
+        }
+
+        public void EnableDcuIpPf(object sender, EventArgs e)
+        {
+            for (int threadIdx = 0; threadIdx < GetThreadCount(); threadIdx++)
+            {
+                ThreadAffinity.Set(1UL << threadIdx);
+                Ring0.ReadMsr(MSR_PF_CTL, out ulong pfCtl);
+                pfCtl &= ~(1UL << 3);
+                Ring0.WriteMsr(MSR_PF_CTL, pfCtl);
+            }
+
+            ReportHwPfStatus();
+        }
+
+        public void DisableDcuIpPf(object sender, EventArgs e)
+        {
+            for (int threadIdx = 0; threadIdx < GetThreadCount(); threadIdx++)
+            {
+                ThreadAffinity.Set(1UL << threadIdx);
+                Ring0.ReadMsr(MSR_PF_CTL, out ulong pfCtl);
+                pfCtl |= (1UL << 2);
+                Ring0.WriteMsr(MSR_PF_CTL, pfCtl);
+            }
+
+            ReportHwPfStatus();
         }
 
         /// <summary>

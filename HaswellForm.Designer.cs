@@ -43,7 +43,6 @@
             this.applyDfConfigButton = new System.Windows.Forms.Button();
             this.dfMonitoringListView = new System.Windows.Forms.ListView();
             this.l3ErrorMessage = new System.Windows.Forms.Label();
-            this.helpTextLabel = new System.Windows.Forms.Label();
             this.logButton = new System.Windows.Forms.Button();
             this.logFilePathTextBox = new System.Windows.Forms.TextBox();
             this.stopLoggingButton = new System.Windows.Forms.Button();
@@ -54,6 +53,8 @@
             this.DfStopLoggingButton = new System.Windows.Forms.Button();
             this.DfLogToFileButton = new System.Windows.Forms.Button();
             this.DfLogToFileTextBox = new System.Windows.Forms.TextBox();
+            this.crazyThingsPanel = new System.Windows.Forms.FlowLayoutPanel();
+            this.crazyThingsLabel = new System.Windows.Forms.Label();
             this.SuspendLayout();
             // 
             // configSelect
@@ -216,14 +217,6 @@
             this.l3ErrorMessage.Size = new System.Drawing.Size(0, 13);
             this.l3ErrorMessage.TabIndex = 15;
             // 
-            // helpTextLabel
-            // 
-            this.helpTextLabel.AutoSize = true;
-            this.helpTextLabel.Location = new System.Drawing.Point(697, 5);
-            this.helpTextLabel.Name = "helpTextLabel";
-            this.helpTextLabel.Size = new System.Drawing.Size(0, 13);
-            this.helpTextLabel.TabIndex = 16;
-            // 
             // logButton
             // 
             this.logButton.Location = new System.Drawing.Point(527, 123);
@@ -320,11 +313,29 @@
             this.DfLogToFileTextBox.Size = new System.Drawing.Size(194, 20);
             this.DfLogToFileTextBox.TabIndex = 26;
             // 
+            // crazyThingsPanel
+            // 
+            this.crazyThingsPanel.Location = new System.Drawing.Point(700, 34);
+            this.crazyThingsPanel.Name = "crazyThingsPanel";
+            this.crazyThingsPanel.Size = new System.Drawing.Size(485, 114);
+            this.crazyThingsPanel.TabIndex = 27;
+            // 
+            // crazyThingsLabel
+            // 
+            this.crazyThingsLabel.AutoSize = true;
+            this.crazyThingsLabel.Location = new System.Drawing.Point(697, 18);
+            this.crazyThingsLabel.Name = "crazyThingsLabel";
+            this.crazyThingsLabel.Size = new System.Drawing.Size(135, 13);
+            this.crazyThingsLabel.TabIndex = 28;
+            this.crazyThingsLabel.Text = "Do not push these buttons:";
+            // 
             // HaswellForm
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.ClientSize = new System.Drawing.Size(1197, 687);
+            this.Controls.Add(this.crazyThingsLabel);
+            this.Controls.Add(this.crazyThingsPanel);
             this.Controls.Add(this.DfLogToFileTextBox);
             this.Controls.Add(this.DfLogToFileButton);
             this.Controls.Add(this.DfStopLoggingButton);
@@ -335,7 +346,6 @@
             this.Controls.Add(this.stopLoggingButton);
             this.Controls.Add(this.logFilePathTextBox);
             this.Controls.Add(this.logButton);
-            this.Controls.Add(this.helpTextLabel);
             this.Controls.Add(this.l3ErrorMessage);
             this.Controls.Add(this.dfMonitoringListView);
             this.Controls.Add(this.applyDfConfigButton);
@@ -376,7 +386,6 @@
         private System.Windows.Forms.Button applyDfConfigButton;
         private System.Windows.Forms.ListView dfMonitoringListView;
         private System.Windows.Forms.Label l3ErrorMessage;
-        private System.Windows.Forms.Label helpTextLabel;
         private System.Windows.Forms.Button logButton;
         private System.Windows.Forms.TextBox logFilePathTextBox;
         private System.Windows.Forms.Button stopLoggingButton;
@@ -387,6 +396,8 @@
         private System.Windows.Forms.Button DfStopLoggingButton;
         private System.Windows.Forms.Button DfLogToFileButton;
         private System.Windows.Forms.TextBox DfLogToFileTextBox;
+        private System.Windows.Forms.FlowLayoutPanel crazyThingsPanel;
+        private System.Windows.Forms.Label crazyThingsLabel;
     }
 }
 

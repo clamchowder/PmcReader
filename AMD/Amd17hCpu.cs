@@ -1,7 +1,7 @@
 ﻿using PmcReader.Interop;
 using System;
 using System.Diagnostics;
-using System.Management.Instrumentation;
+using System.Windows.Forms;
 
 namespace PmcReader.AMD
 {
@@ -48,6 +48,10 @@ namespace PmcReader.AMD
         public const uint MSR_RAPL_PWR_UNIT = 0xC0010299;
         public const uint MSR_CORE_ENERGY_STAT = 0xC001029A;
         public const uint MSR_PKG_ENERGY_STAT = 0xC001029B;
+
+        public const uint MSR_LS_CFG = 0xC0011020; // bit 4 = zen 1 lock errata, 
+        public const uint MSR_IC_CFG = 0xC0011021; // bit 5 = disable OC
+        public const uint MSR_DE_CFG = 0xC0011029; // bit 13 = zen 1 stale store forward errata
 
         public NormalizedCoreCounterData[] NormalizedThreadCounts;
         public NormalizedCoreCounterData NormalizedTotalCounts;
@@ -437,6 +441,84 @@ namespace PmcReader.AMD
             retval[9] = new Tuple<string, float>(ctr4, NormalizedTotalCounts.ctr4);
             retval[10] = new Tuple<string, float>(ctr5, NormalizedTotalCounts.ctr5);
             return retval;
+        }
+
+        private Label errorLabel; // ugly whatever
+
+        public override void InitializeCrazyControls(FlowLayoutPanel flowLayoutPanel, Label errLabel)
+        {
+            flowLayoutPanel.Controls.Clear();
+            Button disableOpCacheButton = new Button();
+            disableOpCacheButton.Name = "disableOpCacheButton";
+            disableOpCacheButton.Text = "Disable Op Cache";
+            disableOpCacheButton.AutoSize = true;
+            disableOpCacheButton.Click += DisableOpCache;
+
+            Button enableOpCacheButton = new Button();
+            enableOpCacheButton.Name = "enableOpCacheButton";
+            enableOpCacheButton.Text = "Enable Op Cache";
+            enableOpCacheButton.AutoSize = true;
+            enableOpCacheButton.Click += EnableOpCache;
+            flowLayoutPanel.Controls.Add(disableOpCacheButton);
+            flowLayoutPanel.Controls.Add(enableOpCacheButton);
+
+            errorLabel = errLabel;
+        }
+
+        private bool GetOpCacheEnabledStatus()
+        {
+            Ring0.ReadMsr(MSR_IC_CFG, out ulong icCfg);
+            return (icCfg & (1UL << 5)) == 0;
+        }
+
+        /// <summary>
+        /// Disable the op cache
+        /// </summary>
+        public void DisableOpCache(object sender, EventArgs e)
+        {
+            bool allOpCachesDisabled = true;
+            for (int threadIdx = 0; threadIdx < GetThreadCount(); threadIdx++)
+            {
+                ThreadAffinity.Set(1UL << threadIdx);
+                Ring0.ReadMsr(MSR_IC_CFG, out ulong icCfg);
+                icCfg |= (1UL << 5);
+                Ring0.WriteMsr(MSR_IC_CFG, icCfg);
+                allOpCachesDisabled &= !GetOpCacheEnabledStatus();
+            }
+
+            if (!allOpCachesDisabled)
+            {
+                errorLabel.Text = "Failed to disable op caches";
+            }
+            else
+            {
+                errorLabel.Text = "Op caches disabled";
+            }
+        }
+
+        /// <summary>
+        /// Enable the op cache
+        /// </summary>
+        public void EnableOpCache(object sender, EventArgs e)
+        {
+            bool allOpCachesEnabled = true;
+            for (int threadIdx = 0; threadIdx < GetThreadCount(); threadIdx++)
+            {
+                ThreadAffinity.Set(1UL << threadIdx);
+                Ring0.ReadMsr(MSR_IC_CFG, out ulong icCfg);
+                icCfg &= ~(1UL << 5);
+                Ring0.WriteMsr(MSR_IC_CFG, icCfg);
+                allOpCachesEnabled &= GetOpCacheEnabledStatus();
+            }
+
+            if (!allOpCachesEnabled)
+            {
+                errorLabel.Text = "Failed to enable op caches";
+            }
+            else
+            {
+                errorLabel.Text = "Op caches enabled";
+            }
         }
 
         /// <summary>
