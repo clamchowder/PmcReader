@@ -6,7 +6,7 @@ namespace PmcReader.Intel
     {
         public Skylake()
         {
-            monitoringConfigs = new MonitoringConfig[10];
+            monitoringConfigs = new MonitoringConfig[11];
             monitoringConfigs[0] = new BpuMonitoringConfig(this);
             monitoringConfigs[1] = new OpCachePerformance(this);
             monitoringConfigs[2] = new ALUPortUtilization(this);
@@ -17,6 +17,7 @@ namespace PmcReader.Intel
             monitoringConfigs[7] = new ResourceStalls(this);
             monitoringConfigs[8] = new ICache(this);
             monitoringConfigs[9] = new MemBound(this);
+            monitoringConfigs[10] = new Locks(this);
             architectureName = "Skylake";
         }
 
@@ -188,17 +189,17 @@ namespace PmcReader.Intel
                 for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
                 {
                     ThreadAffinity.Set(1UL << threadIdx);
-                    // PMC0: L2 code reads
-                    Ring0.WriteMsr(IA32_PERFEVTSEL0, GetPerfEvtSelRegisterValue(0x24, 0xE4, true, true, false, false, false, false, true, false, 0));
+                    // Set PMC0 to count l2 references
+                    Ring0.WriteMsr(IA32_PERFEVTSEL0, GetPerfEvtSelRegisterValue(0x24, 0xFF, true, true, false, false, false, false, true, false, 0));
 
-                    // PMC1: L2 code read miss
-                    Ring0.WriteMsr(IA32_PERFEVTSEL1, GetPerfEvtSelRegisterValue(0x24, 0x24, true, true, false, false, false, false, true, false, 0));
+                    // Set PMC1 to count l2 misses
+                    Ring0.WriteMsr(IA32_PERFEVTSEL1, GetPerfEvtSelRegisterValue(0x24, 0x3F, true, true, false, false, false, false, true, false, 0));
 
-                    // PMC2: L2 demand references
-                    Ring0.WriteMsr(IA32_PERFEVTSEL2, GetPerfEvtSelRegisterValue(0x24, 0xE7, true, true, false, false, false, false, true, false, 0));
+                    // Set PMC2 to count L2 lines in
+                    Ring0.WriteMsr(IA32_PERFEVTSEL2, GetPerfEvtSelRegisterValue(0xF1, 0x1F, true, true, false, false, false, false, true, false, 0));
 
-                    // PMC3: L2 demand miss
-                    Ring0.WriteMsr(IA32_PERFEVTSEL3, GetPerfEvtSelRegisterValue(0x24, 0x27, true, true, false, false, false, false, true, false, 0));
+                    // Set PMC3 to count dirty L2 lines evicted
+                    Ring0.WriteMsr(IA32_PERFEVTSEL3, GetPerfEvtSelRegisterValue(0xF2, 0x2, true, true, false, false, false, false, true, false, 0));
                 }
             }
 
@@ -215,13 +216,11 @@ namespace PmcReader.Intel
 
                 cpu.ReadPackagePowerCounter();
                 results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
-                results.overallCounterValues = cpu.GetOverallCounterValues("L2 code read", "L2 code read miss", "L2 data request", "L2 data miss");
+                results.overallCounterValues = cpu.GetOverallCounterValues("L2 References", "L2 Misses", "L2 Lines In", "L2 Dirty Lines Evicted");
                 return results;
             }
 
-            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "Pkg Pwr", "Instr/Watt", 
-                "L2 Code Hitrate", "L2 Code Hit BW", "L2 Code MPKI", 
-                "L2 Data Hitrate", "L2 Data Hit BW", "L2 Data MPKI" };
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "Pkg Pwr", "Instr/Watt", "IPC", "L2 Hitrate", "L2 Hit BW", "L2 Fill BW", "L2 Writeback BW" };
 
             public string GetHelpText()
             {
@@ -233,15 +232,13 @@ namespace PmcReader.Intel
                 return new string[] { label,
                         FormatLargeNumber(counterData.activeCycles),
                         FormatLargeNumber(counterData.instr),
-                        string.Format("{0:F2}", counterData.instr / counterData.activeCycles),
                         string.Format("{0:F2} W", counterData.packagePower),
                         FormatLargeNumber(counterData.instr / counterData.packagePower),
-                        string.Format("{0:F2}%", 100 * (1 - (counterData.pmc1 / counterData.pmc0))),
-                        FormatLargeNumber(64 * (counterData.pmc0 - counterData.pmc1)) + "B/s",
-                        string.Format("{0:F2}", 1000 * counterData.pmc1 / counterData.instr),
-                        string.Format("{0:F2}%", 100 * (1 - (counterData.pmc3 / counterData.pmc2))),
-                        FormatLargeNumber(64 * (counterData.pmc2 - counterData.pmc3)) + "B/s",
-                        string.Format("{0:F2}", 1000 * counterData.pmc3 / counterData.instr)
+                        string.Format("{0:F2}", counterData.instr / counterData.activeCycles),
+                        string.Format("{0:F2}%", 100 * (counterData.pmc0 - counterData.pmc1) / counterData.pmc0),
+                        FormatLargeNumber((counterData.pmc0 - counterData.pmc1) * 64) + "B",
+                        FormatLargeNumber(counterData.pmc2 * 64) + "B",
+                        FormatLargeNumber(counterData.pmc3 * 64) + "B",
                 };
             }
         }
@@ -543,6 +540,77 @@ namespace PmcReader.Intel
                         FormatPercentage(counterData.pmc2, counterData.activeCycles),
                         FormatPercentage(counterData.pmc3, counterData.activeCycles),
                         FormatPercentage(counterData.pmc1, counterData.activeCycles)
+                };
+            }
+        }
+
+        public class Locks : MonitoringConfig
+        {
+            private Skylake cpu;
+            public string GetConfigName() { return "Locks"; }
+
+            public Locks(Skylake intelCpu)
+            {
+                cpu = intelCpu;
+            }
+
+            public string[] GetColumns()
+            {
+                return columns;
+            }
+
+            public void Initialize()
+            {
+                cpu.EnablePerformanceCounters();
+
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    ThreadAffinity.Set(1UL << threadIdx);
+                    Ring0.WriteMsr(IA32_PERFEVTSEL0, GetPerfEvtSelRegisterValue(0xD0, 0x81, true, true, false, false, false, false, true, false, cmask: 0)); // all loads
+                    Ring0.WriteMsr(IA32_PERFEVTSEL1, GetPerfEvtSelRegisterValue(0xD0, 0x41, true, true, false, false, false, false, true, false, cmask: 0)); // locked loads
+                    Ring0.WriteMsr(IA32_PERFEVTSEL2, GetPerfEvtSelRegisterValue(0xF4, 0x10, true, true, false, false, false, false, true, false, cmask: 0)); // SQ split locks
+                    Ring0.WriteMsr(IA32_PERFEVTSEL3, GetPerfEvtSelRegisterValue(0xD2, 0x4, true, true, false, false, false, false, true, false, cmask: 0)); // Snoop hit
+                }
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[cpu.GetThreadCount()][];
+                cpu.InitializeCoreTotals();
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    cpu.UpdateThreadCoreCounterData(threadIdx);
+                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
+                }
+
+                cpu.ReadPackagePowerCounter();
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                results.overallCounterValues = cpu.GetOverallCounterValues("All loads", "Locked loads", "SQ Split Locks", "MEM_LOAD_L3_HIT_RETIRED.XSNP_HITM");
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "PkgPower", "Instr/Watt", "Loads", "Locked Loads/1K Instr", "Locked Loads", "SQ Split Locks", "L3 Hit Snoop HITM", "Snoop HitM/1K Instr" };
+
+            public string GetHelpText()
+            {
+                return "";
+            }
+
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
+            {
+                return new string[] { label,
+                        FormatLargeNumber(counterData.activeCycles),
+                        FormatLargeNumber(counterData.instr),
+                        string.Format("{0:F2}", counterData.instr / counterData.activeCycles),
+                        string.Format("{0:F2} W", counterData.packagePower),
+                        FormatLargeNumber(counterData.instr / counterData.packagePower),
+                        FormatLargeNumber(counterData.pmc0),
+                        string.Format("{0:F2}", 1000 * counterData.pmc1 / counterData.instr),
+                        FormatLargeNumber(counterData.pmc1),
+                        FormatLargeNumber(counterData.pmc2),
+                        FormatLargeNumber(counterData.pmc3),
+                        string.Format("{0:F2}", 1000 * counterData.pmc3 / counterData.instr),
                 };
             }
         }
