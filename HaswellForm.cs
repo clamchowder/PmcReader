@@ -271,6 +271,9 @@ namespace PmcReader
         {
             lock (cpuManufacturer)
             {
+                if (setup.monitoringThreadCancellation != null && setup.monitoringThreadCancellation.IsCancellationRequested) 
+                    return;
+
                 int cfgIdx;
                 if (configSelectListView.SelectedItems.Count > 0)
                     cfgIdx = (int)configSelectListView.SelectedItems[0].Tag;
@@ -280,18 +283,19 @@ namespace PmcReader
                     return;
                 }
 
-                if (setup.monitoringThread != null && setup.monitoringThreadCancellation != null)
+                Task.Run(() =>
                 {
-                    coreMonitoring.monitoringArea.StopLoggingToFile();
-                    setup.monitoringThreadCancellation.Cancel();
-                    setup.monitoringThread.Wait();
-                }
+                    if (setup.monitoringThread != null && setup.monitoringThreadCancellation != null)
+                    {
+                        coreMonitoring.monitoringArea.StopLoggingToFile();
+                        setup.monitoringThreadCancellation.Cancel();
+                        setup.monitoringThread.Wait();
+                    }
 
-                setup.monitoringThreadCancellation = new CancellationTokenSource();
-                setup.monitoringThread = Task.Run(() => setup.monitoringArea.MonitoringThread(cfgIdx, setup.targetListView, setup.monitoringThreadCancellation.Token));
-                errorLabel.Text = "";
-
-                MonitoringConfig[] configs = setup.monitoringArea.GetMonitoringConfigs();
+                    setup.monitoringThreadCancellation = new CancellationTokenSource();
+                    setup.monitoringThread = Task.Run(() => setup.monitoringArea.MonitoringThread(cfgIdx, setup.targetListView, setup.monitoringThreadCancellation.Token));
+                    errorLabel.Text = "";
+                });
             }
         }
 

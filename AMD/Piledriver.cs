@@ -8,15 +8,17 @@ namespace PmcReader.AMD
     {
         public Piledriver()
         {
-            monitoringConfigs = new MonitoringConfig[8];
+            monitoringConfigs = new MonitoringConfig[10];
             monitoringConfigs[0] = new BpuMonitoringConfig(this);
             monitoringConfigs[1] = new IFetch(this);
             monitoringConfigs[2] = new DataCache(this);
-            monitoringConfigs[3] = new L2Cache(this);
-            monitoringConfigs[4] = new DispatchStall(this);
-            monitoringConfigs[5] = new DispatchStall1(this);
-            monitoringConfigs[6] = new DispatchStallFP(this);
-            monitoringConfigs[7] = new DispatchStallMisc(this);
+            monitoringConfigs[3] = new DataCache1(this);
+            monitoringConfigs[4] = new L2Cache(this);
+            monitoringConfigs[5] = new DispatchStall(this);
+            monitoringConfigs[6] = new DispatchStall1(this);
+            monitoringConfigs[7] = new DispatchStallFP(this);
+            monitoringConfigs[8] = new DispatchStallMisc(this);
+            monitoringConfigs[9] = new DTLB(this);
             architectureName = "Piledriver";
         }
 
@@ -210,6 +212,72 @@ namespace PmcReader.AMD
                         FormatLargeNumber(64 * counterData.ctr2) + "B/s",
                         FormatPercentage(counterData.ctr0, counterData.aperf),
                         FormatPercentage(counterData.ctr1, counterData.aperf)};
+            }
+        }
+
+        public class DataCache1 : MonitoringConfig
+        {
+            private Piledriver cpu;
+            public string GetConfigName() { return "L1D Activity"; }
+
+            public DataCache1(Piledriver amdCpu)
+            {
+                cpu = amdCpu;
+            }
+
+            public string[] GetColumns() { return columns; }
+
+            public void Initialize()
+            {
+                cpu.ProgramPerfCounters(
+                    GetPerfCtlValue(0x32, 0, false, 0, 0), // misaligned stores
+                    GetPerfCtlValue(0x41, 0b11, false, 0, 0), // DC Miss
+                    GetPerfCtlValue(0x29, 3, false, 0, 0), // LS dispatch
+                    GetPerfCtlValue(0xC0, 0, false, 0, 0), // ret instr
+                    GetPerfCtlValue(0x40, 0, false, 1, 0), // DC access, cmask 1
+                    GetPerfCtlValue(0x40, 0, false, 2, 0));  // DC access, cmask 2
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[cpu.GetThreadCount()][];
+                cpu.InitializeCoreTotals();
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    cpu.UpdateThreadCoreCounterData(threadIdx);
+                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
+                }
+
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                results.overallCounterValues = cpu.GetOverallCounterValues("Misaligned Store", "DC Miss", "LS Dispatch", "Instr", "DC Access Cmask 1", "DC Access Cmask 2");
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC",
+                "L1D Hitrate", "L1D MPKI", "L1D/MAB Hit BW", "DC Active", "DC 2 Accesses/c", "Misaligned Stores", "LS Dispatch" };
+
+            public string GetHelpText()
+            {
+                return "aaaaaa";
+            }
+
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
+            {
+                float instr = counterData.ctr3;
+                float dcAccess = 2 * counterData.ctr5 + (counterData.ctr4 - counterData.ctr5);
+                float dcHits = dcAccess - counterData.ctr1;
+                return new string[] { label,
+                        FormatLargeNumber(counterData.aperf),
+                        FormatLargeNumber(instr),
+                        string.Format("{0:F2}", instr / counterData.aperf),
+                        FormatPercentage(dcHits, dcAccess),
+                        string.Format("{0:F2}", 1000 * counterData.ctr1 / instr),
+                        FormatLargeNumber(16 * dcHits) + "B/s", // each data cache hit should be 16B
+                        FormatPercentage(counterData.ctr4, counterData.aperf),
+                        FormatPercentage(counterData.ctr5, counterData.aperf),
+                        FormatLargeNumber(counterData.ctr0),
+                        FormatLargeNumber(counterData.ctr2)};
             }
         }
 
@@ -531,6 +599,69 @@ namespace PmcReader.AMD
                         FormatPercentage(counterData.ctr2, counterData.aperf),
                         FormatLargeNumber(counterData.ctr3),
                         FormatPercentage(counterData.ctr5, counterData.aperf)
+                        };
+            }
+        }
+
+        public class DTLB : MonitoringConfig
+        {
+            private Piledriver cpu;
+            public string GetConfigName() { return "DTLB"; }
+
+            public DTLB(Piledriver amdCpu)
+            {
+                cpu = amdCpu;
+            }
+
+            public string[] GetColumns() { return columns; }
+
+            public void Initialize()
+            {
+                cpu.ProgramPerfCounters(
+                    GetPerfCtlValue(0x45, 0b1110111, false, 0, 0), // L2 TLB Hit
+                    GetPerfCtlValue(0x46, 0b1110111, false, 0, 0), // L2 TLB Miss
+                    GetPerfCtlValue(0x85, 0, false, 0, 0), // ITLB miss L2 ITLB miss
+                    GetPerfCtlValue(0x41, 0, false, 0, 0), // DC Miss
+                    GetPerfCtlValue(0xC0, 0, false, 0, 0), // Instr
+                    GetPerfCtlValue(0x40, 0, false, 0, 0));  // DC Access
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[cpu.GetThreadCount()][];
+                cpu.InitializeCoreTotals();
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    cpu.UpdateThreadCoreCounterData(threadIdx);
+                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
+                }
+
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                results.overallCounterValues = cpu.GetOverallCounterValues("L2 TLB Hit", "L2 TLB Miss", "ITLB Reloads", "(DC Miss)", "Instructions", "DC Access");
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC",
+                "DTLB Hitrate", "DTLB MPKI", "L2 TLB Hitrate", "L2 TLB MPKI", "ITLB MPKI" };
+
+            public string GetHelpText()
+            {
+                return "aaaaaa";
+            }
+
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
+            {
+                float instr = counterData.ctr4;
+                return new string[] { label,
+                        FormatLargeNumber(counterData.aperf),
+                        FormatLargeNumber(instr),
+                        string.Format("{0:F2}", instr / counterData.aperf),
+                        FormatPercentage((counterData.ctr5 - counterData.ctr0 - counterData.ctr1), counterData.ctr5),
+                        string.Format("{0:F2}", 1000 * (counterData.ctr0 + counterData.ctr1) / instr),
+                        FormatPercentage(counterData.ctr0, counterData.ctr0 + counterData.ctr1),
+                        string.Format("{0:F2}", 1000 * counterData.ctr1 / instr),
+                        string.Format("{0:F2}", 1000 * counterData.ctr2 / instr)
                         };
             }
         }
