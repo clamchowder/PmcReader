@@ -366,5 +366,14 @@ namespace PmcReader
         }
 
         public virtual void InitializeCrazyControls(FlowLayoutPanel flowLayoutPanel, Label errorLabel) {}
+
+        protected Button CreateButton(string buttonText, EventHandler handler)
+        {
+            Button button = new Button();
+            button.Text = buttonText;
+            button.AutoSize = true;
+            button.Click += handler;
+            return button;
+        }
     }
 }

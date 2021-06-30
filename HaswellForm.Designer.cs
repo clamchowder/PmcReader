@@ -325,9 +325,8 @@
             this.crazyThingsLabel.AutoSize = true;
             this.crazyThingsLabel.Location = new System.Drawing.Point(697, 18);
             this.crazyThingsLabel.Name = "crazyThingsLabel";
-            this.crazyThingsLabel.Size = new System.Drawing.Size(135, 13);
+            this.crazyThingsLabel.Size = new System.Drawing.Size(0, 13);
             this.crazyThingsLabel.TabIndex = 28;
-            this.crazyThingsLabel.Text = "Do not push these buttons:";
             // 
             // HaswellForm
             // 

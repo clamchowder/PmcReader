@@ -321,15 +321,6 @@ namespace PmcReader.Intel
             errorLabel = errLabel;
         }
 
-        private Button CreateButton(string buttonText, EventHandler handler)
-        {
-            Button button = new Button();
-            button.Text = buttonText;
-            button.AutoSize = true;
-            button.Click += handler;
-            return button;
-        }
-
         private void GetHwPfStatus(out bool l2, out bool l2Adj, out bool dcu, out bool dcuIp)
         {
             Ring0.ReadMsr(MSR_PF_CTL, out ulong pfCtl);

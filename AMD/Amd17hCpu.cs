@@ -51,8 +51,11 @@ namespace PmcReader.AMD
 
         public const uint MSR_LS_CFG = 0xC0011020; // bit 4 = zen 1 lock errata 
         public const uint MSR_IC_CFG = 0xC0011021; // bit 5 = disable OC
+        public const uint MSR_DC_CFG = 0xC0011022; // data cache config?
         public const uint MSR_FP_CFG = 0xC0011028; // bit 4 = zen 1 FCMOV errata
         public const uint MSR_DE_CFG = 0xC0011029; // bit 13 = zen 1 stale store forward errata
+        public const uint MSR_ProcNameStringBase = 0xC0010030;
+        public const uint ProcNameStringMsrCount = 6;
 
         public NormalizedCoreCounterData[] NormalizedThreadCounts;
         public NormalizedCoreCounterData NormalizedTotalCounts;
@@ -360,6 +363,7 @@ namespace PmcReader.AMD
             NormalizedTotalCounts.ctr4 = 0;
             NormalizedTotalCounts.ctr5 = 0;
             NormalizedTotalCounts.watts = 0;
+            NormalizedTotalCounts.totalCoreWatts = 0;
         }
 
         /// <summary>
@@ -415,6 +419,13 @@ namespace PmcReader.AMD
             NormalizedTotalCounts.ctr3 += NormalizedThreadCounts[threadIdx].ctr3;
             NormalizedTotalCounts.ctr4 += NormalizedThreadCounts[threadIdx].ctr4;
             NormalizedTotalCounts.ctr5 += NormalizedThreadCounts[threadIdx].ctr5;
+
+            // only add core power once per core. don't count it per-SMT thread
+            // and always add if SMT is off (thread count == core count)
+            if (threadCount == coreCount || (threadCount == coreCount * 2 && threadIdx % 2 == 0))
+            {
+                NormalizedTotalCounts.totalCoreWatts += NormalizedThreadCounts[threadIdx].watts;
+            } 
         }
 
         /// <summary>
@@ -429,39 +440,45 @@ namespace PmcReader.AMD
         /// <returns>Array to put in results object</returns>
         public Tuple<string, float>[] GetOverallCounterValues(string ctr0, string ctr1, string ctr2, string ctr3, string ctr4, string ctr5)
         {
-            Tuple<string, float>[] retval = new Tuple<string, float>[11];
+            Tuple<string, float>[] retval = new Tuple<string, float>[12];
             retval[0] = new Tuple<string, float>("APERF", NormalizedTotalCounts.aperf);
             retval[1] = new Tuple<string, float>("MPERF", NormalizedTotalCounts.mperf);
             retval[2] = new Tuple<string, float>("TSC", NormalizedTotalCounts.tsc);
             retval[3] = new Tuple<string, float>("IRPerfCount", NormalizedTotalCounts.instr);
             retval[4] = new Tuple<string, float>("Watts", NormalizedTotalCounts.watts);
-            retval[5] = new Tuple<string, float>(ctr0, NormalizedTotalCounts.ctr0);
-            retval[6] = new Tuple<string, float>(ctr1, NormalizedTotalCounts.ctr1);
-            retval[7] = new Tuple<string, float>(ctr2, NormalizedTotalCounts.ctr2);
-            retval[8] = new Tuple<string, float>(ctr3, NormalizedTotalCounts.ctr3);
-            retval[9] = new Tuple<string, float>(ctr4, NormalizedTotalCounts.ctr4);
-            retval[10] = new Tuple<string, float>(ctr5, NormalizedTotalCounts.ctr5);
+            retval[5] = new Tuple<string, float>("CoreWatts", NormalizedTotalCounts.totalCoreWatts);
+            retval[6] = new Tuple<string, float>(ctr0, NormalizedTotalCounts.ctr0);
+            retval[7] = new Tuple<string, float>(ctr1, NormalizedTotalCounts.ctr1);
+            retval[8] = new Tuple<string, float>(ctr2, NormalizedTotalCounts.ctr2);
+            retval[9] = new Tuple<string, float>(ctr3, NormalizedTotalCounts.ctr3);
+            retval[10] = new Tuple<string, float>(ctr4, NormalizedTotalCounts.ctr4);
+            retval[11] = new Tuple<string, float>(ctr5, NormalizedTotalCounts.ctr5);
             return retval;
         }
 
         private Label errorLabel; // ugly whatever
+        private TextBox procNameTextBox;
 
         public override void InitializeCrazyControls(FlowLayoutPanel flowLayoutPanel, Label errLabel)
         {
             flowLayoutPanel.Controls.Clear();
-            Button disableOpCacheButton = new Button();
-            disableOpCacheButton.Name = "disableOpCacheButton";
-            disableOpCacheButton.Text = "Disable Op Cache";
-            disableOpCacheButton.AutoSize = true;
-            disableOpCacheButton.Click += DisableOpCache;
+            Button disableOpCacheButton = CreateButton("Disable Op Cache", DisableOpCache);
+            Button enableOpCacheButton = CreateButton("Enable Op Cache", EnableOpCache);
+            Button setProcNameButton = CreateButton("Set CPU Name String", SetCpuNameString);
 
-            Button enableOpCacheButton = new Button();
-            enableOpCacheButton.Name = "enableOpCacheButton";
-            enableOpCacheButton.Text = "Enable Op Cache";
-            enableOpCacheButton.AutoSize = true;
-            enableOpCacheButton.Click += EnableOpCache;
+            procNameTextBox = new TextBox();
+            procNameTextBox.Width = 325;
+            procNameTextBox.MaxLength = 47;
+
+            Button disableCpbButton = CreateButton("Disable Core Perf Boost", DisableCorePerformanceBoost);
+            Button enableCpbButton = CreateButton("Enable Core Perf Boost", EnableCorePerformanceBoost);
+
             flowLayoutPanel.Controls.Add(disableOpCacheButton);
             flowLayoutPanel.Controls.Add(enableOpCacheButton);
+            flowLayoutPanel.Controls.Add(procNameTextBox);
+            flowLayoutPanel.Controls.Add(setProcNameButton);
+            flowLayoutPanel.Controls.Add(disableCpbButton);
+            flowLayoutPanel.Controls.Add(enableCpbButton);
 
             errorLabel = errLabel;
         }
@@ -522,6 +539,80 @@ namespace PmcReader.AMD
             }
         }
 
+        private bool GetCpbEnabled()
+        {
+            Ring0.ReadMsr(HWCR, out ulong hwcr);
+            return (hwcr & (1UL << 25)) == 0;
+        }
+
+        public void EnableCorePerformanceBoost(object sender, EventArgs e)
+        {
+            bool allCpbEnabled = true;
+            for (int threadIdx = 0; threadIdx < GetThreadCount(); threadIdx++)
+            {
+                ThreadAffinity.Set(1UL << threadIdx);
+                Ring0.ReadMsr(HWCR, out ulong hwcr);
+                hwcr &= ~(1UL << 25);
+                Ring0.WriteMsr(HWCR, hwcr);
+                allCpbEnabled &= GetCpbEnabled();
+            }
+
+            if (!allCpbEnabled)
+            {
+                errorLabel.Text = "Failed to enable Core Performance Boost";
+            }
+            else
+            {
+                errorLabel.Text = "Core Performance Boost enabled";
+            }
+        }
+
+        public void DisableCorePerformanceBoost(object sender, EventArgs e)
+        {
+            bool allCpbDisabled = true;
+            for (int threadIdx = 0; threadIdx < GetThreadCount(); threadIdx++)
+            {
+                ThreadAffinity.Set(1UL << threadIdx);
+                Ring0.ReadMsr(HWCR, out ulong hwcr);
+                hwcr |= (1UL << 25);
+                Ring0.WriteMsr(HWCR, hwcr);
+                allCpbDisabled &= !GetCpbEnabled();
+            }
+
+            if (!allCpbDisabled)
+            {
+                errorLabel.Text = "Failed to disable Core Performance Boost";
+            }
+            else
+            {
+                errorLabel.Text = "Core Performance Boost disabled";
+            }
+        }
+
+        /// <summary>
+        /// name better be in ascii
+        /// </summary>
+        public void SetCpuNameString(object sender, EventArgs e)
+        {
+            if (procNameTextBox == null) return;
+            char[] nameArr = procNameTextBox.Text.ToCharArray();
+            for (int threadIdx = 0; threadIdx < GetThreadCount(); threadIdx++)
+            {
+                ThreadAffinity.Set(1UL << threadIdx);
+                for (int blockIdx = 0; blockIdx < ProcNameStringMsrCount; blockIdx++)
+                {
+                    ulong blockValue = 0;
+                    for (int charIdx = blockIdx * 8, i = 0; charIdx < nameArr.Length && charIdx < 47 && i < 8; charIdx++, i++)
+                    {
+                        ulong charValue = nameArr[charIdx];
+                        blockValue |= charValue << (8 * i);
+                    }
+
+                    Ring0.WriteMsr(MSR_ProcNameStringBase + (uint)blockIdx, blockValue);
+                }
+            }
+        }
+
         /// <summary>
         /// Holds performance counter, read out from the three fixed counters
         /// and four programmable ones
@@ -565,6 +656,11 @@ namespace PmcReader.AMD
             /// Power consumed. Can be per-core, or whole package (for total)
             /// </summary>
             public float watts;
+
+            /// <summary>
+            /// Power consumed, total across all cores
+            /// </summary>
+            public float totalCoreWatts;
             public float NormalizationFactor;
         }
     }
