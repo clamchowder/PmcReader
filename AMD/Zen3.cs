@@ -7,7 +7,7 @@ namespace PmcReader.AMD
     {
         public Zen3()
         {
-            monitoringConfigs = new MonitoringConfig[10];
+            monitoringConfigs = new MonitoringConfig[12];
             monitoringConfigs[0] = new BpuMonitoringConfig(this);
             monitoringConfigs[1] = new FetchConfig(this);
             monitoringConfigs[2] = new DCFillConfig(this);
@@ -18,6 +18,8 @@ namespace PmcReader.AMD
             monitoringConfigs[7] = new DispatchStallConfig(this);
             monitoringConfigs[8] = new DispatchStallConfig1(this);
             monitoringConfigs[9] = new L2Config(this);
+            monitoringConfigs[10] = new TopDown(this);
+            monitoringConfigs[11] = new PmcMonitoringConfig(this);
             architectureName = "Zen 3";
         }
 

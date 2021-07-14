@@ -8,7 +8,7 @@ namespace PmcReader.AMD
     {
         public Zen2()
         {
-            monitoringConfigs = new MonitoringConfig[22];
+            monitoringConfigs = new MonitoringConfig[23];
             monitoringConfigs[0] = new BpuMonitoringConfig(this);
             monitoringConfigs[1] = new BPUMonitoringConfig1(this);
             monitoringConfigs[2] = new ICMonitoringConfig(this);
@@ -31,6 +31,8 @@ namespace PmcReader.AMD
             monitoringConfigs[19] = new MiscConfig(this);
             monitoringConfigs[20] = new FpDispFault(this);
             monitoringConfigs[21] = new L2Latency(this);
+            monitoringConfigs[22] = new PmcMonitoringConfig(this);
+
             architectureName = "Zen 2";
         }
 

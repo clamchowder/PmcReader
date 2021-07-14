@@ -95,6 +95,7 @@ namespace PmcReader
                     coreMonitoring.monitoringArea = new AMD.Zen3();
                     l3Monitoring.monitoringArea = new AMD.Zen3L3Cache();
                     dfMonitoring.monitoringArea = new AMD.Zen2DataFabric();
+                    crazyThings = new AMD.Amd17hCpu();
                 }
                 else if (cpuFamily == 0x15 && cpuModel == 0x2)
                 {

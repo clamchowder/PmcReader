@@ -663,5 +663,137 @@ namespace PmcReader.AMD
             public float totalCoreWatts;
             public float NormalizationFactor;
         }
+
+        public class TopDown : MonitoringConfig
+        {
+            private Amd17hCpu cpu;
+            public string GetConfigName() { return "Top Down?"; }
+
+            public TopDown(Amd17hCpu amdCpu) { cpu = amdCpu; }
+
+            public string[] GetColumns() { return columns; }
+
+            public void Initialize()
+            {
+                ulong decoderOps = GetPerfCtlValue(0xAA, 0b11, true, true, false, false, enable: false, false, 0, 0, false, false);
+                cpu.ProgramPerfCounters(GetPerfCtlValue(0xAE, 0b11110111, true, true, false, false, true, false, 0, 0, false, false), // Dispatch stall 1
+                    GetPerfCtlValue(0xAF, 0b101111, true, true, false, false, true, false, 0, 0, false, false),  // Dispatch stall 2
+                    GetPerfCtlValue(0xA9, 0, true, true, false, false, true, false, 0, 0, false, false),  // mop queue empty
+                    decoderOps,  // ops dispatched from decoder
+                    GetPerfCtlValue(0xAA, 0b01, true, true, false, false, enable: false, false, cmask: 1, 0, false, false),  // decoder cycles
+                    GetPerfCtlValue(0xAA, 0b10, true, true, false, false, enable: false, false, cmask: 1, 0, false, false)); // op cache cycles
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[cpu.GetThreadCount()][];
+                cpu.InitializeCoreTotals();
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    cpu.UpdateThreadCoreCounterData(threadIdx);
+                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
+                }
+
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                results.overallCounterValues = cpu.GetOverallCounterValues("Dispatch stall 1", "Dispatch stall 2", "Op Queue Empty?", "Ops from Decoder", "Decoder cycles", "Op cache cycles");
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC",
+                "Dispatch Stall (sum)", "Dispatch Stall 1", "Dispatch Stall 2", "Op Queue Empty", "Ops/C from Decoder", "Decoder Cycles", "Op Cache Cycles" };
+
+            public string GetHelpText()
+            {
+                return "";
+            }
+
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
+            {
+                return new string[] { label,
+                        FormatLargeNumber(counterData.aperf),
+                        FormatLargeNumber(counterData.instr),
+                        string.Format("{0:F2}", counterData.instr / counterData.aperf),
+                        FormatPercentage(counterData.ctr0 + counterData.ctr1, counterData.aperf),
+                        FormatPercentage(counterData.ctr0, counterData.aperf),
+                        FormatPercentage(counterData.ctr1, counterData.aperf),
+                        FormatPercentage(counterData.ctr2, counterData.aperf),
+                        string.Format("{0:F2}", counterData.ctr3 / counterData.aperf),
+                        FormatPercentage(counterData.ctr4, counterData.aperf),
+                        FormatPercentage(counterData.ctr5, counterData.aperf),
+                         };    // fused branches
+            }
+        }
+
+        public class PmcMonitoringConfig : MonitoringConfig
+        {
+            private Amd17hCpu cpu;
+            public string GetConfigName() { return "Read the events"; }
+
+            public PmcMonitoringConfig(Amd17hCpu amdCpu) { cpu = amdCpu; }
+
+            public string[] GetColumns() { return columns; }
+
+            public void Initialize() { }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[cpu.GetThreadCount()][];
+                ulong ctl0 = 0, ctl1 = 0, ctl2 = 0, ctl3 = 0, ctl4 = 0, ctl5 = 0;
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    ThreadAffinity.Set(1UL << threadIdx);
+                    Ring0.ReadMsr(MSR_PERF_CTL_0, out ctl0);
+                    Ring0.ReadMsr(MSR_PERF_CTL_1, out ctl1);
+                    Ring0.ReadMsr(MSR_PERF_CTL_2, out ctl2);
+                    Ring0.ReadMsr(MSR_PERF_CTL_3, out ctl3);
+                    Ring0.ReadMsr(MSR_PERF_CTL_4, out ctl4);
+                    Ring0.ReadMsr(MSR_PERF_CTL_5, out ctl5);
+                    results.unitMetrics[threadIdx] = new string[] { "Thread " + threadIdx,
+                        string.Format("{0:X}", ctl0),
+                        string.Format("{0:X}", ctl1),
+                        string.Format("{0:X}", ctl2),
+                        string.Format("{0:X}", ctl3),
+                        string.Format("{0:X}", ctl4),
+                        string.Format("{0:X}", ctl5)};
+                }
+
+                results.overallMetrics = new string[] { "Overall (ignore) ",
+                        string.Format("{0:X}", ctl0),
+                        string.Format("{0:X}", ctl1),
+                        string.Format("{0:X}", ctl2),
+                        string.Format("{0:X}", ctl3),
+                        string.Format("{0:X}", ctl4),
+                        string.Format("{0:X}", ctl5)};
+                results.overallCounterValues = new Tuple<string, float>[6];
+                results.overallCounterValues[0] = new Tuple<string, float>("Ctl0", ctl0);
+                results.overallCounterValues[1] = new Tuple<string, float>("Ctl1", ctl1);
+                results.overallCounterValues[2] = new Tuple<string, float>("Ctl2", ctl2);
+                results.overallCounterValues[3] = new Tuple<string, float>("Ctl3", ctl3);
+                results.overallCounterValues[4] = new Tuple<string, float>("Ctl4", ctl4);
+                results.overallCounterValues[5] = new Tuple<string, float>("Ctl5", ctl5);
+                return results;
+            }
+
+            public string[] columns = new string[] { "Thread", "Ctl0", "Ctl1", "Ctl2", "Ctl3", "Ctl4", "Ctl5" };
+
+            public string GetHelpText() { return ""; }
+
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
+            {
+                return new string[] { label,
+                        FormatLargeNumber(counterData.aperf),
+                        FormatLargeNumber(counterData.instr),
+                        string.Format("{0:F2}", counterData.instr / counterData.aperf),
+                        string.Format("{0:F2}%", 100 * (1 - counterData.ctr1 / counterData.ctr0)), // bpu acc
+                        string.Format("{0:F2}", counterData.ctr1 / counterData.aperf * 1000),      // branch mpki
+                        string.Format("{0:F2}%", 100 * counterData.ctr0 / counterData.instr),      // % branches
+                        string.Format("{0:F2}", 1000 * counterData.ctr2 / counterData.instr),     // l2 btb overrides
+                        string.Format("{0:F2}", 1000 * counterData.ctr3 / counterData.instr),     // ita overrides
+                        string.Format("{0:F2}", 1000 * counterData.ctr4 / counterData.instr),     // decoder overrides
+                        string.Format("{0:F2}%", counterData.ctr5 / counterData.ctr0 * 100) };    // fused branches
+            }
+        }
     }
 }
