@@ -28,6 +28,7 @@
         /// </summary>
         private void InitializeComponent()
         {
+            this.components = new System.ComponentModel.Container();
             this.configSelect = new System.Windows.Forms.ListView();
             this.applyConfigButton = new System.Windows.Forms.Button();
             this.monitoringListView = new System.Windows.Forms.ListView();
@@ -55,6 +56,7 @@
             this.DfLogToFileTextBox = new System.Windows.Forms.TextBox();
             this.crazyThingsPanel = new System.Windows.Forms.FlowLayoutPanel();
             this.crazyThingsLabel = new System.Windows.Forms.Label();
+            this.toolTip1 = new System.Windows.Forms.ToolTip(this.components);
             this.SuspendLayout();
             // 
             // configSelect
@@ -125,6 +127,7 @@
             | System.Windows.Forms.AnchorStyles.Right)));
             this.L3ConfigSelect.HideSelection = false;
             this.L3ConfigSelect.Location = new System.Drawing.Point(13, 457);
+            this.L3ConfigSelect.MultiSelect = false;
             this.L3ConfigSelect.Name = "L3ConfigSelect";
             this.L3ConfigSelect.Size = new System.Drawing.Size(681, 63);
             this.L3ConfigSelect.TabIndex = 7;
@@ -170,6 +173,7 @@
             this.dfConfigSelect.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Right)));
             this.dfConfigSelect.HideSelection = false;
             this.dfConfigSelect.Location = new System.Drawing.Point(700, 457);
+            this.dfConfigSelect.MultiSelect = false;
             this.dfConfigSelect.Name = "dfConfigSelect";
             this.dfConfigSelect.Size = new System.Drawing.Size(485, 63);
             this.dfConfigSelect.TabIndex = 11;
@@ -398,6 +402,7 @@
         private System.Windows.Forms.TextBox DfLogToFileTextBox;
         private System.Windows.Forms.FlowLayoutPanel crazyThingsPanel;
         private System.Windows.Forms.Label crazyThingsLabel;
+        private System.Windows.Forms.ToolTip toolTip1;
     }
 }
 

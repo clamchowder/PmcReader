@@ -303,7 +303,7 @@ namespace PmcReader.Intel
             Button enableL2HwPfButton = CreateButton("Enable L2 HW PF", EnableL2HwPf);
             Button disableL2HwPfButton = CreateButton("Disable L2 HW PF", DisableL2HwPf);
             Button enableL2AdjacentPfButton = CreateButton("Enable L2 Adj PF", EnableL2AdjPf);
-            Button disableL2AdjacentPfButton = CreateButton("Enable L2 Adj PF", DisableL2AdjPf);
+            Button disableL2AdjacentPfButton = CreateButton("Disable L2 Adj PF", DisableL2AdjPf);
             Button enableDcuPf = CreateButton("Enable L1D Adj Pf", EnableDcuPf);
             Button disableDcuPf = CreateButton("Disable L1D Adj Pf", DisableDcuPf);
             Button enableDcuIpPf = CreateButton("Enable L1D IP Pf", EnableDcuIpPf);
@@ -327,6 +327,7 @@ namespace PmcReader.Intel
             button.Text = buttonText;
             button.AutoSize = true;
             button.Click += handler;
+
             return button;
         }
 
