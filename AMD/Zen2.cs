@@ -741,9 +741,9 @@ namespace PmcReader.AMD
                 cpu.ProgramPerfCounters(GetPerfCtlValue(0x40, 0, true, true, false, false, true, false, cmask: 1, 0, false, false), // dc access cmask 1
                     GetPerfCtlValue(0x40, 0, true, true, false, false, true, false, cmask: 2, 0, false, false),  // dc access cmask 2
                     GetPerfCtlValue(0x40, 0, true, true, false, false, true, false, cmask: 3, 0, false, false),  // dc access cmask 3
-                    GetPerfCtlValue(0x29, 0b11, true, true, false, false, true, false, cmask: 1, 0, false, false),  // ls dispatch cmask 1
-                    GetPerfCtlValue(0x29, 0b11, true, true, false, false, true, false, cmask: 2, 0, false, false),  // ls dispatch cmask 2
-                    GetPerfCtlValue(0x29, 0b11, true, true, false, false, true, false, cmask: 3, 0, false, false)); // ls dispatch cmask 3
+                    GetPerfCtlValue(0x29, 0b11, true, true, false, false, true, false, cmask: 0, 0, false, false),  // ls dispatch cmask 1
+                    GetPerfCtlValue(0xAF, 0x10, true, true, false, false, true, false, cmask: 0, 0, false, false),  // agsq full
+                    GetPerfCtlValue(0xAE, 0x2, true, true, false, false, true, false, cmask: 0, 0, false, false)); // ldq full
             }
 
             public MonitoringUpdateResults Update()
@@ -758,13 +758,13 @@ namespace PmcReader.AMD
                 }
 
                 cpu.ReadPackagePowerCounter();
-                results.overallCounterValues = cpu.GetOverallCounterValues("DC Access Cmask 1", "DC Access Cmask 2", "DC Access Cmask 3", "LS Dispatch Cmask 1", "LS Dispatch Cmask 2", "LS Dispatch Cmask 3");
+                results.overallCounterValues = cpu.GetOverallCounterValues("DC Access Cmask 1", "DC Access Cmask 2", "DC Access Cmask 3", "LS Dispatch", "AGSQ Full", "LDQ Full");
                 results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
                 return results;
             }
 
             public string[] columns = new string[] { "Item", "Power", "Active Cycles", "Instructions", "IPC", "Instr/Watt", 
-                "L1D Lookups", "L1D Active", "L1D 2 Access", "L1D 3 Access", "LS Dispatches", "LS Active", "LS 2 Dispatch", "LS 3 Dispatch" };
+                "L1D Lookups", "L1D Active", "L1D 2 Access", "L1D 3 Access", "LS Dispatches", "L1D Accesses/LS Dispatch", "AGSQ Full", "LDQ Full" };
 
             public string GetHelpText()
             {
@@ -776,11 +776,8 @@ namespace PmcReader.AMD
                 float dc1Access = counterData.ctr0 - counterData.ctr1; // cycles with 1 dc access
                 float dc2Access = counterData.ctr1 - counterData.ctr2;
                 float dc3Access = counterData.ctr2;
-                float ls1Dispatch = counterData.ctr3 - counterData.ctr4; // cycles with 1 ls dispatch
-                float ls2Dispatch = counterData.ctr4 - counterData.ctr5;
-                float ls3Dispatch = counterData.ctr5;
                 float dcAccess = dc1Access + 2 * dc2Access + 3 * dc3Access;
-                float lsDispatch = ls1Dispatch + 2 * ls2Dispatch + 3 * ls3Dispatch;
+                float lsDispatch = counterData.ctr3;
                 return new string[] { label,
                     string.Format("{0:F2} W", counterData.watts),
                     FormatLargeNumber(counterData.aperf),
@@ -792,9 +789,9 @@ namespace PmcReader.AMD
                     FormatPercentage(dc2Access, counterData.aperf),
                     FormatPercentage(dc3Access, counterData.aperf),
                     FormatLargeNumber(lsDispatch),
-                    FormatPercentage(counterData.ctr3, counterData.aperf),
-                    FormatPercentage(ls2Dispatch, counterData.aperf),
-                    FormatPercentage(ls3Dispatch, counterData.aperf)
+                    string.Format("{0:F2}", dcAccess / lsDispatch),
+                    FormatPercentage(counterData.ctr4, counterData.aperf),
+                    FormatPercentage(counterData.ctr5, counterData.aperf),
                     };
             }
         }
