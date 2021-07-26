@@ -6,7 +6,7 @@ namespace PmcReader.Intel
     {
         public Skylake()
         {
-            monitoringConfigs = new MonitoringConfig[11];
+            monitoringConfigs = new MonitoringConfig[12];
             monitoringConfigs[0] = new BpuMonitoringConfig(this);
             monitoringConfigs[1] = new OpCachePerformance(this);
             monitoringConfigs[2] = new ALUPortUtilization(this);
@@ -18,6 +18,7 @@ namespace PmcReader.Intel
             monitoringConfigs[8] = new ICache(this);
             monitoringConfigs[9] = new MemBound(this);
             monitoringConfigs[10] = new Locks(this);
+            monitoringConfigs[11] = new ResourceStalls1(this);
             architectureName = "Skylake";
         }
 
@@ -377,6 +378,69 @@ namespace PmcReader.Intel
             }
 
             public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "Pkg Pwr", "Instr/Watt", "Resource Stall", "SB Full", "RS Full", "ROB Full" };
+
+            public string GetHelpText()
+            {
+                return "";
+            }
+
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
+            {
+                return new string[] { label,
+                        FormatLargeNumber(counterData.activeCycles),
+                        FormatLargeNumber(counterData.instr),
+                        string.Format("{0:F2}", counterData.instr / counterData.activeCycles),
+                        string.Format("{0:F2} W", counterData.packagePower),
+                        FormatLargeNumber(counterData.instr / counterData.packagePower),
+                        string.Format("{0:F2}%", 100 * counterData.pmc0 / counterData.activeCycles),
+                        string.Format("{0:F2}%", 100 * counterData.pmc1 / counterData.activeCycles),
+                        string.Format("{0:F2}%", 100 * counterData.pmc2 / counterData.activeCycles),
+                        string.Format("{0:F2}%", 100 * counterData.pmc3 / counterData.activeCycles)
+                };
+            }
+        }
+
+        public class ResourceStalls1 : MonitoringConfig
+        {
+            private Skylake cpu;
+            public string GetConfigName() { return "Dispatch Stalls 1"; }
+
+            public ResourceStalls1(Skylake intelCpu)
+            {
+                cpu = intelCpu;
+            }
+
+            public string[] GetColumns()
+            {
+                return columns;
+            }
+
+            public void Initialize()
+            {
+                cpu.ProgramPerfCounters(GetPerfEvtSelRegisterValue(0xA2, 0x2, true, true, false, false, false, false, true, false, 0), // LB full
+                    GetPerfEvtSelRegisterValue(0xA2, 0x40, true, true, false, false, false, false, true, false, 0),  // mem rs full
+                    GetPerfEvtSelRegisterValue(0x5B, 0x4, true, true, false, false, false, false, true, false, 0),   // integer RF
+                    GetPerfEvtSelRegisterValue(0x5B, 0x8, true, true, false, false, false, false, true, false, 0));
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[cpu.GetThreadCount()][];
+                cpu.InitializeCoreTotals();
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    cpu.UpdateThreadCoreCounterData(threadIdx);
+                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
+                }
+
+                cpu.ReadPackagePowerCounter();
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                results.overallCounterValues = cpu.GetOverallCounterValues("LB Full", "Mem RS Full?", "INT RF Full?", "FP RF Full?");
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "Pkg Pwr", "Instr/Watt", "LB Full", "Mem RS Full?", "INT RF Full?", "FP RF Full?" };
 
             public string GetHelpText()
             {

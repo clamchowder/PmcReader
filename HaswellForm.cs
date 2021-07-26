@@ -95,6 +95,7 @@ namespace PmcReader
                     coreMonitoring.monitoringArea = new AMD.Zen3();
                     l3Monitoring.monitoringArea = new AMD.Zen3L3Cache();
                     dfMonitoring.monitoringArea = new AMD.Zen2DataFabric();
+                    crazyThings = new AMD.Amd17hCpu();
                 }
                 else if (cpuFamily == 0x15 && cpuModel == 0x2)
                 {
@@ -115,7 +116,11 @@ namespace PmcReader
             if (dfLabelOverride != null) DataFabricConfigLabel.Text = dfLabelOverride;
             if (l3LabelOverride != null) L3CacheConfigLabel.Text = l3LabelOverride;
 
-            if (crazyThings != null) crazyThings.InitializeCrazyControls(crazyThingsPanel, errorLabel);
+            if (crazyThings != null)
+            {
+                crazyThingsLabel.Text = "Do not push these buttons:";
+                crazyThings.InitializeCrazyControls(crazyThingsPanel, errorLabel);
+            }
 
             cpuidLabel.Text = string.Format("CPU: {0} Family 0x{1:X}, Model 0x{2:X}, Stepping 0x{3:x} - {4}", 
                 cpuManufacturer, 

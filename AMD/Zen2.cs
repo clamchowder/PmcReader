@@ -30,8 +30,9 @@ namespace PmcReader.AMD
             monitoringConfigs[18] = new Locks(this);
             monitoringConfigs[19] = new MiscConfig(this);
             monitoringConfigs[20] = new FpDispFault(this);
-            monitoringConfigs[21] = new DecodeTest(this);
-            monitoringConfigs[22] = new L2Latency(this);
+            monitoringConfigs[21] = new L2Latency(this);
+            monitoringConfigs[22] = new PmcMonitoringConfig(this);
+
             architectureName = "Zen 2";
         }
 
@@ -87,6 +88,7 @@ namespace PmcReader.AMD
                     results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
                 }
 
+                cpu.ReadPackagePowerCounter();
                 results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
                 results.overallCounterValues = cpu.GetOverallCounterValues("Op Cache Ops", "Op Cache Ops cmask=1", "Decoder Ops", "Decoder Ops cmask=1", "Retired Ops", "Mop Queue Empty Cycles");
                 return results;
@@ -1528,82 +1530,7 @@ namespace PmcReader.AMD
             }
         }
 
-        public class DecodeTest : MonitoringConfig
-        {
-            private Zen2 cpu;
-            public string GetConfigName() { return "Op Cache Disable"; }
-
-            public DecodeTest(Zen2 amdCpu)
-            {
-                cpu = amdCpu;
-            }
-
-            public string[] GetColumns()
-            {
-                return columns;
-            }
-
-            public void Initialize()
-            {
-                cpu.EnablePerformanceCounters();
-                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
-                {
-                    ThreadAffinity.Set(1UL << threadIdx);
-                    // uops from decoder, cmask 1
-                    Ring0.WriteMsr(MSR_PERF_CTL_0, GetPerfCtlValue(0xAA, 1, true, true, false, false, true, false, cmask: 1, 0, false, false));
-                    // ^^ cmask 2
-                    Ring0.WriteMsr(MSR_PERF_CTL_1, GetPerfCtlValue(0xAA, 1, true, true, false, false, true, false, cmask: 2, 0, false, false));
-                    // ^^ cmask 3
-                    Ring0.WriteMsr(MSR_PERF_CTL_2, GetPerfCtlValue(0xAA, 1, true, true, false, false, true, false, cmask: 3, 0, false, false));
-                    // ^^ cmask 4
-                    Ring0.WriteMsr(MSR_PERF_CTL_3, GetPerfCtlValue(0xAA, 1, true, true, false, false, true, false, cmask: 4, 0, false, false));
-                    // cmask 1 invert
-                    Ring0.WriteMsr(MSR_PERF_CTL_4, GetPerfCtlValue(0xAA, 1, true, true, false, false, true, invert: true, cmask: 1, 0, false, false));
-                    // cmask 0
-                    Ring0.WriteMsr(MSR_PERF_CTL_5, GetPerfCtlValue(0xAA, 1, true, true, false, false, true, false, cmask: 0, 0, false, false));
-                }
-            }
-
-            public MonitoringUpdateResults Update()
-            {
-                MonitoringUpdateResults results = new MonitoringUpdateResults();
-                results.unitMetrics = new string[cpu.GetThreadCount()][];
-                cpu.InitializeCoreTotals();
-                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
-                {
-                    cpu.UpdateThreadCoreCounterData(threadIdx);
-                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
-                }
-
-                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
-                results.overallCounterValues = cpu.GetOverallCounterValues("Decoder Ops cmask 1", "Decoder Ops cmask 2", "Decoder Ops cmask 3", "Decoder Ops cmask 4", "Decoder Ops cmsk 1 Inv", "Decoder Ops");
-                return results;
-            }
-
-            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "OC Active", "Decoder Active", "1 op", "2 ops", "3 ops", "4 ops", "cmsk 1 Invert", "cmsk 1 Invert ops", "Decoder Ops (add cmask)", "Decoder Ops (plain)" };
-
-            public string GetHelpText() { return "% aperf"; }
-
-            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
-            {
-                float decoderOps = 4 * counterData.ctr3 + 3 * (counterData.ctr2 - counterData.ctr3) + 2 * (counterData.ctr1 - counterData.ctr2) + (counterData.ctr0 - counterData.ctr1);
-                return new string[] { label,
-                        FormatLargeNumber(counterData.aperf) + "/s",
-                        FormatLargeNumber(counterData.instr) + "/s",
-                        string.Format("{0:F2}", counterData.instr / counterData.aperf),
-                        string.Format("{0:F2}%", 100 * counterData.ctr4 / counterData.aperf),
-                        string.Format("{0:F2}%", 100 * counterData.ctr0 / counterData.aperf),
-                        string.Format("{0:F2}%", 100 * (counterData.ctr0 - counterData.ctr1) / counterData.aperf),
-                        string.Format("{0:F2}%", 100 * (counterData.ctr1 - counterData.ctr2) / counterData.aperf),
-                        string.Format("{0:F2}%", 100 * (counterData.ctr2 - counterData.ctr3) / counterData.aperf),
-                        string.Format("{0:F2}%", 100 * counterData.ctr3 / counterData.aperf),
-                        string.Format("{0:F2}%",  100 * counterData.ctr4 / counterData.aperf),
-                        FormatLargeNumber(counterData.ctr4),
-                        FormatLargeNumber(decoderOps),
-                        FormatLargeNumber(counterData.ctr5),
-                };
-            }
-        }
+        
 
         public class LSConfig : MonitoringConfig
         {
