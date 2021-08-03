@@ -1,4 +1,5 @@
 ﻿using PmcReader.Interop;
+using System.Collections.Generic;
 
 namespace PmcReader.Intel
 {
@@ -6,27 +7,28 @@ namespace PmcReader.Intel
     {
         public Haswell()
         {
-            monitoringConfigs = new MonitoringConfig[20];
-            monitoringConfigs[0] = new BpuMonitoringConfig(this);
-            monitoringConfigs[1] = new OpCachePerformance(this);
-            monitoringConfigs[2] = new OpDelivery(this);
-            monitoringConfigs[3] = new ALUPortUtilization(this);
-            monitoringConfigs[4] = new LSPortUtilization(this);
-            monitoringConfigs[5] = new LoadDtlbConfig(this);
-            monitoringConfigs[6] = new MoveElimConfig(this);
-            monitoringConfigs[7] = new DispatchStalls(this);
-            monitoringConfigs[8] = new LoadDataSources(this);
-            monitoringConfigs[9] = new L2Cache(this);
-            monitoringConfigs[10] = new L1DFill(this);
-            monitoringConfigs[11] = new Rename(this);
-            monitoringConfigs[12] = new IFetch(this);
-            monitoringConfigs[13] = new MemBound(this);
-            monitoringConfigs[14] = new ArchitecturalCounters(this);
-            monitoringConfigs[15] = new RetireSlots(this);
-            monitoringConfigs[16] = new DecodeHistogram(this);
-            monitoringConfigs[17] = new OCHistogram(this);
-            monitoringConfigs[18] = new OffcoreBw(this);
-            monitoringConfigs[19] = new OffcoreReqs(this);
+            List<MonitoringConfig> configList = new List<MonitoringConfig>();
+            configList.Add(new BpuMonitoringConfig(this));
+            configList.Add(new IFetch(this));
+            configList.Add(new OpCachePerformance(this));
+            configList.Add(new OpDelivery(this));
+            configList.Add(new DecodeHistogram(this));
+            configList.Add(new OCHistogram(this));
+            configList.Add(new ResourceStalls(this));
+            configList.Add(new ResourceStalls1(this));
+            configList.Add(new Rename(this));
+            configList.Add(new ALUPortUtilization(this));
+            configList.Add(new LSPortUtilization(this));
+            configList.Add(new MemBound(this));
+            configList.Add(new LoadDtlbConfig(this));
+            configList.Add(new LoadDataSources(this));
+            configList.Add(new L1DFill(this));
+            configList.Add(new L2Cache(this));
+            configList.Add(new OffcoreReqs(this));
+            configList.Add(new OffcoreBw(this));
+            configList.Add(new RetireSlots(this));
+            monitoringConfigs = configList.ToArray();
+
             architectureName = "Haswell";
         }
 
@@ -343,12 +345,12 @@ namespace PmcReader.Intel
             }
         }
 
-        public class DispatchStalls : MonitoringConfig
+        public class ResourceStalls : MonitoringConfig
         {
             private Haswell cpu;
             public string GetConfigName() { return "Dispatch Stalls"; }
 
-            public DispatchStalls(Haswell intelCpu)
+            public ResourceStalls(Haswell intelCpu)
             {
                 cpu = intelCpu;
             }
@@ -365,8 +367,8 @@ namespace PmcReader.Intel
                 for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
                 {
                     ThreadAffinity.Set(1UL << threadIdx);
-                    // Set PMC0 to count stalls because the load buffer's full
-                    ulong lbFull = GetPerfEvtSelRegisterValue(0xA2, 0x02, true, true, false, false, false, false, true, false, 0);
+                    // Set PMC0 to count all rename stalls because of back pressure
+                    ulong lbFull = GetPerfEvtSelRegisterValue(0xA2, 0x01, true, true, false, false, false, false, true, false, 0);
                     Ring0.WriteMsr(IA32_PERFEVTSEL0, lbFull);
 
                     // Set PMC1 ^^ SB full
@@ -398,7 +400,7 @@ namespace PmcReader.Intel
                 return results;
             }
 
-            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "(LDQ Full?)", "STQ Full", "RS Full", "ROB Full" };
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "Dispatch Stall", "STQ Full", "RS Full", "ROB Full" };
 
             public string GetHelpText()
             {
