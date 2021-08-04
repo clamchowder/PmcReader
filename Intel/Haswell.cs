@@ -14,6 +14,7 @@ namespace PmcReader.Intel
             configList.Add(new OpDelivery(this));
             configList.Add(new DecodeHistogram(this));
             configList.Add(new OCHistogram(this));
+            configList.Add(new MoveElimConfig(this));
             configList.Add(new ResourceStalls(this));
             configList.Add(new ResourceStalls1(this));
             configList.Add(new Rename(this));
