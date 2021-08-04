@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Threading;
 using System.Windows.Forms;
@@ -108,6 +109,7 @@ namespace PmcReader
         /// this thread has to be cancelled before one for a new config is started</param>
         public void MonitoringThread(int configId, ListView listView, CancellationToken cancelToken)
         {
+            CultureInfo ci = new CultureInfo("en-US");
             MonitoringConfig selectedConfig = monitoringConfigs[configId];
             lastUpdateTimers = null;
 
@@ -153,8 +155,8 @@ namespace PmcReader
                             first = true;
                             foreach(Tuple<string, float> counterValue in updateResults.overallCounterValues)
                             {
-                                if (first) csvLine += counterValue.Item2;
-                                else csvLine += "," + counterValue.Item2;
+                                if (first) csvLine += counterValue.Item2.ToString("G", ci);
+                                else csvLine += "," + counterValue.Item2.ToString("G", ci);
                                 first = false;
                             }
 
