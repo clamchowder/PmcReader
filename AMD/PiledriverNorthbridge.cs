@@ -149,7 +149,7 @@ namespace PmcReader.AMD
         {
             private PiledriverNorthbridge dataFabric;
 
-            public string[] columns = new string[] { "Item", "Hitrate", "Hit BW", "Req Latency (clk)" };
+            public string[] columns = new string[] { "Item", "Hitrate", "Hit BW", "DCT0 BW", "DCT1 BW", "Total Mem BW" };
             public string GetHelpText() { return ""; }
             public L3Config(PiledriverNorthbridge dataFabric)
             {
@@ -163,8 +163,8 @@ namespace PmcReader.AMD
                 dataFabric.ProgramPerfCounters(
                     GetNBPerfCtlValue(0xE0, 0xF7, true, 4), // L3 read request, all cores, all requests
                     GetNBPerfCtlValue(0xE1, 0xF7, true, 4), // L3 miss, as above
-                    GetNBPerfCtlValue(0xEF, 0x2, true, 4), // L3 latency, request count
-                    GetNBPerfCtlValue(0xEF, 0x1, true, 4)); // L3 latency, cycle count
+                    GetNBPerfCtlValue(0xE0, 0b111, true, 0), // DCT0 requests
+                    GetNBPerfCtlValue(0xE0, 0b111000, true, 0)); // DCT1 requests
             }
 
             public MonitoringUpdateResults Update()
@@ -178,10 +178,12 @@ namespace PmcReader.AMD
                 results.overallMetrics = new string[] { "Overall", 
                     FormatPercentage(l3Hits, counterData.ctr0), 
                     FormatLargeNumber(64 * l3Hits) + "B/s",
-                    string.Format("{0:F2} clk", counterData.ctr3 / counterData.ctr2)
+                    FormatLargeNumber(64 * counterData.ctr2) + "B/s",
+                    FormatLargeNumber(64 * counterData.ctr3) + "B/s",
+                    FormatLargeNumber(64 * (counterData.ctr2 + counterData.ctr3)) + "B/s"
                 };
 
-                results.overallCounterValues = dataFabric.GetOverallCounterValues(counterData, "L3 Read Request", "L3 Miss", "L3 Requests", "L3 Latency");
+                results.overallCounterValues = dataFabric.GetOverallCounterValues(counterData, "L3 Read Request", "L3 Miss", "DCT0 Access", "DCT1 Access");
                 return results;
             }
         }
