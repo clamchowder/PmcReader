@@ -104,6 +104,42 @@ namespace PmcReader.AMD
             return retval;
         }
 
+        /// <summary>
+        /// Get values to log, broken out by CCX
+        /// </summary>
+        /// <param name="aperf">actual cycles</param>
+        /// <param name="mperf">maximum performance cycles</param>
+        /// <param name="irperfcount">instructions retired</param>
+        /// <param name="tsc">timestamp (base freq) counts</param>
+        /// <param name="ctr0">description (col header) for ctr0</param>
+        /// <param name="ctr1">description (col header) for ctr1</param>
+        /// <param name="ctr2">description (col header) for ctr2</param>
+        /// <param name="ctr3">description (col header) for ctr3</param>
+        /// <param name="ctr4">description (col header) for ctr4</param>
+        /// <param name="ctr5">description (col header) for ctr5</param>
+        /// <returns></returns>
+        public Tuple<string, float>[] GetOverallL3CounterValuesPerCCX(ulong aperf, ulong mperf, ulong irperfcount, ulong tsc,
+    string ctr0, string ctr1, string ctr2, string ctr3, string ctr4, string ctr5)
+        {
+            List<Tuple<string, float>> tuples = new List<Tuple<string, float>>();
+            tuples.Add(new Tuple<string, float>("APERF", aperf));
+            tuples.Add(new Tuple<string, float>("MPERF", mperf));
+            tuples.Add(new Tuple<string, float>("TSC", tsc));
+            tuples.Add(new Tuple<string, float>("IRPerfCount", irperfcount));
+
+            for (int ccxIdx = 0; ccxIdx < ccxCounterData.Length; ccxIdx++)
+            {
+                tuples.Add(new Tuple<string, float>("ccx" + ccxIdx + "_" + ctr0, ccxCounterData[ccxIdx].ctr0));
+                tuples.Add(new Tuple<string, float>("ccx" + ccxIdx + "_" + ctr1, ccxCounterData[ccxIdx].ctr1));
+                tuples.Add(new Tuple<string, float>("ccx" + ccxIdx + "_" + ctr2, ccxCounterData[ccxIdx].ctr2));
+                tuples.Add(new Tuple<string, float>("ccx" + ccxIdx + "_" + ctr3, ccxCounterData[ccxIdx].ctr3));
+                tuples.Add(new Tuple<string, float>("ccx" + ccxIdx + "_" + ctr4, ccxCounterData[ccxIdx].ctr4));
+                tuples.Add(new Tuple<string, float>("ccx" + ccxIdx + "_" + ctr5, ccxCounterData[ccxIdx].ctr5));
+            }
+
+            return tuples.ToArray();
+        }
+
         public class HitRateLatencyConfig : MonitoringConfig
         {
             private Zen2L3Cache l3Cache;
@@ -166,7 +202,7 @@ namespace PmcReader.AMD
                 foreach (float ccxClock in ccxClocks) avgClk += ccxClock;
                 avgClk /= l3Cache.allCcxThreads.Count();
                 results.overallMetrics = computeMetrics("Overall", l3Cache.ccxTotals, avgClk);
-                results.overallCounterValues = l3Cache.GetOverallL3CounterValues(totalAperf, totalMperf, totalIrPerfCount, totalTsc, 
+                results.overallCounterValues = l3Cache.GetOverallL3CounterValuesPerCCX(totalAperf, totalMperf, totalIrPerfCount, totalTsc, 
                     "L3Access", "L3Miss", "L3MissLat/16", "L3MissSdpReq", "Unused", "Unused");
                 return results;
             }
@@ -267,7 +303,7 @@ namespace PmcReader.AMD
                 this.l3Cache = l3Cache;
             }
 
-            public string GetConfigName() { return "L3 Lookup Test"; }
+            public string GetConfigName() { return "L3 Fill/Writeback"; }
             public string[] GetColumns() { return columns; }
             public void Initialize()
             {
@@ -281,12 +317,16 @@ namespace PmcReader.AMD
                 foreach (KeyValuePair<int, int> ccxThread in l3Cache.ccxSampleThreads)
                 {
                     ThreadAffinity.Set(1UL << ccxThread.Value);
-                    Ring0.WriteMsr(MSR_L3_PERF_CTL_0, L3MissPerfCtl);
-                    Ring0.WriteMsr(MSR_L3_PERF_CTL_1, L3Access2);
-                    Ring0.WriteMsr(MSR_L3_PERF_CTL_2, L3Access4);
-                    Ring0.WriteMsr(MSR_L3_PERF_CTL_3, L3Access8);
-                    Ring0.WriteMsr(MSR_L3_PERF_CTL_4, L3Access10);
-                    Ring0.WriteMsr(MSR_L3_PERF_CTL_5, L3AccessE0);
+                    // L2 victims (L3 fill?)
+                    Ring0.WriteMsr(MSR_L3_PERF_CTL_0, GetL3PerfCtlValue(0x3, 0x1, true, 0xF, 0xFF));
+                    // L3 victims, writeback
+                    Ring0.WriteMsr(MSR_L3_PERF_CTL_1, GetL3PerfCtlValue(0x9, 0b11101000, true, 0xF, 0xFF));
+                    // L3 victims, clean
+                    Ring0.WriteMsr(MSR_L3_PERF_CTL_2, GetL3PerfCtlValue(0x9, 0b10100, true, 0xF, 0xFF));
+                    // L3 fill, no victim
+                    Ring0.WriteMsr(MSR_L3_PERF_CTL_3, GetL3PerfCtlValue(0x9, 0x3, true, 0xF, 0xFF));
+                    Ring0.WriteMsr(MSR_L3_PERF_CTL_4, GetL3PerfCtlValue(0x04, 0xFF, true, 0xF, 0xFF)); // L3 access
+                    Ring0.WriteMsr(MSR_L3_PERF_CTL_5, GetL3PerfCtlValue(0x04, 0x01, true, 0xF, 0xFF)); // L3 miss
                 }
             }
 
@@ -305,26 +345,24 @@ namespace PmcReader.AMD
                 return results;
             }
 
-            public string[] columns = new string[] { "Item", "Hitrate", "Hit BW", "Lookup 0x1 (Miss)", "Lookup 0x2", "Lookup 0x4", "Lookup 0x8", "Lookup 0x10", "Lookup 0xE0" };
+            public string[] columns = new string[] { "Item", "Hitrate", "Hit BW", "L2 Victim (Fill BW)", "L3 Victim WB", "Clean L3 Victims", "L3 Fill No Victim"};
 
             public string GetHelpText() { return ""; }
 
             private string[] computeMetrics(string label, L3CounterData counterData)
             {
                 // event 0x90 counts "total cycles for all transactions divided by 16"
-                float l3Access = counterData.ctr0 + counterData.ctr1 + counterData.ctr2 + counterData.ctr3 + counterData.ctr4 + counterData.ctr5;
-                float l3Miss = counterData.ctr0;
+                float l3Access = counterData.ctr4;
+                float l3Miss = counterData.ctr5;
                 float ccxL3Hitrate = (1 - l3Miss / l3Access) * 100;
                 float ccxL3HitBw = (l3Access - l3Miss) * 64;
                 return new string[] { label,
                         string.Format("{0:F2}%", ccxL3Hitrate),
                         FormatLargeNumber(ccxL3HitBw) + "B/s",
-                        FormatLargeNumber(counterData.ctr0),
-                        FormatLargeNumber(counterData.ctr1),
-                        FormatLargeNumber(counterData.ctr2),
-                        FormatLargeNumber(counterData.ctr3),
-                        FormatLargeNumber(counterData.ctr4),
-                        FormatLargeNumber(counterData.ctr5)};
+                        FormatLargeNumber(counterData.ctr0 * 64) + "B/s",
+                        FormatLargeNumber(counterData.ctr1 * 64) + "B/s",
+                        FormatLargeNumber(counterData.ctr2 * 64) + "B/s",
+                        FormatLargeNumber(counterData.ctr3 * 64) + "B/s"};
             }
         }
     }

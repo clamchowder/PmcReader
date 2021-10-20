@@ -95,16 +95,11 @@ namespace PmcReader.AMD
             public string[] GetColumns() { return columns; }
             public void Initialize()
             {
-                ulong mysteryDramBytes3 = GetDFPerfCtlValue(0xC7, 4, true, 0, 0);
-                ulong mysteryDramBytes2 = GetDFPerfCtlValue(0x87, 1, true, 0, 0);
-                ulong mysteryDramBytes1 = GetDFPerfCtlValue(0x47, 2, true, 0, 0);
-                ulong mysteryDramBytes0 = GetDFPerfCtlValue(0x07, 2, true, 0, 0);
-
                 ThreadAffinity.Set(1UL << monitoringThread);
-                Ring0.WriteMsr(MSR_DF_PERF_CTL_0, mysteryDramBytes0);
-                Ring0.WriteMsr(MSR_DF_PERF_CTL_1, mysteryDramBytes1);
-                Ring0.WriteMsr(MSR_DF_PERF_CTL_2, mysteryDramBytes2);
-                Ring0.WriteMsr(MSR_DF_PERF_CTL_3, mysteryDramBytes3);
+                Ring0.WriteMsr(MSR_DF_PERF_CTL_0, GetDFPerfCtlValue(0x0, 0x3, true, 0x6, 0));
+                Ring0.WriteMsr(MSR_DF_PERF_CTL_1, GetDFPerfCtlValue(0x40, 0x3, true, 0x6, 0));
+                Ring0.WriteMsr(MSR_DF_PERF_CTL_2, GetDFPerfCtlValue(0x87, 1, true, 0, 0));
+                Ring0.WriteMsr(MSR_DF_PERF_CTL_3, GetDFPerfCtlValue(0xC0, 0x3, true, 0x6, 0));
 
                 dataFabric.InitializeCoreTotals();
                 lastUpdateTime = DateTimeOffset.Now.ToUnixTimeMilliseconds();
@@ -122,8 +117,8 @@ namespace PmcReader.AMD
 
                 dataFabric.ReadPackagePowerCounter();
                 results.unitMetrics = new string[4][];
-                results.unitMetrics[0] = new string[] { "Evt 0x07 Umask 2", FormatLargeNumber(ctr0 * normalizationFactor * 64) + "B/s", FormatLargeNumber(ctr0 * normalizationFactor), "N/A" };
-                results.unitMetrics[1] = new string[] { "Evt 0x47 Umask 2", FormatLargeNumber(ctr1 * normalizationFactor * 64) + "B/s", FormatLargeNumber(ctr1 * normalizationFactor), "N/A" };
+                results.unitMetrics[0] = new string[] { "CCM0 DRAM BW?", FormatLargeNumber(ctr0 * normalizationFactor * 64) + "B/s", FormatLargeNumber(ctr0 * normalizationFactor), "N/A" };
+                results.unitMetrics[1] = new string[] { "CCM1 DRAM BW?", FormatLargeNumber(ctr1 * normalizationFactor * 16) + "B/s", FormatLargeNumber(ctr1 * normalizationFactor), "N/A" };
                 results.unitMetrics[2] = new string[] { "Mem BW related?", FormatLargeNumber(ctr2 * normalizationFactor * 64) + "B/s", FormatLargeNumber(ctr2 * normalizationFactor), "N/A" };
                 results.unitMetrics[3] = new string[] { "Wat Dis?", FormatLargeNumber(ctr3 * normalizationFactor * 64) + "B/s", FormatLargeNumber(ctr3 * normalizationFactor), "N/A" };
 
