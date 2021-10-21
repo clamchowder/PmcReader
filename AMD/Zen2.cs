@@ -1,5 +1,5 @@
 ﻿using System;
-using System.Runtime.InteropServices.WindowsRuntime;
+using System.Collections.Generic;
 using PmcReader.Interop;
 
 namespace PmcReader.AMD
@@ -8,30 +8,34 @@ namespace PmcReader.AMD
     {
         public Zen2()
         {
-            monitoringConfigs = new MonitoringConfig[23];
-            monitoringConfigs[0] = new BpuMonitoringConfig(this);
-            monitoringConfigs[1] = new BPUMonitoringConfig1(this);
-            monitoringConfigs[2] = new ICMonitoringConfig(this);
-            monitoringConfigs[3] = new OpCacheConfig(this);
-            monitoringConfigs[4] = new DecodeHistogram(this);
-            monitoringConfigs[5] = new ResourceStallMontitoringConfig(this);
-            monitoringConfigs[6] = new IntSchedulerMonitoringConfig(this);
-            monitoringConfigs[7] = new DtlbConfig(this);
-            monitoringConfigs[8] = new LSConfig(this);
-            monitoringConfigs[9] = new LSSwPrefetch(this);
-            monitoringConfigs[10] = new DCMonitoringConfig(this);
-            monitoringConfigs[11] = new DCBWMonitoringConfig(this);
-            monitoringConfigs[12] = new L2MonitoringConfig(this);
-            monitoringConfigs[13] = new FlopsMonitoringConfig(this);
-            monitoringConfigs[14] = new RetireConfig(this);
-            monitoringConfigs[15] = new RetireBurstConfig(this);
-            monitoringConfigs[16] = new PowerConfig(this);
-            monitoringConfigs[17] = new TestConfig(this);
-            monitoringConfigs[18] = new Locks(this);
-            monitoringConfigs[19] = new MiscConfig(this);
-            monitoringConfigs[20] = new FpDispFault(this);
-            monitoringConfigs[21] = new L2Latency(this);
-            monitoringConfigs[22] = new PmcMonitoringConfig(this);
+            List<MonitoringConfig> monitoringConfigList = new List<MonitoringConfig>();
+            monitoringConfigList.Add(new BpuMonitoringConfig(this));
+            monitoringConfigList.Add(new BPUMonitoringConfig1(this));
+            monitoringConfigList.Add(new ICMonitoringConfig(this));
+            monitoringConfigList.Add(new OpCacheConfig(this));
+            monitoringConfigList.Add(new DecodeHistogram(this));
+            monitoringConfigList.Add(new ResourceStallMontitoringConfig(this));
+            monitoringConfigList.Add(new IntSchedulerMonitoringConfig(this));
+            monitoringConfigList.Add(new DtlbConfig(this));
+            monitoringConfigList.Add(new LSConfig(this));
+            monitoringConfigList.Add(new LSSwPrefetch(this));
+            monitoringConfigList.Add(new DCMonitoringConfig(this));
+            monitoringConfigList.Add(new DCBWMonitoringConfig(this));
+            monitoringConfigList.Add(new DCFillLatencyConfig(this));
+            monitoringConfigList.Add(new MABOccupancyConfig(this));
+            monitoringConfigList.Add(new L2MonitoringConfig(this));
+            monitoringConfigList.Add(new FlopsMonitoringConfig(this));
+            monitoringConfigList.Add(new RetireConfig(this));
+            monitoringConfigList.Add(new RetireBurstConfig(this));
+            monitoringConfigList.Add(new PowerConfig(this));
+            monitoringConfigList.Add(new TestConfig(this));
+            monitoringConfigList.Add(new Locks(this));
+            monitoringConfigList.Add(new MiscConfig(this));
+            monitoringConfigList.Add(new FpDispFault(this));
+            monitoringConfigList.Add(new L2Latency(this));
+            monitoringConfigList.Add(new PmcMonitoringConfig(this));
+            monitoringConfigList.Add(new TopDownConfig(this));
+            monitoringConfigs = monitoringConfigList.ToArray();
 
             architectureName = "Zen 2";
         }
@@ -125,6 +129,89 @@ namespace PmcReader.AMD
             }
         }
 
+        public class TopDownConfig : MonitoringConfig
+        {
+            private Zen2 cpu;
+            public string GetConfigName() { return "Top Down?"; }
+
+            public TopDownConfig(Zen2 amdCpu)
+            {
+                cpu = amdCpu;
+            }
+
+            public string[] GetColumns()
+            {
+                return columns;
+            }
+
+            public void Initialize()
+            {
+                cpu.EnablePerformanceCounters();
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    ThreadAffinity.Set(1UL << threadIdx);
+                    // Set PERF_CTR0 to count ops delivered from the frontend (any path)
+                    Ring0.WriteMsr(MSR_PERF_CTL_0, GetPerfCtlValue(0xAA, 0x3, true, true, false, false, true, false, 0, 0, false, false));
+
+                    // PERF_CTR1 = dispatch stalls 1
+                    Ring0.WriteMsr(MSR_PERF_CTL_1, GetPerfCtlValue(0xAE, 0xFF, true, true, false, false, true, false, 0, 0, false, false));
+
+                    // PERF_CTR2 = dispatch stalls 2
+                    Ring0.WriteMsr(MSR_PERF_CTL_2, GetPerfCtlValue(0xAF, 0x7F, true, true, false, false, true, false, 0, 0, false, false));
+
+                    // PERF_CTR3 = cycles FE active
+                    Ring0.WriteMsr(MSR_PERF_CTL_3, GetPerfCtlValue(0xAA, 0x3, true, true, false, false, true, false, cmask: 1, 0, false, false));
+
+                    // PERF_CTR4 = retired micro ops
+                    Ring0.WriteMsr(MSR_PERF_CTL_4, GetPerfCtlValue(0xC1, 0, true, true, false, false, true, false, 0, 0, false, false));
+
+                    // PERF_CTR5 = micro-op queue empty cycles
+                    Ring0.WriteMsr(MSR_PERF_CTL_5, GetPerfCtlValue(0xA9, 0, true, true, false, false, true, false, 0, 0, false, false));
+                }
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[cpu.GetThreadCount()][];
+                cpu.InitializeCoreTotals();
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    cpu.UpdateThreadCoreCounterData(threadIdx);
+                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
+                }
+
+                cpu.ReadPackagePowerCounter();
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                results.overallCounterValues = cpu.GetOverallCounterValues("FE Ops", "Dispatch Stall 1", "Dispatch Stall 2", "FE Active", "Retired Ops", "Op Queue Empty");
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", 
+                "Ops/C", "FE Ops/C", "FE active", "Op Queue Empty", "Dispatch Stall (total)", "Width Used" };
+
+            public string GetHelpText()
+            {
+                return "";
+            }
+
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
+            {
+                float bogusOps = 100 * (counterData.ctr0 + counterData.ctr2 - counterData.ctr4) / (counterData.ctr0 + counterData.ctr2);
+                if (counterData.ctr4 > counterData.ctr0 + counterData.ctr2) bogusOps = 0;
+                return new string[] { label,
+                    FormatLargeNumber(counterData.aperf),
+                    FormatLargeNumber(counterData.instr),
+                    string.Format("{0:F2}", counterData.instr / counterData.aperf), // ipc
+                    string.Format("{0:F2}", counterData.ctr4 / counterData.aperf), // ops/c
+                    string.Format("{0:F2}", counterData.ctr0 / counterData.aperf), // fe ops/c
+                    string.Format("{0:F2}%", 100 * counterData.ctr3 / counterData.aperf), // fe active
+                    string.Format("{0:F2}%", 100 * counterData.ctr5 / counterData.aperf), // op queue empty
+                    string.Format("{0:F2}%", 100 * (counterData.ctr1 + counterData.ctr2) / counterData.aperf), // dispatch stall
+                    string.Format("{0:F2}%", 100 * counterData.ctr4 / (5*counterData.aperf))}; // width used
+            }
+        }
+
         public class BpuMonitoringConfig : MonitoringConfig
         {
             private Zen2 cpu;
@@ -187,10 +274,10 @@ namespace PmcReader.AMD
                         FormatLargeNumber(counterData.instr),
                         string.Format("{0:F2}", counterData.instr / counterData.aperf),
                         string.Format("{0:F2}%", 100 * (1 - counterData.ctr1 / counterData.ctr0)),
-                        string.Format("{0:F2}", counterData.ctr1 / counterData.aperf * 1000),
+                        string.Format("{0:F2}", counterData.ctr1 / counterData.instr * 1000),
                         string.Format("{0:F2}%", counterData.ctr2 / counterData.aperf * 100),
                         string.Format("{0:F2}%", (4 * counterData.ctr3) / counterData.aperf * 100),
-                        string.Format("{0:F2}", counterData.ctr4 / counterData.aperf * 1000),
+                        string.Format("{0:F2}", counterData.ctr4 / counterData.instr * 1000),
                         string.Format("{0:F2}%", counterData.ctr5 / counterData.ctr0 * 100) };
             }
         }
@@ -721,6 +808,156 @@ namespace PmcReader.AMD
             }
         }
 
+        public class DCFillLatencyConfig : MonitoringConfig
+        {
+            private Zen2 cpu;
+            public string GetConfigName() { return "L1D Fill Latency"; }
+
+            public DCFillLatencyConfig(Zen2 amdCpu)
+            {
+                cpu = amdCpu;
+            }
+
+            public string[] GetColumns()
+            {
+                return columns;
+            }
+
+            public void Initialize()
+            {
+                cpu.EnablePerformanceCounters();
+                ulong dcHwPrefetch = GetPerfCtlValue(0x5A, 0x5B, true, true, false, false, true, false, 0, 0, false, false);
+
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    ThreadAffinity.Set(1UL << threadIdx);
+                    // dc access
+                    Ring0.WriteMsr(MSR_PERF_CTL_0, GetPerfCtlValue(0x40, 0, true, true, false, false, true, false, 0, 0, false, false));
+                    // lsMabAlloc
+                    Ring0.WriteMsr(MSR_PERF_CTL_1, GetPerfCtlValue(0x41, 0b1011, true, true, false, false, true, false, 0, 0, false, false));
+                    // allocated MABs
+                    Ring0.WriteMsr(MSR_PERF_CTL_2, GetPerfCtlValue(0x5F, 0, true, true, false, false, true, false, 0, 0, false, false));
+                    // (merge)
+                    Ring0.WriteMsr(MSR_PERF_CTL_3, GetPerfCtlValue(0xFF, 0, false, false, false, false, true, false, 0, 0xF, false, false));
+                    // mab match
+                    Ring0.WriteMsr(MSR_PERF_CTL_4, GetPerfCtlValue(0x55, 0, true, true, false, false, true, false, 0, 0, false, false));
+                    Ring0.WriteMsr(MSR_PERF_CTL_5, dcHwPrefetch);
+                }
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[cpu.GetThreadCount()][];
+                cpu.InitializeCoreTotals();
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    cpu.UpdateThreadCoreCounterData(threadIdx);
+                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx], false);
+                }
+
+                results.overallCounterValues = cpu.GetOverallCounterValues("DC Access", "LsMabAlloc", "Allocated MABs", "(merge)", "MAB Match", "DC HW Prefetch");
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts, true);
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "L1D Hitrate", "MAB Hit %", "MABs Allocated", "L1D Fill Latency", "L1D Fill Latency (ns)" };
+
+            public string GetHelpText()
+            {
+                return "";
+            }
+
+            public string[] computeMetrics(string label, NormalizedCoreCounterData counterData, bool total)
+            {
+                float clk = (total ? counterData.tsc / cpu.threadCount : counterData.tsc) * counterData.aperf / counterData.mperf;
+                float cycleTime = 1e9f / clk;
+                float l1dFillLatencyClks = counterData.ctr2 / counterData.ctr1;
+                return new string[] { label,
+                    FormatLargeNumber(counterData.aperf),
+                    FormatLargeNumber(counterData.instr),
+                    string.Format("{0:F2}", counterData.instr / counterData.aperf),
+                    string.Format("{0:F2}%", 100 * (1 - (counterData.ctr1 + counterData.ctr4) / counterData.ctr0)), // L1D hitrate, counting MAB hit as L1D miss
+                    string.Format("{0:F2}%", 100 * counterData.ctr4 / counterData.ctr0), // MAB hit %
+                    string.Format("{0:F2}", counterData.ctr2 / counterData.aperf), // MABs allocated per cycle
+                    string.Format("{0:F2} clk", l1dFillLatencyClks),
+                    string.Format("{0:F2} ns", l1dFillLatencyClks * cycleTime)
+                };
+            }
+        }
+
+        public class MABOccupancyConfig : MonitoringConfig
+        {
+            private Zen2 cpu;
+            public string GetConfigName() { return "MAB Occupancy"; }
+
+            public MABOccupancyConfig(Zen2 amdCpu)
+            {
+                cpu = amdCpu;
+            }
+
+            public string[] GetColumns()
+            {
+                return columns;
+            }
+
+            public void Initialize()
+            {
+                cpu.EnablePerformanceCounters();
+                ulong dcHwPrefetch = GetPerfCtlValue(0x5A, 0x5B, true, true, false, false, true, false, 0, 0, false, false);
+
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    ThreadAffinity.Set(1UL << threadIdx);
+                    // MABs allocated + merge
+                    Ring0.WriteMsr(MSR_PERF_CTL_0, GetPerfCtlValue(0x5F, 0, true, true, false, false, true, false, 0, 0, false, false));
+                    // (merge)
+                    Ring0.WriteMsr(MSR_PERF_CTL_1, GetPerfCtlValue(0xFF, 0, false, false, false, false, true, false, 0, 0xF, false, false));
+                    // >=11 allocated MABs + merge
+                    Ring0.WriteMsr(MSR_PERF_CTL_2, GetPerfCtlValue(0x5F, 0, true, true, false, false, true, false, cmask: 13, 0, false, false));
+                    Ring0.WriteMsr(MSR_PERF_CTL_3, GetPerfCtlValue(0xFF, 0, false, false, false, false, true, false, 0, 0xF, false, false));
+                    // >= 16 allocated MABs + merge
+                    Ring0.WriteMsr(MSR_PERF_CTL_4, GetPerfCtlValue(0x5F, 0, true, true, false, false, true, false, cmask: 17, 0, false, false));
+                    Ring0.WriteMsr(MSR_PERF_CTL_5, GetPerfCtlValue(0xFF, 0, false, false, false, false, true, false, 0, 0xF, false, false));
+                }
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[cpu.GetThreadCount()][];
+                cpu.InitializeCoreTotals();
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    cpu.UpdateThreadCoreCounterData(threadIdx);
+                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx], false);
+                }
+
+                results.overallCounterValues = cpu.GetOverallCounterValues("MABs allocated", "(merge)", ">12 MABs", "(merge)", ">=16 MABs", "(merge)");
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts, true);
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "MAB allocated", ">12 MABs", ">=16 MABs" };
+
+            public string GetHelpText()
+            {
+                return "";
+            }
+
+            public string[] computeMetrics(string label, NormalizedCoreCounterData counterData, bool total)
+            {
+                return new string[] { label,
+                    FormatLargeNumber(counterData.aperf),
+                    FormatLargeNumber(counterData.instr),
+                    string.Format("{0:F2}", counterData.instr / counterData.aperf),
+                    string.Format("{0:F2}", counterData.ctr0 / counterData.aperf),
+                    string.Format("{0:F2}%", 100 * counterData.ctr2 / counterData.aperf),
+                    string.Format("{0:F2}%", 100 * counterData.ctr4 / counterData.aperf),
+                };
+            }
+        }
+
         public class DCBWMonitoringConfig : MonitoringConfig
         {
             private Zen2 cpu;
@@ -941,7 +1178,7 @@ namespace PmcReader.AMD
                 return results;
             }
 
-            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "% Branches", "% Branches Taken", "ITA Overhead", "Indirect Branch MPKI", "RET Predict Accuracy" };
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "% Branches", "% Branches Taken", "ITA Overhead", "Indirect Branch MPKI", "Indirect Predict Accuracy", "RET Predict Accuracy", "RET MPKI" };
 
             public string GetHelpText() 
             { 
@@ -959,9 +1196,12 @@ namespace PmcReader.AMD
                         string.Format("{0:F2}", counterData.instr / counterData.aperf),
                         string.Format("{0:F2}%", counterData.ctr0 / counterData.instr * 100),
                         string.Format("{0:F2}%", counterData.ctr1 / counterData.ctr0 * 100),
-                        string.Format("{0:F2}%", counterData.ctr2 / counterData.aperf * 4 * 100),
+                        string.Format("{0:F2}", FormatPercentage(4 * counterData.ctr2, counterData.aperf)),
                         string.Format("{0:F2}", counterData.ctr3 / counterData.instr * 1000),
-                        string.Format("{0:F2}%", (1 - counterData.ctr5 / counterData.ctr4) * 100)};
+                        string.Format("{0:F2}", FormatPercentage(counterData.ctr3, counterData.ctr2)),
+                        string.Format("{0:F2}%", (1 - counterData.ctr5 / counterData.ctr4) * 100),
+                        string.Format("{0:F2}", 1000 * counterData.ctr5 / counterData.instr)
+                };
             }
         }
 
@@ -986,8 +1226,8 @@ namespace PmcReader.AMD
                 for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
                 {
                     ThreadAffinity.Set(1UL << threadIdx);
-                    // ls dispatch, all
-                    Ring0.WriteMsr(MSR_PERF_CTL_0, GetPerfCtlValue(0x29, 0x7, true, true, false, false, true, false, 0, 0, false, false));
+                    // dc access
+                    Ring0.WriteMsr(MSR_PERF_CTL_0, GetPerfCtlValue(0x40, 0, true, true, false, false, true, false, 0, 0, false, false));
                     // L1 dtlb miss, L2 tlb hit (4k, 2m, or 1g)
                     Ring0.WriteMsr(MSR_PERF_CTL_1, GetPerfCtlValue(0x45, 0b1101, true, true, false, false, true, false, 0, 0, false, false));
                     // L1 dtlb miss, l2 tlb miss
@@ -1012,17 +1252,16 @@ namespace PmcReader.AMD
                     results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
                 }
 
-                results.overallCounterValues = cpu.GetOverallCounterValues("LS Dispatch", "DTLB Miss STLB Hit", "STLB Miss", "Coalesced Page Hit", "Coalesced Page Miss", "TLB Flush");
+                results.overallCounterValues = cpu.GetOverallCounterValues("DC Access", "DTLB Miss STLB Hit", "STLB Miss", "Coalesced Page Hit", "Coalesced Page Miss", "TLB Flush");
                 results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
                 return results;
             }
 
-            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "LS Dispatch", "DTLB Hitrate", "DTLB MPKI", "L2 TLB Hitrate", "L2 TLB MPKI", "Coalesced page hit", "Coalesced page miss", "TLB Flush", "Data Page Walk"  };
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "DC Access", "DTLB Hitrate", "DTLB MPKI", "L2 TLB Hitrate", "L2 TLB MPKI", "Coalesced page hit", "Coalesced page miss", "TLB Flush", "Data Page Walk"  };
 
             public string GetHelpText() 
             { 
-                return "LS dispatch - all load/store ops dispatched\n" + 
-                    "Coalesced page hits are counted as DTLB misses, because the PPR says so\n(is this an error?)"; 
+                return ""; 
             }
 
             private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
@@ -1815,7 +2054,7 @@ namespace PmcReader.AMD
                     results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
                 }
 
-                results.overallCounterValues = cpu.GetOverallCounterValues("(DC Fill ExtCacheLocal)", "SW Prefetch Remote Cache/DRAM", "HW Prefetch Remote Cache/DRAM", "Speculative cacheable lock", "NonSpecLock", "BusLock");
+                results.overallCounterValues = cpu.GetOverallCounterValues("(DC Fill ExtCacheLocal)", "SW Prefetch Remote Cache/DRAM", "SpecLockLo", "SpecLockHi", "NonSpecLock", "BusLock");
                 results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
                 return results;
             }
