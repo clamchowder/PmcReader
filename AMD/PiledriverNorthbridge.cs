@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using PmcReader.Interop;
 
 namespace PmcReader.AMD
@@ -10,10 +11,14 @@ namespace PmcReader.AMD
         public PiledriverNorthbridge()
         {
             architectureName = "Piledriver Northbridge";
-            monitoringConfigs = new MonitoringConfig[3];
-            monitoringConfigs[0] = new MemBwConfig(this);
-            monitoringConfigs[1] = new L3Config(this);
-            monitoringConfigs[2] = new MemSubtimings(this);
+            List<MonitoringConfig> cfgs = new List<MonitoringConfig>();
+            cfgs.Add(new MemBwConfig(this));
+            cfgs.Add(new L3Config(this));
+            cfgs.Add(new MemSubtimings(this));
+            cfgs.Add(new NbRequests(this));
+            cfgs.Add(new SriCommands(this));
+            cfgs.Add(new L3Commands(this));
+            monitoringConfigs = cfgs.ToArray();
         }
 
         private void ProgramPerfCounters(ulong ctr0, ulong ctr1, ulong ctr2, ulong ctr3)
@@ -149,7 +154,7 @@ namespace PmcReader.AMD
         {
             private PiledriverNorthbridge dataFabric;
 
-            public string[] columns = new string[] { "Item", "Hitrate", "Hit BW", "DCT0 BW", "DCT1 BW", "Total Mem BW" };
+            public string[] columns = new string[] { "Item", "Hitrate", "Hit BW", "L3 Fill BW", "L3 Evictions, Writeback", "Total L3 BW" };
             public string GetHelpText() { return ""; }
             public L3Config(PiledriverNorthbridge dataFabric)
             {
@@ -163,8 +168,8 @@ namespace PmcReader.AMD
                 dataFabric.ProgramPerfCounters(
                     GetNBPerfCtlValue(0xE0, 0xF7, true, 4), // L3 read request, all cores, all requests
                     GetNBPerfCtlValue(0xE1, 0xF7, true, 4), // L3 miss, as above
-                    GetNBPerfCtlValue(0xE0, 0b111, true, 0), // DCT0 requests
-                    GetNBPerfCtlValue(0xE0, 0b111000, true, 0)); // DCT1 requests
+                    GetNBPerfCtlValue(0xE2, 0xFF, true, 4), // L3 fills
+                    GetNBPerfCtlValue(0xE3, 0x8, true, 4)); // L3 modified evictions
             }
 
             public MonitoringUpdateResults Update()
@@ -180,10 +185,132 @@ namespace PmcReader.AMD
                     FormatLargeNumber(64 * l3Hits) + "B/s",
                     FormatLargeNumber(64 * counterData.ctr2) + "B/s",
                     FormatLargeNumber(64 * counterData.ctr3) + "B/s",
-                    FormatLargeNumber(64 * (counterData.ctr2 + counterData.ctr3)) + "B/s"
+                    FormatLargeNumber(64 * (l3Hits + counterData.ctr2 + counterData.ctr3)) + "B/s"
                 };
 
-                results.overallCounterValues = dataFabric.GetOverallCounterValues(counterData, "L3 Read Request", "L3 Miss", "DCT0 Access", "DCT1 Access");
+                results.overallCounterValues = dataFabric.GetOverallCounterValues(counterData, "L3 Read Request", "L3 Miss", "L3 Fill", "L3 Eviction, Modified");
+                return results;
+            }
+        }
+
+        public class L3Commands : MonitoringConfig
+        {
+            private PiledriverNorthbridge dataFabric;
+
+            public string[] columns = new string[] { "Item", "Bandwidth", "Count" };
+            public string GetHelpText() { return ""; }
+            public L3Commands(PiledriverNorthbridge dataFabric)
+            {
+                this.dataFabric = dataFabric;
+            }
+
+            public string GetConfigName() { return "Cache Block Commands"; }
+            public string[] GetColumns() { return columns; }
+            public void Initialize()
+            {
+                dataFabric.ProgramPerfCounters(
+                    GetNBPerfCtlValue(0xEA, 0x20, true, 0), // Change-To-Dirty
+                    GetNBPerfCtlValue(0xEA, 0x14, true, 0), // Read Block/Read Block Modified
+                    GetNBPerfCtlValue(0xEA, 0x8, true, 0), // Read Block Shared
+                    GetNBPerfCtlValue(0xEA, 0x1, true, 0)); // Victim/Writeback
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                NormalizedNbCounterData counterData = dataFabric.UpdateNbPerfCounterData();
+
+                results.unitMetrics = new string[4][];
+                results.unitMetrics[0] = new string[] { "Read Block/Read Block Modified", FormatLargeNumber(counterData.ctr1 * 64) + "B/s", FormatLargeNumber(counterData.ctr1) };
+                results.unitMetrics[1] = new string[] { "Read Block Shared", FormatLargeNumber(counterData.ctr2 * 64) + "B/s", FormatLargeNumber(counterData.ctr2) };
+                results.unitMetrics[2] = new string[] { "Victim Block (Writeback)", FormatLargeNumber(counterData.ctr3 * 64) + "B/s", FormatLargeNumber(counterData.ctr3) };
+                results.unitMetrics[3] = new string[] { "Change-to-Dirty", FormatLargeNumber(counterData.ctr0 * 64) + "B/s", FormatLargeNumber(counterData.ctr0) };
+
+                float totalReqs = counterData.ctr1 + counterData.ctr2 + counterData.ctr3;
+                results.overallMetrics = new string[] { "Overall", FormatLargeNumber(totalReqs * 64) + "B/s", FormatLargeNumber(totalReqs) };
+
+                results.overallCounterValues = dataFabric.GetOverallCounterValues(counterData, "Change-To-Dirty", "Read Block/Modified", "Read Block Shared", "Victim Block");
+                return results;
+            }
+        }
+
+        public class NbRequests : MonitoringConfig
+        {
+            private PiledriverNorthbridge dataFabric;
+
+            public string[] columns = new string[] { "Item", "Count" };
+            public string GetHelpText() { return ""; }
+            public NbRequests(PiledriverNorthbridge dataFabric)
+            {
+                this.dataFabric = dataFabric;
+            }
+
+            public string GetConfigName() { return "Northbridge Requests"; }
+            public string[] GetColumns() { return columns; }
+            public void Initialize()
+            {
+                dataFabric.ProgramPerfCounters(
+                    GetNBPerfCtlValue(0xE9, 0xA8, true, 0), // CPU to mem
+                    GetNBPerfCtlValue(0xE9, 0xA4, true, 0), // CPU to IO
+                    GetNBPerfCtlValue(0xE9, 0xA2, true, 0), // IO to mem
+                    GetNBPerfCtlValue(0xE9, 0xA1, true, 0)); // IO to IO
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                NormalizedNbCounterData counterData = dataFabric.UpdateNbPerfCounterData();
+
+                results.unitMetrics = new string[4][];
+                results.unitMetrics[0] = new string[] { "CPU to Mem", FormatLargeNumber(counterData.ctr0) };
+                results.unitMetrics[1] = new string[] { "CPU to IO", FormatLargeNumber(counterData.ctr1) };
+                results.unitMetrics[2] = new string[] { "IO to Mem", FormatLargeNumber(counterData.ctr2) };
+                results.unitMetrics[3] = new string[] { "IO to IO", FormatLargeNumber(counterData.ctr3) };
+
+                float totalReqs = counterData.ctr0 + counterData.ctr1 + counterData.ctr2;
+                results.overallMetrics = new string[] { "Overall", FormatLargeNumber(totalReqs) };
+
+                results.overallCounterValues = dataFabric.GetOverallCounterValues(counterData, "CPU to Mem", "CPU to IO", "IO to Mem", "IO to IO");
+                return results;
+            }
+        }
+
+        public class SriCommands : MonitoringConfig
+        {
+            private PiledriverNorthbridge dataFabric;
+
+            public string[] columns = new string[] { "Item", "Count" };
+            public string GetHelpText() { return ""; }
+            public SriCommands(PiledriverNorthbridge dataFabric)
+            {
+                this.dataFabric = dataFabric;
+            }
+
+            public string GetConfigName() { return "System Request Interface"; }
+            public string[] GetColumns() { return columns; }
+            public void Initialize()
+            {
+                dataFabric.ProgramPerfCounters(
+                    GetNBPerfCtlValue(0xEB, 0b110000, true, 0), // SzRd
+                    GetNBPerfCtlValue(0xEB, 0b1100, true, 0), // Posted SzWr
+                    GetNBPerfCtlValue(0xEB, 0b11, true, 0), // Non-Posted SzWr
+                    GetNBPerfCtlValue(0xEB, 0xA1, true, 0)); // IO to IO, unused
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                NormalizedNbCounterData counterData = dataFabric.UpdateNbPerfCounterData();
+
+                results.unitMetrics = new string[3][];
+                results.unitMetrics[0] = new string[] { "Sized Read", FormatLargeNumber(counterData.ctr0) };
+                results.unitMetrics[1] = new string[] { "Posted Sized Write", FormatLargeNumber(counterData.ctr1) };
+                results.unitMetrics[2] = new string[] { "Non-Posted Sized Write", FormatLargeNumber(counterData.ctr2) };
+
+                float totalReqs = counterData.ctr0 + counterData.ctr1 + counterData.ctr2;
+                results.overallMetrics = new string[] { "Overall", FormatLargeNumber(totalReqs) };
+
+                results.overallCounterValues = dataFabric.GetOverallCounterValues(counterData, "SzRd", "Posted SzWr", "Non-Posted SzWr", "Unused");
                 return results;
             }
         }
