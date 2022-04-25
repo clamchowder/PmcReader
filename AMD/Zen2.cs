@@ -20,10 +20,12 @@ namespace PmcReader.AMD
             monitoringConfigList.Add(new PageWalkConfig(this));
             monitoringConfigList.Add(new LSConfig(this));
             monitoringConfigList.Add(new LSSwPrefetch(this));
-            monitoringConfigList.Add(new DCMonitoringConfig(this));
+            monitoringConfigList.Add(new DCFillSource(this, "L1D Demand Fill", 0x43));
             monitoringConfigList.Add(new DCBWMonitoringConfig(this));
             monitoringConfigList.Add(new DCFillLatencyConfig(this));
             monitoringConfigList.Add(new MABOccupancyConfig(this));
+            monitoringConfigList.Add(new DCFillSource(this, "L1D HwPf Fill", 0x5A));
+            monitoringConfigList.Add(new DCFillSource(this, "L1D TableWalker Fill", 0x5B));
             monitoringConfigList.Add(new L2MonitoringConfig(this));
             monitoringConfigList.Add(new FlopsMonitoringConfig(this));
             monitoringConfigList.Add(new RetireConfig(this));
@@ -713,14 +715,19 @@ namespace PmcReader.AMD
                         FormatLargeNumber(l2PrefetchBw) + "B/s"};
             }
         }
-        public class DCMonitoringConfig : MonitoringConfig
+
+        public class DCFillSource : MonitoringConfig
         {
             private Zen2 cpu;
-            public string GetConfigName() { return "L1D Cache"; }
+            private string cfgName;
+            private byte evt;
+            public string GetConfigName() { return cfgName; }
 
-            public DCMonitoringConfig(Zen2 amdCpu)
+            public DCFillSource(Zen2 amdCpu, string name, byte evt)
             {
                 cpu = amdCpu;
+                cfgName = name;
+                this.evt = evt;
             }
 
             public string[] GetColumns()
@@ -733,9 +740,9 @@ namespace PmcReader.AMD
                 cpu.EnablePerformanceCounters();
                 ulong dcAccess = GetPerfCtlValue(0x40, 0, true, true, false, false, true, false, 0, 0, false, false);
                 ulong lsMabAlloc = GetPerfCtlValue(0x41, 0x3, true, true, false, false, true, false, 0, 0, false, false);
-                ulong dcRefillFromL2 = GetPerfCtlValue(0x43, 0x1, true, true, false, false, true, false, 0, 0, false, false);
-                ulong dcRefillFromL3 = GetPerfCtlValue(0x43, 0x12, true, true, false, false, true, false, 0, 0, false, false);
-                ulong dcRefillFromDram = GetPerfCtlValue(0x43, 0x48, true, true, false, false, true, false, 0, 0, false, false);
+                ulong dcRefillFromL2 = GetPerfCtlValue(evt, 0x1, true, true, false, false, true, false, 0, 0, false, false);
+                ulong dcRefillFromL3 = GetPerfCtlValue(evt, 0x12, true, true, false, false, true, false, 0, 0, false, false);
+                ulong dcRefillFromDram = GetPerfCtlValue(evt, 0x48, true, true, false, false, true, false, 0, 0, false, false);
                 ulong dcHwPrefetch = GetPerfCtlValue(0x5A, 0x5B, true, true, false, false, true, false, 0, 0, false, false);
 
                 for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
