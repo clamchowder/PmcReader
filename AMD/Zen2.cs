@@ -17,6 +17,7 @@ namespace PmcReader.AMD
             monitoringConfigList.Add(new ResourceStallMontitoringConfig(this));
             monitoringConfigList.Add(new IntSchedulerMonitoringConfig(this));
             monitoringConfigList.Add(new DtlbConfig(this));
+            monitoringConfigList.Add(new PageWalkConfig(this));
             monitoringConfigList.Add(new LSConfig(this));
             monitoringConfigList.Add(new LSSwPrefetch(this));
             monitoringConfigList.Add(new DCMonitoringConfig(this));
@@ -1205,6 +1206,83 @@ namespace PmcReader.AMD
             }
         }
 
+        public class PageWalkConfig : MonitoringConfig
+        {
+            private Zen2 cpu;
+            public string GetConfigName() { return "Page Walk"; }
+
+            public PageWalkConfig(Zen2 amdCpu)
+            {
+                cpu = amdCpu;
+            }
+
+            public string[] GetColumns()
+            {
+                return columns;
+            }
+
+            public void Initialize()
+            {
+                cpu.EnablePerformanceCounters();
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    ThreadAffinity.Set(1UL << threadIdx);
+                    // tablewalk in progress, i-side 0
+                    Ring0.WriteMsr(MSR_PERF_CTL_0, GetPerfCtlValue(0x4E, 0x2, true, true, false, false, true, false, 0, 0, false, false));
+                    // tablewalk in progress, i-side 1
+                    Ring0.WriteMsr(MSR_PERF_CTL_1, GetPerfCtlValue(0x4E, 0x8, true, true, false, false, true, false, 0, 0, false, false));
+                    // tablewalk in progress, d-side 0
+                    Ring0.WriteMsr(MSR_PERF_CTL_2, GetPerfCtlValue(0x4E, 0x1, true, true, false, false, true, false, 0, 0, false, false));
+                    // tablewalk in progress, d-side 1
+                    Ring0.WriteMsr(MSR_PERF_CTL_3, GetPerfCtlValue(0x4E, 0x4, true, true, false, false, true, false, 0, 0, false, false));
+                    // total d-side walks
+                    Ring0.WriteMsr(MSR_PERF_CTL_4, GetPerfCtlValue(0x46, 0x3, true, true, false, false, true, false, 0, 0, false, false));
+                    // total i-side walks
+                    Ring0.WriteMsr(MSR_PERF_CTL_5, GetPerfCtlValue(0x46, 0b1100, true, true, false, false, true, false, 0, 0, false, false));
+                }
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[cpu.GetThreadCount()][];
+                cpu.InitializeCoreTotals();
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    cpu.UpdateThreadCoreCounterData(threadIdx);
+                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
+                }
+
+                results.overallCounterValues = cpu.GetOverallCounterValues("i-side 0 walk in progress", "i-side 1 walk in progress", "d-side 0 walk in progress", "d-side 1 walk in progress", "d-side walks", "i-side walks");
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "Instr Tablewalker 0 Busy", "Instr Tablewalker 1 Busy", "Data Tablewalker 0 Busy", "Data Tablewalker 1 Busy", "Instr Walk Duration", "Data Walk Duration" };
+
+            public string GetHelpText() 
+            { 
+                return ""; 
+            }
+
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
+            {
+                // PPR says to count all this (incl coalesced page hit) as DTLB miss?
+                float dtlbMiss = counterData.ctr1 + counterData.ctr2 + counterData.ctr3 + counterData.ctr4;
+                return new string[] { label,
+                        FormatLargeNumber(counterData.aperf) + "/s",
+                        FormatLargeNumber(counterData.instr) + "/s",
+                        string.Format("{0:F2}", counterData.instr / counterData.aperf),
+                        FormatPercentage(counterData.ctr0, counterData.aperf),
+                        FormatPercentage(counterData.ctr1, counterData.aperf),
+                        FormatPercentage(counterData.ctr2, counterData.aperf),
+                        FormatPercentage(counterData.ctr3, counterData.aperf),
+                        string.Format("{0:F2} clks", (counterData.ctr0 + counterData.ctr1) / counterData.ctr5),
+                        string.Format("{0:F2} clks", (counterData.ctr2 + counterData.ctr3) / counterData.ctr4)
+                };
+            }
+        }
+
         public class DtlbConfig : MonitoringConfig
         {
             private Zen2 cpu;
@@ -1257,11 +1335,11 @@ namespace PmcReader.AMD
                 return results;
             }
 
-            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "DC Access", "DTLB Hitrate", "DTLB MPKI", "L2 TLB Hitrate", "L2 TLB MPKI", "Coalesced page hit", "Coalesced page miss", "TLB Flush", "Data Page Walk"  };
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "DC Access", "DTLB Hitrate", "DTLB MPKI", "L2 TLB Hitrate", "L2 TLB MPKI", "Coalesced page hit", "Coalesced page miss", "TLB Flush", "Data Page Walk" };
 
-            public string GetHelpText() 
-            { 
-                return ""; 
+            public string GetHelpText()
+            {
+                return "";
             }
 
             private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
