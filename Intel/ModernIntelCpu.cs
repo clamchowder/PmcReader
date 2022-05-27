@@ -1008,6 +1008,86 @@ namespace PmcReader.Intel
             }
         }
 
+        public class OffcoreBw : MonitoringConfig
+        {
+            private ModernIntelCpu cpu;
+            public string GetConfigName() { return "Offcore BW (Burst)"; }
+
+            public OffcoreBw(ModernIntelCpu intelCpu)
+            {
+                cpu = intelCpu;
+            }
+
+            public string[] GetColumns()
+            {
+                return columns;
+            }
+
+            public void Initialize()
+            {
+                cpu.EnablePerformanceCounters();
+
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    ThreadAffinity.Set(1UL << threadIdx);
+                    // cmask 4
+                    Ring0.WriteMsr(IA32_PERFEVTSEL0, GetPerfEvtSelRegisterValue(0x60, 0x8 | 0x2, true, true, false, false, false, false, true, false, cmask: 4));
+
+                    // cmask 8
+                    Ring0.WriteMsr(IA32_PERFEVTSEL1, GetPerfEvtSelRegisterValue(0x60, 0x8 | 0x2, true, true, false, false, false, false, true, false, cmask: 8));
+
+                    // cmask 12
+                    Ring0.WriteMsr(IA32_PERFEVTSEL2, GetPerfEvtSelRegisterValue(0x60, 0x8 | 0x2, true, true, false, false, false, false, true, false, cmask: 12));
+
+                    // cmask 16
+                    Ring0.WriteMsr(IA32_PERFEVTSEL3, GetPerfEvtSelRegisterValue(0x60, 0x8 | 0x2, true, true, false, false, false, false, true, false, cmask: 16));
+                }
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[cpu.GetThreadCount()][];
+                cpu.InitializeCoreTotals();
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    cpu.UpdateThreadCoreCounterData(threadIdx);
+                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx], false);
+                }
+
+                cpu.ReadPackagePowerCounter();
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts, true);
+                results.overallCounterValues = cpu.GetOverallCounterValues("offcore req cmask 4", "offcore req cmask 8", "offcore req cmask 12", "offcore req cmask 16");
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "Pkg Pwr", "Instr/Watt", "offcore req cmask 4", "offcore req cmask 8", "offcore req cmask 12", "offcore req cmask 16" };
+
+            public string GetHelpText()
+            {
+                return "";
+            }
+
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData, bool overall)
+            {
+                float oneOp = counterData.pmc0 - counterData.pmc1;
+                float twoOps = counterData.pmc1 - counterData.pmc2;
+                float threeOps = counterData.pmc2 - counterData.pmc3;
+                float opCacheOps = oneOp + 2 * twoOps + 3 * threeOps + 4 * counterData.pmc3;
+                return new string[] { label,
+                       FormatLargeNumber(counterData.activeCycles),
+                       FormatLargeNumber(counterData.instr),
+                       string.Format("{0:F2}", counterData.instr / counterData.activeCycles),
+                       overall ? string.Format("{0:F2} W", counterData.packagePower) : "N/A",
+                       overall ? FormatLargeNumber(counterData.instr / counterData.packagePower) : "N/A",
+                       FormatPercentage(counterData.pmc0, counterData.activeCycles),
+                       FormatPercentage(counterData.pmc1, counterData.activeCycles),
+                       FormatPercentage(counterData.pmc2, counterData.activeCycles),
+                       FormatPercentage(counterData.pmc3, counterData.activeCycles),
+                };
+            }
+        }
+
         public class ArchitecturalCounters : MonitoringConfig
         {
             private ModernIntelCpu cpu;
