@@ -44,6 +44,10 @@ namespace PmcReader
                             dfMonitoring.monitoringArea = new Intel.HaswellClientArb();
                             dfLabelOverride = "System Agent Monitoring Configs (pick one):";
                         }
+                        else if (cpuModel == 0x3F)
+                        {
+                            l3Monitoring.monitoringArea = new Intel.HaswellEL3();
+                        }
                     }
                     else if (cpuModel == 0x2A || cpuModel == 0x2D)
                     {

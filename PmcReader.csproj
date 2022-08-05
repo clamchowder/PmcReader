@@ -66,6 +66,7 @@
     <Compile Include="HaswellForm.Designer.cs">
       <DependentUpon>HaswellForm.cs</DependentUpon>
     </Compile>
+    <Compile Include="Intel\HaswellEL3.cs" />
     <Compile Include="Intel\SkylakeClientArb.cs" />
     <Compile Include="Intel\HaswellClientArb.cs" />
     <Compile Include="Intel\SkylakeClientL3.cs" />
@@ -101,6 +102,7 @@
     </Compile>
     <EmbeddedResource Include="Interop\WinRing0.sys" />
     <EmbeddedResource Include="Interop\WinRing0x64.sys" />
+    <EmbeddedResource Include="Interop\winpmem_64.sys" />
     <None Include="Properties\Settings.settings">
       <Generator>SettingsSingleFileGenerator</Generator>
       <LastGenOutput>Settings.Designer.cs</LastGenOutput>
