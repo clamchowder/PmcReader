@@ -1,14 +1,13 @@
 ﻿using PmcReader.Interop;
 using System;
-using System.Runtime.Remoting.Messaging;
-using System.Threading;
+using System.Collections.Generic;
 
 namespace PmcReader.Intel
 {
     /// <summary>
     /// The uncore from hell?
     /// </summary>
-    public class SandyBridgePCU : ModernIntelCpu
+    public class SandyBridgeUncore : ModernIntelCpu
     {
         public const uint PCU_MSR_PMON_CTR0 = 0xC36;
         public const uint PCU_MSR_PMON_CTR1 = 0xC37;
@@ -31,13 +30,15 @@ namespace PmcReader.Intel
         // PCU runs at fixed 800 MHz
         public const ulong PcuFrequency = 8000000;
 
-        public SandyBridgePCU()
+        public SandyBridgeUncore()
         {
-            architectureName = "Sandy Bridge E Power Control Unit";
-            monitoringConfigs = new MonitoringConfig[3];
-            monitoringConfigs[0] = new VoltageTransitions(this);
-            monitoringConfigs[1] = new Limits(this);
-            monitoringConfigs[2] = new ChangeAndPhaseShedding(this);
+            architectureName = "Sandy Bridge E Uncore";
+            List<MonitoringConfig> configs = new List<MonitoringConfig>();
+            configs.Add(new VoltageTransitions(this));
+            configs.Add(new Limits(this));
+            configs.Add(new ChangeAndPhaseShedding(this));
+            //configs.Add(new MemoryBandwidth(this)); // does not work because writing pci config doesn't work
+            monitoringConfigs = configs.ToArray();
         }
 
         /// <summary>
@@ -203,10 +204,10 @@ namespace PmcReader.Intel
 
         public class VoltageTransitions : MonitoringConfig
         {
-            private SandyBridgePCU cpu;
-            public string GetConfigName() { return "Voltage Transitions"; }
+            private SandyBridgeUncore cpu;
+            public string GetConfigName() { return "PCU: Voltage Transitions"; }
 
-            public VoltageTransitions(SandyBridgePCU intelCpu)
+            public VoltageTransitions(SandyBridgeUncore intelCpu)
             {
                 cpu = intelCpu;
             }
@@ -255,10 +256,10 @@ namespace PmcReader.Intel
 
         public class Limits : MonitoringConfig
         {
-            private SandyBridgePCU cpu;
-            public string GetConfigName() { return "Limits"; }
+            private SandyBridgeUncore cpu;
+            public string GetConfigName() { return "PCU: Limits"; }
 
-            public Limits(SandyBridgePCU intelCpu)
+            public Limits(SandyBridgeUncore intelCpu)
             {
                 cpu = intelCpu;
             }
@@ -298,10 +299,10 @@ namespace PmcReader.Intel
 
         public class ChangeAndPhaseShedding : MonitoringConfig
         {
-            private SandyBridgePCU cpu;
-            public string GetConfigName() { return "Transition Cycles/Phase Shedding"; }
+            private SandyBridgeUncore cpu;
+            public string GetConfigName() { return "PCU: Transition Cycles/Phase Shedding"; }
 
-            public ChangeAndPhaseShedding(SandyBridgePCU intelCpu)
+            public ChangeAndPhaseShedding(SandyBridgeUncore intelCpu)
             {
                 cpu = intelCpu;
             }
@@ -336,6 +337,299 @@ namespace PmcReader.Intel
             }
 
             public string[] columns = new string[] { "Item", "Cycles" };
+            public string GetHelpText() { return ""; }
+        }
+
+        public const uint MC_CH_PCI_PMON_BOX_CTL = 0xF4;
+        public const uint MC_CH_PCI_PMON_FIXED_CTL = 0xF0; 
+        public const uint MC_CH_PCI_PMON_FIXED_CTR = 0xD0; // Fixed counter, counts IMC cycles
+        public const uint MC_CH_PCI_PMON_CTL0 = 0xD8;
+        public const uint MC_CH_PCI_PMON_CTL1 = 0xDC;
+        public const uint MC_CH_PCI_PMON_CTL2 = 0xE0;
+        public const uint MC_CH_PCI_PMON_CTL3 = 0xE4;
+        public const uint MC_CH_PCI_PMON_CTR0 = 0xA0;
+        public const uint MC_CH_PCI_PMON_CTR1 = 0xA8;
+        public const uint MC_CH_PCI_PMON_CTR2 = 0xB0;
+        public const uint MC_CH_PCI_PMON_CTR3 = 0xB8;
+
+        /// <summary>
+        /// Holds counter data for all four IMC channels
+        /// </summary>
+        public class ImcCounterData
+        {
+            public float[] cycles;
+            public float[] ctr0;
+            public float[] ctr1;
+            public float[] ctr2;
+            public float[] ctr3;
+        }
+
+
+        private ImcCounterData imcCounterData;
+
+        /// <summary>
+        /// Get the PCICFG base address of the memory controller
+        /// </summary>
+        /// <param name="channel">Memory controller channel</param>
+        /// <returns>PCICFG base address</returns>
+        public uint GetImcPciAddress(uint channel)
+        {
+            if (channel == 0) return Ring0.GetPciAddress(0, 0x16, 0xF0);
+            else if (channel == 1) return Ring0.GetPciAddress(0, 0x16, 0xF1);
+            else if (channel == 2) return Ring0.GetPciAddress(0, 0x16, 0xF4);
+            else if (channel == 3) return Ring0.GetPciAddress(0, 0x16, 0xF5);
+            throw new Exception("Sandy Bridge E only has four memory channels");
+        }
+
+        /// <summary>
+        /// Write an IMC PMON register across all four channels
+        /// </summary>
+        /// <param name="register">PCICFG register</param>
+        /// <param name="value">Register to write</param>
+        public void WriteImcRegister(uint register, uint value)
+        {
+            for (uint channel = 0; channel < 4; channel++)
+            {
+                uint imcAddress = GetImcPciAddress(channel);
+                bool writeSuccess = Ring0.WritePciConfig(imcAddress, register, value);
+                Ring0.ReadPciConfig(imcAddress, register, out uint readValue);
+                if (!writeSuccess)
+                {
+                    Console.WriteLine("Write failed");
+                }
+
+                if (readValue != value)
+                {
+                    Console.WriteLine("Wrote {0:X} but got {1:X}", value, readValue);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Enable fixed IMC counter, which tracks number of DRAM clocks = half DDR speed. Also reset it
+        /// </summary>
+        public void EnableImcFixedCounter()
+        {
+            uint enableFixedCounterValue = 1U << 22;
+            WriteImcRegister(MC_CH_PCI_PMON_FIXED_CTL, enableFixedCounterValue);
+        }
+
+        /// <summary>
+        /// Get value to program IMC perf counter with
+        /// </summary>
+        /// <param name="evt">Event</param>
+        /// <param name="umask">Unit mask</param>
+        /// <param name="edge">Edge detect (increment on change from 0 to 1)</param>
+        /// <param name="invert">Invert cmask</param>
+        /// <param name="cmask">Increment counter only if count exceeds cmask in that cycle</param>
+        /// <returns>Perf counter value</returns>
+        public static uint GetImcPerfControlValue(byte evt, byte umask, bool edge, bool invert, byte cmask)
+        {
+            return evt |
+                (uint)umask << 8 |
+                (edge ? 1U << 18 : 0) |
+                1U << 22 | // enable
+                (invert ? 1U << 23 : 0) |
+                (uint)cmask << 31;
+        }
+
+        /// <summary>
+        /// Program performance counters across all four IMC channels
+        /// </summary>
+        public void ProgramImcPerfCounters(uint ctr0, uint ctr1, uint ctr2, uint ctr3)
+        {
+            this.ClearAndInitImcCounterData();
+            EnableImcFixedCounter();
+            WriteImcRegister(MC_CH_PCI_PMON_CTL0, ctr0);
+            WriteImcRegister(MC_CH_PCI_PMON_CTL1, ctr1);
+            WriteImcRegister(MC_CH_PCI_PMON_CTL2, ctr2);
+            WriteImcRegister(MC_CH_PCI_PMON_CTL3, ctr3);
+        }
+
+        /// <summary>
+        /// Set IMC performance monitoring control box to allow freezing counters,
+        /// across all four channels
+        /// </summary>
+        public void EnableImcBoxFreeze()
+        {
+            for (uint channel = 0; channel < 4; channel++)
+            {
+                uint imcAddress = GetImcPciAddress(channel);
+                uint boxControlValue = 0;
+                Ring0.ReadPciConfig(imcAddress, MC_CH_PCI_PMON_BOX_CTL, out boxControlValue);
+                boxControlValue |= 1 << 16; // bit 16 = freeze enable
+                Ring0.WritePciConfig(imcAddress, MC_CH_PCI_PMON_BOX_CTL, boxControlValue);
+            }
+        }
+
+        public void FreezeImcBox()
+        {
+            for (uint channel = 0; channel < 4; channel++)
+            {
+                uint imcAddress = GetImcPciAddress(channel);
+                uint boxControlValue = 0;
+                Ring0.ReadPciConfig(imcAddress, MC_CH_PCI_PMON_BOX_CTL, out boxControlValue);
+                boxControlValue |= 1 << 8; // bit 8 = freeze counters
+                Ring0.WritePciConfig(imcAddress, MC_CH_PCI_PMON_BOX_CTL, boxControlValue);
+            }
+        }
+
+        public void UnfreezeImcBox()
+        {
+            for (uint channel = 0; channel < 4; channel++)
+            {
+                uint imcAddress = GetImcPciAddress(channel);
+                uint boxControlValue = 0;
+                Ring0.ReadPciConfig(imcAddress, MC_CH_PCI_PMON_BOX_CTL, out boxControlValue);
+                boxControlValue &= ~(1U << 8); // bit 8 = freeze counters
+                Ring0.WritePciConfig(imcAddress, MC_CH_PCI_PMON_BOX_CTL, boxControlValue);
+            }
+        }
+
+        /// <summary>
+        /// Clear and initialize IMC counter data
+        /// </summary>
+        public void ClearAndInitImcCounterData()
+        {
+            if (this.imcCounterData == null) this.imcCounterData = new ImcCounterData();
+            if (this.imcCounterData.cycles == null) this.imcCounterData.cycles = new float[4];
+            if (this.imcCounterData.ctr0 == null) this.imcCounterData.ctr0 = new float[4];
+            if (this.imcCounterData.ctr1 == null) this.imcCounterData.ctr1 = new float[4];
+            if (this.imcCounterData.ctr2 == null) this.imcCounterData.ctr2 = new float[4];
+            if (this.imcCounterData.ctr3 == null) this.imcCounterData.ctr3 = new float[4];
+
+            for (uint i = 0; i < 4; i++)
+            {
+                this.imcCounterData.cycles[i] = 0;
+                this.imcCounterData.ctr0[i] = 0;
+                this.imcCounterData.ctr1[i] = 0;
+                this.imcCounterData.ctr2[i] = 0;
+                this.imcCounterData.ctr3[i] = 0;
+            }
+        }
+
+        /// <summary>
+        /// Since ReadPciConfig only reads 32 bits, and counters are 2x32, this one reads both at once, and clears both at once
+        /// </summary>
+        /// <param name="address">PCICFG base address</param>
+        /// <param name="register">PCICFG register base</param>
+        /// <returns>64-bit counter value</returns>
+        public ulong ReadAndClear64BitCtr(uint address, uint register)
+        {
+            Ring0.ReadPciConfig(address, register, out uint ctrlo);
+            Ring0.ReadPciConfig(address, register + 4, out uint ctrhi);
+            ulong rc = ctrlo + ((ulong)ctrhi << 32);
+            Ring0.WritePciConfig(address, register, 0);
+            Ring0.WritePciConfig(address, register + 4, 0);
+            return rc;
+        }
+
+        public void UpdateImcCounters()
+        {
+            float normalizationFactor = GetNormalizationFactor(0);
+            ImcCounterData rc = new ImcCounterData();
+            ulong ctr0, ctr1, ctr2, ctr3, fixedCtr;
+
+            for (uint channel = 0; channel < 4; channel++)
+            {
+                uint baseAddress = GetImcPciAddress(channel);
+                fixedCtr = ReadAndClear64BitCtr(baseAddress, MC_CH_PCI_PMON_FIXED_CTR);
+                ctr0 = ReadAndClear64BitCtr(baseAddress, MC_CH_PCI_PMON_CTR0);
+                ctr1 = ReadAndClear64BitCtr(baseAddress, MC_CH_PCI_PMON_CTR1);
+                ctr2 = ReadAndClear64BitCtr(baseAddress, MC_CH_PCI_PMON_CTR2);
+                ctr3 = ReadAndClear64BitCtr(baseAddress, MC_CH_PCI_PMON_CTR3);
+                this.imcCounterData.cycles[channel] = fixedCtr * normalizationFactor;
+                this.imcCounterData.ctr0[channel] = ctr0 * normalizationFactor;
+                this.imcCounterData.ctr1[channel] = ctr1 * normalizationFactor;
+                this.imcCounterData.ctr2[channel] = ctr2 * normalizationFactor;
+                this.imcCounterData.ctr3[channel] = ctr3 * normalizationFactor;
+            }
+        }
+
+        /// <summary>
+        /// Enables the fixed IMC counter on all four memory channels
+        /// </summary>
+        /// <param name="channel"></param>
+        public void EnableImcFixedCounter(uint channel)
+        {
+            uint imcAddress = Ring0.GetPciAddress(0, 0x16, 0xF0);
+            uint test = 0;
+            bool memtest = Ring0.ReadPciConfig(imcAddress, 0xF4, out test);
+            Console.WriteLine("Test value: " + test);
+        }
+
+        public class MemoryBandwidth : MonitoringConfig
+        {
+            private SandyBridgeUncore cpu;
+            public string GetConfigName() { return "IMC: Bandwidth"; }
+
+            public MemoryBandwidth(SandyBridgeUncore intelCpu)
+            {
+                cpu = intelCpu;
+            }
+
+            public string[] GetColumns()
+            {
+                return columns;
+            }
+
+            public void Initialize()
+            {
+                uint casRd = GetImcPerfControlValue(0x4, 0b11, false, false, 0);
+                uint casWr = GetImcPerfControlValue(0x4, 0b1100, false, false, 0);
+                uint prechargePageMiss = GetImcPerfControlValue(0x2, 1, false, false, 0);
+                uint prechargePageClose = GetImcPerfControlValue(0x2, 0b10, false, false, 0);
+                cpu.ProgramImcPerfCounters(casRd, casWr, prechargePageMiss, prechargePageClose);
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                cpu.UpdateImcCounters();
+                results.unitMetrics = new string[4][];
+
+                float avgClk = 0, totalReads = 0, totalWrites = 0, totalPageMiss = 0, totalPageClose = 0;
+                for (uint ch = 0; ch < 4; ch++)
+                {
+                    float clk = cpu.imcCounterData.cycles[ch];
+                    float reads = cpu.imcCounterData.ctr0[ch];
+                    float writes = cpu.imcCounterData.ctr1[ch];
+                    float pageMiss = cpu.imcCounterData.ctr2[ch];
+                    float pageClose = cpu.imcCounterData.ctr3[ch];
+
+                    results.unitMetrics[ch] = new string[]
+                    {
+                        "Ch" + ch,
+                        FormatLargeNumber(clk),
+                        FormatLargeNumber(reads * 64) + "B/s",
+                        FormatLargeNumber(writes * 64) + "B/s",
+                        FormatLargeNumber((reads + writes) * 64) + "B/s",
+                        FormatPercentage(reads + writes, pageMiss),
+                        FormatLargeNumber(pageClose)
+                    };
+
+                    avgClk += clk;
+                    totalReads += reads;
+                    totalWrites += writes;
+                    totalPageMiss += pageMiss;
+                    totalPageClose += pageClose;
+                }
+
+                avgClk /= 4;
+                results.overallMetrics = new string[] 
+                { 
+                    "Total", FormatLargeNumber(avgClk), 
+                    FormatLargeNumber(totalReads * 64) + "B/s",
+                    FormatLargeNumber(totalWrites * 64) + "B/s",
+                    FormatLargeNumber((totalReads + totalWrites) * 64) + "B/s",
+                    FormatPercentage(totalReads + totalWrites, totalPageMiss),
+                    FormatLargeNumber(totalPageClose)
+                };
+
+                return results;
+            }
+
+            public string[] columns = new string[] { "Channel", "Clk", "Read BW", "Write BW", "Total BW", "Page Miss", "Page Close" };
             public string GetHelpText() { return ""; }
         }
     }

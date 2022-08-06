@@ -55,7 +55,7 @@ namespace PmcReader
                         if (cpuModel == 0x2D)
                         {
                             l3Monitoring.monitoringArea = new Intel.SandyBridgeEL3();
-                            dfMonitoring.monitoringArea = new Intel.SandyBridgePCU();
+                            dfMonitoring.monitoringArea = new Intel.SandyBridgeUncore();
                             dfLabelOverride = "Power Control Unit Monitoring Configs (pick one):";
                         }
                     }

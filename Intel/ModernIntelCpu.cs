@@ -321,7 +321,7 @@ namespace PmcReader.Intel
             errorLabel = errLabel;
         }
 
-        private Button CreateButton(string buttonText, EventHandler handler)
+        private new Button CreateButton(string buttonText, EventHandler handler)
         {
             Button button = new Button();
             button.Text = buttonText;
