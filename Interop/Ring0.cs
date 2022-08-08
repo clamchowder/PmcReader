@@ -21,12 +21,16 @@ namespace PmcReader.Interop
         private static KernelDriver _driver;
         private static string _fileName;
         private static Mutex _isaBusMutex;
+        private static Mutex _pciBusMutex;
 
         private static readonly StringBuilder Report = new StringBuilder();
 
         public const uint INVALID_PCI_ADDRESS = 0xFFFFFFFF;
 
         private const uint OLS_TYPE = 40000;
+
+        // Intel PCM uses 50000 for winring0 access
+        private const uint PCM_OLS_TYPE = 50000;
 
         public static readonly Kernel32.IOControlCode
             IOCTL_OLS_GET_REFCOUNT = new Kernel32.IOControlCode(OLS_TYPE, 0x801, Kernel32.IOControlCode.Access.Any);
@@ -51,6 +55,13 @@ namespace PmcReader.Interop
 
         public static readonly Kernel32.IOControlCode
             IOCTL_OLS_READ_MEMORY = new Kernel32.IOControlCode(OLS_TYPE, 0x841, Kernel32.IOControlCode.Access.Read);
+
+        // Intel PCM-Memory uses different control codes
+        public static readonly Kernel32.IOControlCode
+            IOCTL_OLS_READ_PCI_CONFIG_PCM = new Kernel32.IOControlCode(PCM_OLS_TYPE, 0x802, Kernel32.IOControlCode.Method.Buffered, Kernel32.IOControlCode.Access.Any);
+
+        public static readonly Kernel32.IOControlCode
+            IOCTL_OLS_WRITE_PCI_CONFIG_PCM = new Kernel32.IOControlCode(PCM_OLS_TYPE, 0x803, Kernel32.IOControlCode.Method.Buffered, Kernel32.IOControlCode.Access.Any);
 
         public static bool IsOpen
         {
@@ -239,33 +250,57 @@ namespace PmcReader.Interop
             if (!_driver.IsOpen)
                 _driver = null;
 
-            string mutexName = "Global\\Access_ISABUS.HTP.Method";
+
+            const string isaMutexName = "Global\\Access_ISABUS.HTP.Method";
+            TryCreateOrOpenExistingMutex(isaMutexName, out _isaBusMutex);
+
+            const string pciMutexName = "Global\\Access_PCI";
+            TryCreateOrOpenExistingMutex(pciMutexName, out _pciBusMutex);
+        }
+
+        private static bool TryCreateOrOpenExistingMutex(string name, out Mutex mutex)
+        {
+#if NETFRAMEWORK
+            MutexSecurity mutexSecurity = new();
+            SecurityIdentifier identity = new(WellKnownSidType.WorldSid, null);
+            mutexSecurity.AddAccessRule(new MutexAccessRule(identity, MutexRights.Synchronize | MutexRights.Modify, AccessControlType.Allow));
+
             try
             {
-#if NETSTANDARD2_0
-        _isaBusMutex = new Mutex(false, mutexName);
+                // If the CreateMutex call fails, the framework will attempt to use OpenMutex
+                // to open the named mutex requesting SYNCHRONIZE and MUTEX_MODIFY rights.
+                mutex = new Mutex(false, name, out _, mutexSecurity);
+                return true;
+            }
+            catch
+            {
+                // WaitHandleCannotBeOpenedException:
+                // The mutex cannot be opened, probably because a Win32 object of a different type with the same name already exists.
+
+                // UnauthorizedAccessException:
+                // The mutex exists, but the current process or thread token does not have permission to open the mutex with SYNCHRONIZE | MUTEX_MODIFY rights.
+                mutex = null;
+                return false;
+            }
 #else
-                //mutex permissions set to everyone to allow other software to access the hardware
-                //otherwise other monitoring software cant access
-                var allowEveryoneRule = new MutexAccessRule(new SecurityIdentifier(WellKnownSidType.WorldSid, null), MutexRights.FullControl, AccessControlType.Allow);
-                var securitySettings = new MutexSecurity();
-                securitySettings.AddAccessRule(allowEveryoneRule);
-                _isaBusMutex = new Mutex(false, mutexName, out _, securitySettings);
-#endif
+            try
+            {
+                mutex = new Mutex(false, name);
+                return true;
             }
             catch (UnauthorizedAccessException)
             {
                 try
                 {
-#if NETSTANDARD2_0
-                    _isaBusMutex = Mutex.OpenExisting(mutexName);
-#else
-                    _isaBusMutex = Mutex.OpenExisting(mutexName, MutexRights.Synchronize);
-#endif
+                    mutex = Mutex.OpenExisting(name);
+                    return true;
                 }
-                catch
-                { }
+                catch { }
+
+                mutex = null;
             }
+            return false;
+#endif
         }
 
         public static void Close()
@@ -286,6 +321,12 @@ namespace PmcReader.Interop
             {
                 _isaBusMutex.Close();
                 _isaBusMutex = null;
+            }
+
+            if (_pciBusMutex != null)
+            {
+                _pciBusMutex.Close();
+                _pciBusMutex = null;
             }
 
             // try to delete temporary driver file again if failed during open
@@ -346,6 +387,39 @@ namespace PmcReader.Interop
         public static void ReleaseIsaBusMutex()
         {
             _isaBusMutex?.ReleaseMutex();
+        }
+
+        /// <summary>
+        /// Wait for a signal on the PCI bus mutex
+        /// </summary>
+        /// <param name="millisecondsTimeout"></param>
+        /// <returns></returns>
+        public static bool WaitPciBusMutex(int millisecondsTimeout)
+        {
+            if (_pciBusMutex == null)
+                return true;
+
+            try
+            {
+                // WaitOne waits to acquire a mutex
+                return _pciBusMutex.WaitOne(millisecondsTimeout, false);
+            }
+            catch (AbandonedMutexException)
+            {
+                return true;
+            }
+            catch (InvalidOperationException)
+            {
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Releases the PCI bus mutex
+        /// </summary>
+        public static void ReleasePciBusMutex()
+        {
+            _pciBusMutex?.ReleaseMutex();
         }
 
         public static bool ReadMsr(uint index, out ulong value)
@@ -433,6 +507,16 @@ namespace PmcReader.Interop
 
             WritePciConfigInput input = new WritePciConfigInput { PciAddress = pciAddress, RegAddress = regAddress, Value = value };
             return _driver.DeviceIOControl(Interop.Ring0.IOCTL_OLS_WRITE_PCI_CONFIG, input);
+        }
+
+        public static bool WritePciConfigPcm(uint pciAddress, uint regAddress, uint value)
+        {
+            if (_driver == null || (regAddress & 3) != 0)
+                return false;
+
+
+            WritePciConfigInput input = new WritePciConfigInput { PciAddress = pciAddress, RegAddress = regAddress, Value = value };
+            return _driver.DeviceIOControl(Interop.Ring0.IOCTL_OLS_WRITE_PCI_CONFIG_PCM, input);
         }
 
         public static bool ReadMemory<T>(ulong address, ref T buffer)

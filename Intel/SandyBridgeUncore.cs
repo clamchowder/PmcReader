@@ -37,7 +37,7 @@ namespace PmcReader.Intel
             configs.Add(new VoltageTransitions(this));
             configs.Add(new Limits(this));
             configs.Add(new ChangeAndPhaseShedding(this));
-            //configs.Add(new MemoryBandwidth(this)); // does not work because writing pci config doesn't work
+            configs.Add(new MemoryBandwidth(this)); // does not work because writing pci config doesn't work
             monitoringConfigs = configs.ToArray();
         }
 
@@ -391,7 +391,7 @@ namespace PmcReader.Intel
             for (uint channel = 0; channel < 4; channel++)
             {
                 uint imcAddress = GetImcPciAddress(channel);
-                bool writeSuccess = Ring0.WritePciConfig(imcAddress, register, value);
+                bool writeSuccess = Ring0.WritePciConfigPcm(imcAddress, register, value);
                 Ring0.ReadPciConfig(imcAddress, register, out uint readValue);
                 if (!writeSuccess)
                 {
@@ -439,11 +439,15 @@ namespace PmcReader.Intel
         public void ProgramImcPerfCounters(uint ctr0, uint ctr1, uint ctr2, uint ctr3)
         {
             this.ClearAndInitImcCounterData();
-            EnableImcFixedCounter();
-            WriteImcRegister(MC_CH_PCI_PMON_CTL0, ctr0);
-            WriteImcRegister(MC_CH_PCI_PMON_CTL1, ctr1);
-            WriteImcRegister(MC_CH_PCI_PMON_CTL2, ctr2);
-            WriteImcRegister(MC_CH_PCI_PMON_CTL3, ctr3);
+            if (Ring0.WaitPciBusMutex(10))
+            {
+                EnableImcFixedCounter();
+                WriteImcRegister(MC_CH_PCI_PMON_CTL0, ctr0);
+                WriteImcRegister(MC_CH_PCI_PMON_CTL1, ctr1);
+                WriteImcRegister(MC_CH_PCI_PMON_CTL2, ctr2);
+                WriteImcRegister(MC_CH_PCI_PMON_CTL3, ctr3);
+                Ring0.ReleasePciBusMutex();
+            }
         }
 
         /// <summary>
@@ -458,7 +462,7 @@ namespace PmcReader.Intel
                 uint boxControlValue = 0;
                 Ring0.ReadPciConfig(imcAddress, MC_CH_PCI_PMON_BOX_CTL, out boxControlValue);
                 boxControlValue |= 1 << 16; // bit 16 = freeze enable
-                Ring0.WritePciConfig(imcAddress, MC_CH_PCI_PMON_BOX_CTL, boxControlValue);
+                Ring0.WritePciConfigPcm(imcAddress, MC_CH_PCI_PMON_BOX_CTL, boxControlValue);
             }
         }
 
@@ -470,7 +474,7 @@ namespace PmcReader.Intel
                 uint boxControlValue = 0;
                 Ring0.ReadPciConfig(imcAddress, MC_CH_PCI_PMON_BOX_CTL, out boxControlValue);
                 boxControlValue |= 1 << 8; // bit 8 = freeze counters
-                Ring0.WritePciConfig(imcAddress, MC_CH_PCI_PMON_BOX_CTL, boxControlValue);
+                Ring0.WritePciConfigPcm(imcAddress, MC_CH_PCI_PMON_BOX_CTL, boxControlValue);
             }
         }
 
@@ -482,7 +486,7 @@ namespace PmcReader.Intel
                 uint boxControlValue = 0;
                 Ring0.ReadPciConfig(imcAddress, MC_CH_PCI_PMON_BOX_CTL, out boxControlValue);
                 boxControlValue &= ~(1U << 8); // bit 8 = freeze counters
-                Ring0.WritePciConfig(imcAddress, MC_CH_PCI_PMON_BOX_CTL, boxControlValue);
+                Ring0.WritePciConfigPcm(imcAddress, MC_CH_PCI_PMON_BOX_CTL, boxControlValue);
             }
         }
 
@@ -519,8 +523,8 @@ namespace PmcReader.Intel
             Ring0.ReadPciConfig(address, register, out uint ctrlo);
             Ring0.ReadPciConfig(address, register + 4, out uint ctrhi);
             ulong rc = ctrlo + ((ulong)ctrhi << 32);
-            Ring0.WritePciConfig(address, register, 0);
-            Ring0.WritePciConfig(address, register + 4, 0);
+            Ring0.WritePciConfigPcm(address, register, 0);
+            Ring0.WritePciConfigPcm(address, register + 4, 0);
             return rc;
         }
 
@@ -544,18 +548,6 @@ namespace PmcReader.Intel
                 this.imcCounterData.ctr2[channel] = ctr2 * normalizationFactor;
                 this.imcCounterData.ctr3[channel] = ctr3 * normalizationFactor;
             }
-        }
-
-        /// <summary>
-        /// Enables the fixed IMC counter on all four memory channels
-        /// </summary>
-        /// <param name="channel"></param>
-        public void EnableImcFixedCounter(uint channel)
-        {
-            uint imcAddress = Ring0.GetPciAddress(0, 0x16, 0xF0);
-            uint test = 0;
-            bool memtest = Ring0.ReadPciConfig(imcAddress, 0xF4, out test);
-            Console.WriteLine("Test value: " + test);
         }
 
         public class MemoryBandwidth : MonitoringConfig
