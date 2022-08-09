@@ -65,7 +65,11 @@ namespace PmcReader
                         l3Monitoring.monitoringArea = new Intel.SkylakeClientL3();
                         dfMonitoring.monitoringArea = new Intel.SkylakeClientArb();
                         dfLabelOverride = "System Agent Monitoring Configs (pick one):";
-;                    }
+;                   }
+                    else if (cpuModel == 0x7A)
+                    {
+                        coreMonitoring.monitoringArea = new Intel.GoldmontPlus();
+                    }
                     else
                     {
                         coreMonitoring.monitoringArea = new Intel.ModernIntelCpu();
