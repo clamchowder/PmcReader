@@ -66,13 +66,14 @@
     <Compile Include="HaswellForm.Designer.cs">
       <DependentUpon>HaswellForm.cs</DependentUpon>
     </Compile>
+    <Compile Include="Intel\HaswellEL3.cs" />
     <Compile Include="Intel\SkylakeClientArb.cs" />
     <Compile Include="Intel\HaswellClientArb.cs" />
     <Compile Include="Intel\SkylakeClientL3.cs" />
     <Compile Include="Intel\HaswellClientL3.cs" />
     <Compile Include="Intel\SkylakeClientUncore.cs" />
     <Compile Include="Intel\HaswellClientUncore.cs" />
-    <Compile Include="Intel\SandyBridgePCU.cs" />
+    <Compile Include="Intel\SandyBridgeUncore.cs" />
     <Compile Include="Intel\SandyBridgeEL3.cs" />
     <Compile Include="Intel\Skylake.cs" />
     <Compile Include="Intel\SandyBridge.cs" />
@@ -101,6 +102,7 @@
     </Compile>
     <EmbeddedResource Include="Interop\WinRing0.sys" />
     <EmbeddedResource Include="Interop\WinRing0x64.sys" />
+    <EmbeddedResource Include="Interop\winpmem_64.sys" />
     <None Include="Properties\Settings.settings">
       <Generator>SettingsSingleFileGenerator</Generator>
       <LastGenOutput>Settings.Designer.cs</LastGenOutput>

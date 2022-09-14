@@ -1,6 +1,7 @@
 ﻿using PmcReader.Interop;
 using System;
 using System.Diagnostics;
+using System.Drawing;
 using System.Windows.Forms;
 
 namespace PmcReader.AMD
@@ -51,9 +52,10 @@ namespace PmcReader.AMD
 
         public const uint MSR_LS_CFG = 0xC0011020; // bit 4 = zen 1 lock errata 
         public const uint MSR_IC_CFG = 0xC0011021; // bit 5 = disable OC
-        public const uint MSR_DC_CFG = 0xC0011022; // data cache config?
+        public const uint MSR_DC_CFG = 0xC0011022; // data cache config? bit 16 = disable L1D stream prefetcher
         public const uint MSR_FP_CFG = 0xC0011028; // bit 4 = zen 1 FCMOV errata
         public const uint MSR_DE_CFG = 0xC0011029; // bit 13 = zen 1 stale store forward errata
+        public const uint MSR_L2_PF_CFG = 0xC001102B; // bit 0 = enable L2 stream prefetcher
         public const uint MSR_ProcNameStringBase = 0xC0010030;
         public const uint ProcNameStringMsrCount = 6;
 
@@ -466,25 +468,104 @@ namespace PmcReader.AMD
         public override void InitializeCrazyControls(FlowLayoutPanel flowLayoutPanel, Label errLabel)
         {
             flowLayoutPanel.Controls.Clear();
-            Button disableOpCacheButton = CreateButton("Disable Op Cache", DisableOpCache);
-            Button enableOpCacheButton = CreateButton("Enable Op Cache", EnableOpCache);
-            Button setProcNameButton = CreateButton("Set CPU Name String", SetCpuNameString);
+            CheckBox opCacheCheckbox = new CheckBox();
+            opCacheCheckbox.Text = "Op Cache";
+            opCacheCheckbox.Checked = GetOpCacheEnabledStatus();
+            opCacheCheckbox.CheckedChanged += HandleOpCacheCheckbox;
+            opCacheCheckbox.Width = TextRenderer.MeasureText(opCacheCheckbox.Text, opCacheCheckbox.Font).Width + 20;
+            flowLayoutPanel.Controls.Add(opCacheCheckbox);
 
+            CheckBox boostCheckbox = new CheckBox();
+            boostCheckbox.Text = "Core Performance Boost";
+            boostCheckbox.Checked = GetCpbEnabled();
+            boostCheckbox.CheckedChanged += HandleCorePerformanceBoostCheckbox;
+            boostCheckbox.Width = TextRenderer.MeasureText(boostCheckbox.Text, boostCheckbox.Font).Width + 20;
+            flowLayoutPanel.Controls.Add(boostCheckbox);
+            flowLayoutPanel.SetFlowBreak(boostCheckbox, true);
+
+            CheckBox l1dStreamPrefetchCheckbox = new CheckBox();
+            l1dStreamPrefetchCheckbox.Text = "L1D Stream Prefetcher";
+            l1dStreamPrefetchCheckbox.Checked = GetL1DStreamPrefetchStatus();
+            l1dStreamPrefetchCheckbox.CheckedChanged += HandleL1dStreamCheckbox;
+            l1dStreamPrefetchCheckbox.Width = TextRenderer.MeasureText(l1dStreamPrefetchCheckbox.Text, l1dStreamPrefetchCheckbox.Font).Width + 20;
+            flowLayoutPanel.Controls.Add(l1dStreamPrefetchCheckbox);
+
+            CheckBox l2StreamPrefetchCheckbox = new CheckBox();
+            l2StreamPrefetchCheckbox.Text = "L2 Stream Prefetcher";
+            l2StreamPrefetchCheckbox.Checked = GetL2StreamPrefetchStatus();
+            l2StreamPrefetchCheckbox.CheckedChanged += HandleL2StreamCheckbox;
+            l2StreamPrefetchCheckbox.Width = TextRenderer.MeasureText(l2StreamPrefetchCheckbox.Text, l2StreamPrefetchCheckbox.Font).Width + 20;
+            flowLayoutPanel.Controls.Add(l2StreamPrefetchCheckbox);
+
+            Button setProcNameButton = CreateButton("Set CPU Name String", SetCpuNameString);
             procNameTextBox = new TextBox();
             procNameTextBox.Width = 325;
             procNameTextBox.MaxLength = 47;
-
-            Button disableCpbButton = CreateButton("Disable Core Perf Boost", DisableCorePerformanceBoost);
-            Button enableCpbButton = CreateButton("Enable Core Perf Boost", EnableCorePerformanceBoost);
-
-            flowLayoutPanel.Controls.Add(disableOpCacheButton);
-            flowLayoutPanel.Controls.Add(enableOpCacheButton);
             flowLayoutPanel.Controls.Add(procNameTextBox);
             flowLayoutPanel.Controls.Add(setProcNameButton);
-            flowLayoutPanel.Controls.Add(disableCpbButton);
-            flowLayoutPanel.Controls.Add(enableCpbButton);
 
             errorLabel = errLabel;
+        }
+
+        private void HandleL2StreamCheckbox(object sender, EventArgs e)
+        {
+            CheckBox checkbox = (CheckBox)sender;
+            bool L2PfStatus = checkbox.Checked;
+            for (int threadIdx = 0; threadIdx < GetThreadCount(); threadIdx++)
+            {
+                SetL2StreamPrefetchStatus(checkbox.Checked);
+                bool threadStatus = GetL2StreamPrefetchStatus();
+                if (checkbox.Checked) L2PfStatus &= threadStatus;
+                else L2PfStatus |= threadStatus;
+            }
+
+            if (L2PfStatus) errorLabel.Text = "L2 Stream Prefetcher enabled";
+            else errorLabel.Text = "L2 Stream Prefetcher disabled";
+        }
+
+        private void HandleL1dStreamCheckbox(object sender, EventArgs e)
+        {
+            CheckBox checkbox = (CheckBox)sender;
+            bool L1DPfStatus = checkbox.Checked;
+            for (int threadIdx = 0; threadIdx < GetThreadCount(); threadIdx++)
+            {
+                SetL1DStreamPrefetchStatus(checkbox.Checked);
+                bool threadStatus = GetL1DStreamPrefetchStatus();
+                if (checkbox.Checked) L1DPfStatus &= threadStatus;
+                else L1DPfStatus |= threadStatus;
+            }
+
+            if (L1DPfStatus) errorLabel.Text = "L1D Stream Prefetcher enabled";
+            else errorLabel.Text = "L1D Stream Prefetcher disabled";
+        }
+
+        private bool GetL2StreamPrefetchStatus()
+        {
+            Ring0.ReadMsr(MSR_L2_PF_CFG, out ulong l2PfCfg);
+            return (l2PfCfg & 1) == 1;
+        }
+
+        private void SetL2StreamPrefetchStatus(bool enabled)
+        {
+            Ring0.ReadMsr(MSR_L2_PF_CFG, out ulong l2PfCfg);
+            if (enabled) l2PfCfg |= 1;
+            else l2PfCfg &= ~(1UL);
+            Ring0.WriteMsr(MSR_L2_PF_CFG, l2PfCfg);
+        }
+
+        private bool GetL1DStreamPrefetchStatus()
+        {
+            Ring0.ReadMsr(MSR_DC_CFG, out ulong dcCfg);
+            return (dcCfg & (1UL << 16)) == 0;
+        }
+
+        private void SetL1DStreamPrefetchStatus(bool enabled)
+        {
+            // set bit 16 to *disable* the L1D stream prefetcher
+            Ring0.ReadMsr(MSR_DC_CFG, out ulong dcCfg);
+            if (enabled) dcCfg &= ~(1UL << 16);
+            else dcCfg |= (1UL << 16);
+            Ring0.WriteMsr(MSR_DC_CFG, dcCfg);
         }
 
         private bool GetOpCacheEnabledStatus()
@@ -493,10 +574,17 @@ namespace PmcReader.AMD
             return (icCfg & (1UL << 5)) == 0;
         }
 
+        public void HandleOpCacheCheckbox(object sender, EventArgs e)
+        {
+            CheckBox checkbox = (CheckBox)sender;
+            if (checkbox.Checked) EnableOpCache();
+            else DisableOpCache();
+        }
+
         /// <summary>
         /// Disable the op cache
         /// </summary>
-        public void DisableOpCache(object sender, EventArgs e)
+        public void DisableOpCache()
         {
             bool allOpCachesDisabled = true;
             for (int threadIdx = 0; threadIdx < GetThreadCount(); threadIdx++)
@@ -521,7 +609,7 @@ namespace PmcReader.AMD
         /// <summary>
         /// Enable the op cache
         /// </summary>
-        public void EnableOpCache(object sender, EventArgs e)
+        public void EnableOpCache()
         {
             bool allOpCachesEnabled = true;
             for (int threadIdx = 0; threadIdx < GetThreadCount(); threadIdx++)
@@ -543,13 +631,20 @@ namespace PmcReader.AMD
             }
         }
 
+        public void HandleCorePerformanceBoostCheckbox(object sender, EventArgs e)
+        {
+            CheckBox checkbox = (CheckBox)sender;
+            if (checkbox.Checked) EnableCorePerformanceBoost();
+            else DisableCorePerformanceBoost();
+        }
+
         private bool GetCpbEnabled()
         {
             Ring0.ReadMsr(HWCR, out ulong hwcr);
             return (hwcr & (1UL << 25)) == 0;
         }
 
-        public void EnableCorePerformanceBoost(object sender, EventArgs e)
+        public void EnableCorePerformanceBoost()
         {
             bool allCpbEnabled = true;
             for (int threadIdx = 0; threadIdx < GetThreadCount(); threadIdx++)
@@ -571,7 +666,7 @@ namespace PmcReader.AMD
             }
         }
 
-        public void DisableCorePerformanceBoost(object sender, EventArgs e)
+        public void DisableCorePerformanceBoost()
         {
             bool allCpbDisabled = true;
             for (int threadIdx = 0; threadIdx < GetThreadCount(); threadIdx++)

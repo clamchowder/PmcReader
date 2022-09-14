@@ -44,6 +44,10 @@ namespace PmcReader
                             dfMonitoring.monitoringArea = new Intel.HaswellClientArb();
                             dfLabelOverride = "System Agent Monitoring Configs (pick one):";
                         }
+                        else if (cpuModel == 0x3F)
+                        {
+                            l3Monitoring.monitoringArea = new Intel.HaswellEL3();
+                        }
                     }
                     else if (cpuModel == 0x2A || cpuModel == 0x2D)
                     {
@@ -51,7 +55,7 @@ namespace PmcReader
                         if (cpuModel == 0x2D)
                         {
                             l3Monitoring.monitoringArea = new Intel.SandyBridgeEL3();
-                            dfMonitoring.monitoringArea = new Intel.SandyBridgePCU();
+                            dfMonitoring.monitoringArea = new Intel.SandyBridgeUncore();
                             dfLabelOverride = "Power Control Unit Monitoring Configs (pick one):";
                         }
                     }
@@ -76,7 +80,7 @@ namespace PmcReader
             {
                 if (cpuFamily == 0x17)
                 {
-                    if (cpuModel == 0x71 || cpuModel == 0x31)
+                    if (cpuModel == 0x71 || cpuModel == 0x31 || cpuModel == 0x90)
                     {
                         coreMonitoring.monitoringArea = new AMD.Zen2();
                         l3Monitoring.monitoringArea = new AMD.Zen2L3Cache();

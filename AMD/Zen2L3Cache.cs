@@ -32,10 +32,11 @@ namespace PmcReader.AMD
                 ccxThreads.Add(threadIdx);
             }
 
-            monitoringConfigs = new MonitoringConfig[3];
+            monitoringConfigs = new MonitoringConfig[4];
             monitoringConfigs[0] = new HitRateLatencyConfig(this);
             monitoringConfigs[1] = new SliceConfig(this);
             monitoringConfigs[2] = new TestConfig(this);
+            monitoringConfigs[3] = new L3AccessConfig(this);
 
             ccxCounterData = new L3CounterData[ccxSampleThreads.Count()];
             ccxTotals = new L3CounterData();
@@ -303,28 +304,83 @@ namespace PmcReader.AMD
                 this.l3Cache = l3Cache;
             }
 
-            public string GetConfigName() { return "L3 Fill/Writeback"; }
+            public string GetConfigName() { return "L3 Victim State"; }
             public string[] GetColumns() { return columns; }
             public void Initialize()
             {
-                ulong L3MissPerfCtl = GetL3PerfCtlValue(0x04, 0x01, true, 0xF, 0xFF);
-                ulong L3Access2 = GetL3PerfCtlValue(0x04, 0x02, true, 0xF, 0xFF);
-                ulong L3Access4 = GetL3PerfCtlValue(0x04, 0x04, true, 0xF, 0xFF);
-                ulong L3Access8 = GetL3PerfCtlValue(0x04, 0x08, true, 0xF, 0xFF);
-                ulong L3Access10 = GetL3PerfCtlValue(0x04, 0x10, true, 0xF, 0xFF);
-                ulong L3AccessE0 = GetL3PerfCtlValue(0x04, 0xE0, true, 0xF, 0xFF);
+                foreach (KeyValuePair<int, int> ccxThread in l3Cache.ccxSampleThreads)
+                {
+                    ThreadAffinity.Set(1UL << ccxThread.Value);
+                    // L3 victims, writeback
+                    Ring0.WriteMsr(MSR_L3_PERF_CTL_0, GetL3PerfCtlValue(0x9, 0b11101000, true, 0xF, 0xFF));
+                    // L3 victims, shared
+                    Ring0.WriteMsr(MSR_L3_PERF_CTL_1, GetL3PerfCtlValue(0x9, 0b100, true, 0xF, 0xFF));
+                    // L3 victims, clean
+                    Ring0.WriteMsr(MSR_L3_PERF_CTL_2, GetL3PerfCtlValue(0x9, 0b10000, true, 0xF, 0xFF));
+                    // L3 fill, no victim (L2 victim hit copy of same line) = L2 writeback hit
+                    Ring0.WriteMsr(MSR_L3_PERF_CTL_3, GetL3PerfCtlValue(0x9, 0b10, true, 0xF, 0xFF));
+                    // L3 fill, I state = no victim
+                    Ring0.WriteMsr(MSR_L3_PERF_CTL_4, GetL3PerfCtlValue(0x09, 1, true, 0xF, 0xFF));
+                    Ring0.WriteMsr(MSR_L3_PERF_CTL_5, GetL3PerfCtlValue(0x04, 0b11111110, true, 0xF, 0xFF)); // L3 hit?
+                }
+            }
 
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[l3Cache.ccxSampleThreads.Count()][];
+                l3Cache.ClearTotals();
+                foreach (KeyValuePair<int, int> ccxThread in l3Cache.ccxSampleThreads)
+                {
+                    l3Cache.UpdateCcxL3CounterData(ccxThread.Key, ccxThread.Value);
+                    results.unitMetrics[ccxThread.Key] = computeMetrics("CCX " + ccxThread.Key, l3Cache.ccxCounterData[ccxThread.Key]);
+                }
+
+                results.overallMetrics = computeMetrics("Overall", l3Cache.ccxTotals);
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Hit BW", "Writeback BW", "Shared Line Evicted", "Clean Line Evicted", "Fill Hit Existing Line", "I state = No Victim"};
+
+            public string GetHelpText() { return ""; }
+
+            private string[] computeMetrics(string label, L3CounterData counterData)
+            {
+                float ccxL3HitBw = counterData.ctr5 * 64;
+                return new string[] { label,
+                        FormatLargeNumber(ccxL3HitBw) + "B/s",
+                        FormatLargeNumber(counterData.ctr0 * 64) + "B/s",
+                        FormatLargeNumber(counterData.ctr1 * 64) + "B/s",
+                        FormatLargeNumber(counterData.ctr2 * 64) + "B/s",
+                        FormatLargeNumber(counterData.ctr3 * 64) + "B/s",
+                        FormatLargeNumber(counterData.ctr4 * 64) + "B/s"};
+            }
+        }
+
+        public class L3AccessConfig : MonitoringConfig
+        {
+            private Zen2L3Cache l3Cache;
+
+            public L3AccessConfig(Zen2L3Cache l3Cache)
+            {
+                this.l3Cache = l3Cache;
+            }
+
+            public string GetConfigName() { return "L3 Access Types"; }
+            public string[] GetColumns() { return columns; }
+            public void Initialize()
+            {
                 foreach (KeyValuePair<int, int> ccxThread in l3Cache.ccxSampleThreads)
                 {
                     ThreadAffinity.Set(1UL << ccxThread.Value);
                     // L2 victims (L3 fill?)
                     Ring0.WriteMsr(MSR_L3_PERF_CTL_0, GetL3PerfCtlValue(0x3, 0x1, true, 0xF, 0xFF));
-                    // L3 victims, writeback
-                    Ring0.WriteMsr(MSR_L3_PERF_CTL_1, GetL3PerfCtlValue(0x9, 0b11101000, true, 0xF, 0xFF));
-                    // L3 victims, clean
-                    Ring0.WriteMsr(MSR_L3_PERF_CTL_2, GetL3PerfCtlValue(0x9, 0b10100, true, 0xF, 0xFF));
-                    // L3 fill, no victim
-                    Ring0.WriteMsr(MSR_L3_PERF_CTL_3, GetL3PerfCtlValue(0x9, 0x3, true, 0xF, 0xFF));
+                    // L3FillVicReq, L2 change to writeable
+                    Ring0.WriteMsr(MSR_L3_PERF_CTL_1, GetL3PerfCtlValue(0x3, 0x2, true, 0xF, 0xFF));
+                    // L3FillVicReq, L2 miss with victim
+                    Ring0.WriteMsr(MSR_L3_PERF_CTL_2, GetL3PerfCtlValue(0x3, 0b1010100, true, 0xF, 0xFF));
+                    // L3FillVicReq, L2 miss
+                    Ring0.WriteMsr(MSR_L3_PERF_CTL_3, GetL3PerfCtlValue(0x3, 0b10101000, true, 0xF, 0xFF));
                     Ring0.WriteMsr(MSR_L3_PERF_CTL_4, GetL3PerfCtlValue(0x04, 0xFF, true, 0xF, 0xFF)); // L3 access
                     Ring0.WriteMsr(MSR_L3_PERF_CTL_5, GetL3PerfCtlValue(0x04, 0x01, true, 0xF, 0xFF)); // L3 miss
                 }
@@ -345,7 +401,7 @@ namespace PmcReader.AMD
                 return results;
             }
 
-            public string[] columns = new string[] { "Item", "Hitrate", "Hit BW", "L2 Victim (Fill BW)", "L3 Victim WB", "Clean L3 Victims", "L3 Fill No Victim"};
+            public string[] columns = new string[] { "Item", "Hitrate", "Hit BW", "Total L3 BW", "L2 Vic (L3 Fill?)", "L2 Chg to Writeable", "L2 Miss w/Vic", "L2 Miss, No Vic?" };
 
             public string GetHelpText() { return ""; }
 
@@ -359,6 +415,7 @@ namespace PmcReader.AMD
                 return new string[] { label,
                         string.Format("{0:F2}%", ccxL3Hitrate),
                         FormatLargeNumber(ccxL3HitBw) + "B/s",
+                        FormatLargeNumber(ccxL3HitBw + (counterData.ctr0 + counterData.ctr2) * 64) + "B/s",
                         FormatLargeNumber(counterData.ctr0 * 64) + "B/s",
                         FormatLargeNumber(counterData.ctr1 * 64) + "B/s",
                         FormatLargeNumber(counterData.ctr2 * 64) + "B/s",

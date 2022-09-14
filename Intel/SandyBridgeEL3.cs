@@ -452,7 +452,7 @@ namespace PmcReader.Intel
                 float missLatency = counterData.ctr0 / counterData.ctr1;
                 return new string[] { label,
                     FormatLargeNumber(counterData.ctr2),
-                    string.Format("{0:F2}", counterData.ctr0 / counterData.ctr3),
+                    string.Format("{0:F2}", counterData.ctr0 / (total ? counterData.ctr2 / CboCount : counterData.ctr2)),
                     string.Format("{0:F2} clk", missLatency),
                     string.Format("{0:F2} ns", (1000000000 / avgClock) * missLatency),
                     string.Format("{0:F2}%", 100 * counterData.ctr3 / counterData.ctr2),
@@ -518,7 +518,7 @@ namespace PmcReader.Intel
                 float missLatency = counterData.ctr0 / counterData.ctr1;
                 return new string[] { label,
                     FormatLargeNumber(counterData.ctr2),
-                    string.Format("{0:F2}", counterData.ctr0 / (total ? counterData.ctr3 / CboCount : counterData.ctr3)),
+                    string.Format("{0:F2}", counterData.ctr0 / (total ? counterData.ctr2 / CboCount : counterData.ctr2)),
                     string.Format("{0:F2} clk", missLatency),
                     string.Format("{0:F2} ns", (1000000000 / avgClock) * missLatency),
                     string.Format("{0:F2}%", 100 * counterData.ctr3 / counterData.ctr2),
