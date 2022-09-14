@@ -28,6 +28,9 @@ namespace PmcReader.Intel
             List<MonitoringConfig> monitoringConfigList = new List<MonitoringConfig>();
             monitoringConfigList.Add(new HitrateConfig(this));
             monitoringConfigList.Add(new SnoopHitConfig(this));
+            monitoringConfigList.Add(new HitsCategoryConfig(this, "Data?", 0x80 | 0b10));
+            monitoringConfigList.Add(new HitsCategoryConfig(this, "Code?", 0x80 | 0b100));
+            monitoringConfigList.Add(new HitsCategoryConfig(this, "Modified", 0x80 | 0b1));
             monitoringConfigs = monitoringConfigList.ToArray();
         }
 
@@ -139,6 +142,80 @@ namespace PmcReader.Intel
                     FormatLargeNumber((counterData.ctr0 - counterData.ctr1) * 64) + "B/s",
                     FormatLargeNumber(counterData.ctr0),
                     FormatLargeNumber(counterData.ctr1)};
+            }
+        }
+
+        public class HitsCategoryConfig : MonitoringConfig
+        {
+            private SkylakeClientL3 cpu;
+            private string category;
+            private byte umask;
+            public string GetConfigName() { return "L3 Hits, " + category; }
+
+            public HitsCategoryConfig(SkylakeClientL3 intelCpu, string category, byte umask)
+            {
+                this.cpu = intelCpu;
+                this.category = category;
+                this.umask = umask;
+                this.columns = new string[] { "Item", "Hit BW", category + " Hit BW", "% " + category + " hits" };
+            }
+
+            public string[] GetColumns()
+            {
+                return columns;
+            }
+
+            public void Initialize()
+            {
+                cpu.EnableUncoreCounters();
+                for (uint cboIdx = 0; cboIdx < cpu.CboCount; cboIdx++)
+                {
+                    // Event 0x34 = uncore cbo cache lookup
+                    // Bit 0 = Modified state
+                    // Bit 1, 2 = Exclusive, Shared states
+                    // Bit 3 = Invalid state (miss)
+                    // Bit 4 = Read
+                    // Bit 5 = Write
+                    // Bit 6 = ???
+                    // Bit 7 = Any
+                    // 0x34 = L3 lookups, 0xFF = all lookups
+
+                    // L3 hits
+                    Ring0.WriteMsr(MSR_UNC_CBO_PERFEVTSEL0_base + MSR_UNC_CBO_increment * cboIdx,
+                        GetUncorePerfEvtSelRegisterValue(0x34, 0x80 | 0b111, false, false, true, false, 0));
+
+                    // Bit one (E or S?)
+                    Ring0.WriteMsr(MSR_UNC_CBO_PERFEVTSEL1_base + MSR_UNC_CBO_increment * cboIdx,
+                        GetUncorePerfEvtSelRegisterValue(0x34, umask, false, false, true, false, 0));
+                }
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[cpu.CboCount][];
+                cpu.InitializeCboTotals();
+                for (uint cboIdx = 0; cboIdx < cpu.CboCount; cboIdx++)
+                {
+                    cpu.UpdateCboCounterData(cboIdx);
+                    results.unitMetrics[cboIdx] = computeMetrics("CBo " + cboIdx, cpu.cboData[cboIdx]);
+                }
+
+                results.overallMetrics = computeMetrics("Overall", cpu.cboTotals);
+                results.overallCounterValues = cpu.GetOverallCounterValues("L3 Hits", this.category + " L3 Hits");
+                return results;
+            }
+
+            public string[] columns;
+
+            public string GetHelpText() { return ""; }
+
+            private string[] computeMetrics(string label, NormalizedCboCounterData counterData)
+            {
+                return new string[] { label,
+                    FormatLargeNumber(counterData.ctr0 * 64) + "B/s",
+                    FormatLargeNumber(counterData.ctr1 * 64) + "B/s",
+                    FormatPercentage(counterData.ctr1, counterData.ctr0)};
             }
         }
 

@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using PmcReader.Interop;
 
 namespace PmcReader.AMD
@@ -8,11 +9,9 @@ namespace PmcReader.AMD
         public Zen2DataFabric()
         {
             architectureName = "Zen 2 Data Fabric";
-            monitoringConfigs = new MonitoringConfig[4];
-            monitoringConfigs[0] = new DramBwConfig(this);
-            monitoringConfigs[1] = new DramBw1Config(this);
-            monitoringConfigs[2] = new OutboundDataConfig(this);
-            monitoringConfigs[3] = new BwTestConfig(this);
+            List<MonitoringConfig> monitoringConfigList = new List<MonitoringConfig>();
+            monitoringConfigList.Add(new BwTestConfig(this));
+            monitoringConfigs = monitoringConfigList.ToArray();
         }
 
         public class DramBwConfig : MonitoringConfig
@@ -91,7 +90,7 @@ namespace PmcReader.AMD
                 this.dataFabric = dataFabric;
             }
 
-            public string GetConfigName() { return "Test"; }
+            public string GetConfigName() { return "Memory Bandwidth?"; }
             public string[] GetColumns() { return columns; }
             public void Initialize()
             {
@@ -117,10 +116,10 @@ namespace PmcReader.AMD
 
                 dataFabric.ReadPackagePowerCounter();
                 results.unitMetrics = new string[4][];
-                results.unitMetrics[0] = new string[] { "CCM0 DRAM BW?", FormatLargeNumber(ctr0 * normalizationFactor * 64) + "B/s", FormatLargeNumber(ctr0 * normalizationFactor), "N/A" };
-                results.unitMetrics[1] = new string[] { "CCM1 DRAM BW?", FormatLargeNumber(ctr1 * normalizationFactor * 16) + "B/s", FormatLargeNumber(ctr1 * normalizationFactor), "N/A" };
-                results.unitMetrics[2] = new string[] { "Mem BW related?", FormatLargeNumber(ctr2 * normalizationFactor * 64) + "B/s", FormatLargeNumber(ctr2 * normalizationFactor), "N/A" };
-                results.unitMetrics[3] = new string[] { "Wat Dis?", FormatLargeNumber(ctr3 * normalizationFactor * 64) + "B/s", FormatLargeNumber(ctr3 * normalizationFactor), "N/A" };
+                //results.unitMetrics[0] = new string[] { "CCM0 DRAM BW?", FormatLargeNumber(ctr0 * normalizationFactor * 64) + "B/s", FormatLargeNumber(ctr0 * normalizationFactor), "N/A" };
+                //results.unitMetrics[1] = new string[] { "CCM1 DRAM BW?", FormatLargeNumber(ctr1 * normalizationFactor * 16) + "B/s", FormatLargeNumber(ctr1 * normalizationFactor), "N/A" };
+                results.unitMetrics[0] = new string[] { "Mem BW?", FormatLargeNumber(ctr2 * normalizationFactor * 64) + "B/s", FormatLargeNumber(ctr2 * normalizationFactor), "N/A" };
+                //results.unitMetrics[3] = new string[] { "Wat Dis?", FormatLargeNumber(ctr3 * normalizationFactor * 64) + "B/s", FormatLargeNumber(ctr3 * normalizationFactor), "N/A" };
 
                 results.overallMetrics = new string[] { "Overall",
                     FormatLargeNumber((ctr0 + ctr1 + ctr2 + ctr3) * normalizationFactor * 64) + "B/s",
