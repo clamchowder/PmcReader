@@ -10,6 +10,7 @@ namespace PmcReader.Intel
             List<MonitoringConfig> configs = new List<MonitoringConfig>();
             configs.Add(new BpuMonitoringConfig(this));
             configs.Add(new OpCachePerformance(this));
+            configs.Add(new OpCacheMissStarvation(this));
             configs.Add(new ALUPortUtilization(this));
             configs.Add(new OpDelivery(this));
             configs.Add(new DecoderHistogram(this));
@@ -22,9 +23,110 @@ namespace PmcReader.Intel
             configs.Add(new ResourceStalls1(this));
             configs.Add(new DataPageWalk(this));
             configs.Add(new Fp32Flops(this));
+            configs.Add(new Fp64Flops(this));
             configs.Add(new OffcoreBurst(this));
             monitoringConfigs = configs.ToArray();
             architectureName = "Skylake";
+        }
+
+        // Skylake introduces special frontend perfmon facilities
+        public const uint MSR_PEBS_FRONTEND = 0x3F7;
+        private const byte FRONTEND_RETIRED_EVT = 0xC6;
+        private const byte FRONTEND_RETIRED_UMASK = 0x1;
+
+        /// <summary>
+        /// Generate value to put in MSR_PEBS_FRONTEND
+        /// </summary>
+        /// <param name="perfEvent">Event selection</param>
+        /// <param name="idqBubbleLen"></param>
+        /// <param name="idqBubbleWidth"></param>
+        public static ulong GetFrontendPebsRegisterValue(byte perfEvent,
+                                           ushort idqBubbleLen,
+                                           byte idqBubbleWidth)
+        {
+            ulong value = (ulong)perfEvent |
+                (ulong)idqBubbleLen << 8 |
+                (ulong)idqBubbleWidth << 20;
+            return value;
+        }
+
+        public class OpCacheMissStarvation : MonitoringConfig
+        {
+            private Skylake cpu;
+            public string GetConfigName() { return "Op Cache Miss"; }
+            public string GetHelpText() { return ""; }
+
+            public OpCacheMissStarvation(Skylake intelCpu)
+            {
+                cpu = intelCpu;
+            }
+
+            public string[] GetColumns()
+            {
+                return columns;
+            }
+
+            public void Initialize()
+            {
+                cpu.EnablePerformanceCounters();
+
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    ThreadAffinity.Set(1UL << threadIdx);
+                    ulong frontendPebs = GetPerfEvtSelRegisterValue(FRONTEND_RETIRED_EVT, FRONTEND_RETIRED_UMASK, usr: true, os: true, edge: false, pc: false, interrupt: false, anyThread: false, enable: true, invert: false, cmask: 0);
+                    Ring0.WriteMsr(IA32_PERFEVTSEL0, frontendPebs);
+
+                    ulong dsbMiss = GetFrontendPebsRegisterValue(0x11, 0, 0);
+                    Ring0.WriteMsr(MSR_PEBS_FRONTEND, dsbMiss);
+
+                    // switches from op cache to decoders
+                    ulong dsb2miteSwitches = GetPerfEvtSelRegisterValue(0xAB, 1, true, true, false, false, false, false, true, false, 0);
+                    Ring0.WriteMsr(IA32_PERFEVTSEL1, dsb2miteSwitches);
+
+                    // penalty cycles from switching to decoders
+                    ulong dsb2miteSwitchPenalty = GetPerfEvtSelRegisterValue(0xAB, 2, true, true, false, false, false, false, true, false, 0);
+                    Ring0.WriteMsr(IA32_PERFEVTSEL2, dsb2miteSwitchPenalty);
+
+                    // ops delivered from the op cache
+                    ulong dsbOps = GetPerfEvtSelRegisterValue(0x79, 0x8, true, true, false, false, false, false, true, false, 0);
+                    Ring0.WriteMsr(IA32_PERFEVTSEL3, dsbOps);
+                }
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[cpu.GetThreadCount()][];
+                cpu.InitializeCoreTotals();
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    cpu.UpdateThreadCoreCounterData(threadIdx);
+                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
+                }
+
+                cpu.ReadPackagePowerCounter();
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                results.overallCounterValues = cpu.GetOverallCounterValues("Critical Op Cache Miss", "OC to Decoder Switches", "OC to Decoder Switch Penalty", "OC Ops");
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "Pkg Pwr", "Instr/Watt", 
+                "Critical Op Cache Miss/Ki", "OC to Decoder Switch/Ki", "OC to Decoder Switch Penalty", "Op Cache Ops" };
+
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
+            {
+                return new string[] { label,
+                        FormatLargeNumber(counterData.activeCycles),
+                        FormatLargeNumber(counterData.instr),
+                        string.Format("{0:F2}", counterData.instr / counterData.activeCycles),
+                        string.Format("{0:F2} W", counterData.packagePower),
+                        FormatLargeNumber(counterData.instr / counterData.packagePower),
+                        string.Format("{0:F2}", 1000 * counterData.pmc0 / counterData.instr),
+                        string.Format("{0:F2}", 1000 * counterData.pmc1 / counterData.instr),
+                        FormatPercentage(counterData.pmc2, counterData.activeCycles),
+                        FormatLargeNumber(counterData.pmc3)
+                };
+            }
         }
 
         public class ALUPortUtilization : MonitoringConfig
@@ -769,6 +871,87 @@ namespace PmcReader.Intel
                 float scalarFlops = counterData.pmc0;
                 float flops128b = counterData.pmc1 * 4;
                 float flops256b = counterData.pmc2 * 8;
+                float totalFlops = scalarFlops + flops128b + flops256b;
+                return new string[] { label,
+                        FormatLargeNumber(counterData.activeCycles),
+                        FormatLargeNumber(counterData.instr),
+                        string.Format("{0:F2}", counterData.instr / counterData.activeCycles),
+                        string.Format("{0:F2} W", counterData.packagePower),
+                        FormatLargeNumber(counterData.instr / counterData.packagePower),
+                        FormatLargeNumber(totalFlops),
+                        FormatLargeNumber(scalarFlops),
+                        FormatLargeNumber(flops128b),
+                        FormatLargeNumber(flops256b),
+                        FormatLargeNumber(counterData.pmc3),
+                        string.Format("{0:F2}", totalFlops / counterData.activeCycles),
+                        FormatPercentage(counterData.pmc3, counterData.instr)
+                };
+            }
+        }
+
+        public class Fp64Flops : MonitoringConfig
+        {
+            private Skylake cpu;
+            public string GetConfigName() { return "FP64 FLOPs"; }
+
+            public Fp64Flops(Skylake intelCpu)
+            {
+                cpu = intelCpu;
+            }
+
+            public string[] GetColumns()
+            {
+                return columns;
+            }
+
+            public void Initialize()
+            {
+                cpu.EnablePerformanceCounters();
+
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    ThreadAffinity.Set(1UL << threadIdx);
+                    // scalar double
+                    Ring0.WriteMsr(IA32_PERFEVTSEL0, GetPerfEvtSelRegisterValue(0xC7, 0x1, true, true, false, false, false, false, true, false, cmask: 0));
+                    // 128B packed double
+                    Ring0.WriteMsr(IA32_PERFEVTSEL1, GetPerfEvtSelRegisterValue(0xC7, 0x4, true, true, false, false, false, false, true, false, cmask: 0));
+                    // 256B packed double
+                    Ring0.WriteMsr(IA32_PERFEVTSEL2, GetPerfEvtSelRegisterValue(0xC7, 0x10, true, true, false, false, false, false, true, false, cmask: 0));
+                    // All FP instr retired
+                    Ring0.WriteMsr(IA32_PERFEVTSEL3, GetPerfEvtSelRegisterValue(0xC7, 0xFF, true, true, false, false, false, false, true, false, cmask: 0));
+                }
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[cpu.GetThreadCount()][];
+                cpu.InitializeCoreTotals();
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    cpu.UpdateThreadCoreCounterData(threadIdx);
+                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
+                }
+
+                cpu.ReadPackagePowerCounter();
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                results.overallCounterValues = cpu.GetOverallCounterValues("Scalar FP32", "128B FP32", "256B FP32", "All FP Instrs");
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "PkgPower", "Instr/Watt",
+                "All FP64 FLOPS", "Scalar FLOPS", "128B FLOPS", "256B FLOPS", "All FP Instrs", "FLOPS/c", "% FP Instrs" };
+
+            public string GetHelpText()
+            {
+                return "";
+            }
+
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
+            {
+                float scalarFlops = counterData.pmc0;
+                float flops128b = counterData.pmc1 * 2;
+                float flops256b = counterData.pmc2 * 4;
                 float totalFlops = scalarFlops + flops128b + flops256b;
                 return new string[] { label,
                         FormatLargeNumber(counterData.activeCycles),

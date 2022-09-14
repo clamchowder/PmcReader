@@ -1,5 +1,6 @@
 ﻿using PmcReader.Interop;
 using System;
+using System.Collections.Generic;
 using System.Runtime.InteropServices.WindowsRuntime;
 
 namespace PmcReader.Intel
@@ -24,8 +25,10 @@ namespace PmcReader.Intel
             CboCount = (int)((cboConfig & 0x7) - 1);
             cboData = new NormalizedCboCounterData[CboCount];
 
-            monitoringConfigs = new MonitoringConfig[1];
-            monitoringConfigs[0] = new HitrateConfig(this);
+            List<MonitoringConfig> monitoringConfigList = new List<MonitoringConfig>();
+            monitoringConfigList.Add(new HitrateConfig(this));
+            monitoringConfigList.Add(new SnoopHitConfig(this));
+            monitoringConfigs = monitoringConfigList.ToArray();
         }
 
         public class NormalizedCboCounterData
@@ -139,67 +142,6 @@ namespace PmcReader.Intel
             }
         }
 
-        public class SnoopInvalidateConfig : MonitoringConfig
-        {
-            private SkylakeClientL3 cpu;
-            public string GetConfigName() { return "Snoop Invalidations"; }
-
-            public SnoopInvalidateConfig(SkylakeClientL3 intelCpu)
-            {
-                cpu = intelCpu;
-            }
-
-            public string[] GetColumns()
-            {
-                return columns;
-            }
-
-            public void Initialize()
-            {
-                ThreadAffinity.Set(0x1);
-                cpu.EnableUncoreCounters();
-                for (uint cboIdx = 0; cboIdx < cpu.CboCount; cboIdx++)
-                {
-                    // 0x22 = Snoop response, 0xFF = all responses
-                    Ring0.WriteMsr(MSR_UNC_CBO_PERFEVTSEL0_base + MSR_UNC_CBO_increment * cboIdx,
-                        GetUncorePerfEvtSelRegisterValue(0x22, 0xFF, false, false, true, false, 0));
-
-                    // 0x22 = Snoop response, umask 0x44 = hit non-modified line. 0x48 = hitm
-                    Ring0.WriteMsr(MSR_UNC_CBO_PERFEVTSEL1_base + MSR_UNC_CBO_increment * cboIdx,
-                        GetUncorePerfEvtSelRegisterValue(0x22, 0x12 | 0x20 | 0x40 | 0x80, false, false, true, false, 0));
-                }
-            }
-
-            public MonitoringUpdateResults Update()
-            {
-                MonitoringUpdateResults results = new MonitoringUpdateResults();
-                results.unitMetrics = new string[cpu.CboCount][];
-                cpu.InitializeCboTotals();
-                ThreadAffinity.Set(0x1);
-                for (uint cboIdx = 0; cboIdx < cpu.CboCount; cboIdx++)
-                {
-                    cpu.UpdateCboCounterData(cboIdx);
-                    results.unitMetrics[cboIdx] = computeMetrics("CBo " + cboIdx, cpu.cboData[cboIdx]);
-                }
-
-                results.overallMetrics = computeMetrics("Overall", cpu.cboTotals);
-                return results;
-            }
-
-            public string[] columns = new string[] { "Item", "Invalidate Resp %", "Invalidate BW", "All Snoop Responses", "Core Cache Lines Invalidated" };
-
-            public string GetHelpText() { return ""; }
-
-            private string[] computeMetrics(string label, NormalizedCboCounterData counterData)
-            {
-                return new string[] { label,
-                    string.Format("{0:F2}%", 100 * (counterData.ctr1 / counterData.ctr0)),
-                    FormatLargeNumber(counterData.ctr1 * 64) + "B/s",
-                    FormatLargeNumber(counterData.ctr0),
-                    FormatLargeNumber(counterData.ctr1)};
-            }
-        }
-
         public class SnoopHitConfig : MonitoringConfig
         {
             private SkylakeClientL3 cpu;
@@ -221,14 +163,13 @@ namespace PmcReader.Intel
                 cpu.EnableUncoreCounters();
                 for (uint cboIdx = 0; cboIdx < cpu.CboCount; cboIdx++)
                 {
-                    // 0x22 = Snoop response, 0xFF = all responses
+                    // CBo sent a snoop that hit a non-modified line
                     Ring0.WriteMsr(MSR_UNC_CBO_PERFEVTSEL0_base + MSR_UNC_CBO_increment * cboIdx,
-                        GetUncorePerfEvtSelRegisterValue(0x22, 0xFF, false, false, true, false, 0));
+                        GetUncorePerfEvtSelRegisterValue(0x22, 0x44, false, false, true, false, 0));
 
-                    // 0x22 = Snoop response, umask 0x4 = non-modified line hit, umask 0x8 = modified line hit
-                    // high 3 bits of umask = filter. 0x20 = external snoop, 0x40 = core memory request, 0x80 = L3 eviction
+                    // CBo sent a snoop that hit a modified line
                     Ring0.WriteMsr(MSR_UNC_CBO_PERFEVTSEL1_base + MSR_UNC_CBO_increment * cboIdx,
-                        GetUncorePerfEvtSelRegisterValue(0x22, 0x4 | 0x8 | 0x20 | 0x40 | 0x80, false, false, true, false, 0));
+                        GetUncorePerfEvtSelRegisterValue(0x22, 0x48, false, false, true, false, 0));
                 }
             }
 
@@ -248,17 +189,17 @@ namespace PmcReader.Intel
                 return results;
             }
 
-            public string[] columns = new string[] { "Item", "Snoop Hitrate", "Snoop Hit BW", "All Snoop Responses", "Snoop Hits" };
+            public string[] columns = new string[] { "Item", "Snoop Hit BW", "Snoop Hit(M) BW", "Snoop Hit(non-M) BW", "Snoop Hits" };
 
             public string GetHelpText() { return ""; }
 
             private string[] computeMetrics(string label, NormalizedCboCounterData counterData)
             {
                 return new string[] { label,
-                    string.Format("{0:F2}%", 100 * (counterData.ctr1 / counterData.ctr0)),
+                    FormatLargeNumber((counterData.ctr0 + counterData.ctr1) * 64) + "B/s",
+                    FormatLargeNumber(counterData.ctr0 * 64) + "B/s",
                     FormatLargeNumber(counterData.ctr1 * 64) + "B/s",
-                    FormatLargeNumber(counterData.ctr0),
-                    FormatLargeNumber(counterData.ctr1)};
+                    FormatLargeNumber(counterData.ctr0 + counterData.ctr1)};
             }
         }
     }

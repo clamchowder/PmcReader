@@ -19,9 +19,20 @@ namespace PmcReader.Intel
         public const uint MSR_UNC_ARB_PERFEVTSEL1 = 0x3B3;
         public const uint MSR_UNC_CBO_increment = 0x10;
 
+        public const ulong BAR_MASK = 0x0007FFFFF8000;
+        public const uint DRAM_GT_REQUESTS_OFFSET = 0x5040;
+        public const uint DRAM_IA_REQUESTS_OFFSET = 0x5044;
+        public const uint DRAM_IO_REQUESTS_OFFSET = 0x5048;
+        public const uint DRAM_DATA_READS_OFFSET = 0x5050;
+        public const uint DRAM_DATA_WRITES_OFFSET = 0x5054;
+
+        public ulong barAddress;
+
         public SkylakeClientUncore()
         {
             architectureName = "Skylake Client Uncore";
+            Ring0.ReadPciConfig(Ring0.GetPciAddress(0, 0, 0), 0x48, out uint barLo);
+            barAddress = (ulong)barLo & BAR_MASK;
         }
 
         /// <summary>
