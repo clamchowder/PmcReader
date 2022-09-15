@@ -3,7 +3,7 @@ using System;
 
 namespace PmcReader.Intel
 {
-    public class SkylakeClientArb : HaswellClientUncore
+    public class SkylakeClientArb : SkylakeClientUncore
     {
         private ulong lastUncoreClockCount;
 
@@ -11,8 +11,10 @@ namespace PmcReader.Intel
         {
             architectureName = "Skylake Client System Agent";
             lastUncoreClockCount = 0;
-            monitoringConfigs = new MonitoringConfig[1];
-            monitoringConfigs[0] = new MCRequests(this);
+            monitoringConfigs = new MonitoringConfig[3];
+            monitoringConfigs[0] = new MCRequests(this, "All MC Requests", 0x1);
+            monitoringConfigs[1] = new MCRequests(this, "MC: Core Data Read", 0x2);
+            monitoringConfigs[2] = new MCRequests(this, "MC: Write", 0x20);
         }
 
         public class NormalizedArbCounterData
@@ -56,11 +58,15 @@ namespace PmcReader.Intel
         public class MCRequests : MonitoringConfig
         {
             private SkylakeClientArb cpu;
-            public string GetConfigName() { return "All MC Requests"; }
+            private byte umask;
+            private string configName;
+            public string GetConfigName() { return configName; }
 
-            public MCRequests(SkylakeClientArb intelCpu)
+            public MCRequests(SkylakeClientArb intelCpu, string configName, byte umask)
             {
                 cpu = intelCpu;
+                this.configName = configName;
+                this.umask = umask;
             }
 
             public string[] GetColumns()
@@ -75,11 +81,11 @@ namespace PmcReader.Intel
                 // counts for coherent and non-coherent requests initiated by cores, igpu, or L3
                 // only works in counter 0
                 Ring0.WriteMsr(MSR_UNC_ARB_PERFEVTSEL0,
-                    GetUncorePerfEvtSelRegisterValue(0x80, 1, false, false, true, false, 0));
+                    GetUncorePerfEvtSelRegisterValue(0x80, umask, false, false, true, false, 0));
 
                 // 0x81 = number of requests
                 Ring0.WriteMsr(MSR_UNC_ARB_PERFEVTSEL1,
-                    GetUncorePerfEvtSelRegisterValue(0x81, 1, false, false, true, false, 0));
+                    GetUncorePerfEvtSelRegisterValue(0x81, umask, false, false, true, false, 0));
             }
 
             public MonitoringUpdateResults Update()
@@ -96,6 +102,71 @@ namespace PmcReader.Intel
                     string.Format("{0:F2} clk", counterData.ctr0 / counterData.ctr1),
                     string.Format("{0:F2} ns", (1000000000 / counterData.uncoreClock) * (counterData.ctr0 / counterData.ctr1))
                 };
+                return results;
+            }
+
+            public string GetHelpText() { return ""; }
+            public string[] columns = new string[] { "Clk", "Requests", "Requests * 64B", "Q Occupancy", "Req Latency", "Req Latency" };
+        }
+
+        public ulong GetImcCounterDelta(ulong addressOffset, ref ulong lastValue)
+        {
+            uint value = 0;
+            ulong rc = 0;
+            if (!Ring0.ReadMemory<uint>(barAddress, ref value))
+            {
+                return rc;
+            }
+
+            if (value < lastValue)
+            {
+                rc = value + (0xFFFFFFFF - lastValue);
+            }
+            else
+            {
+                rc = value - lastValue;
+            }
+
+            lastValue = value;
+            return rc;
+        }
+
+        public class MemoryBandwidth : MonitoringConfig
+        {
+            private SkylakeClientArb cpu;
+            public string GetConfigName() { return "Memory Bandwidth"; }
+
+            private ulong lastDataReads;
+            private ulong lastDataWrites;
+
+            public MemoryBandwidth(SkylakeClientArb intelCpu)
+            {
+                cpu = intelCpu;
+            }
+
+            public string[] GetColumns()
+            {
+                return columns;
+            }
+
+            public void Initialize()
+            {
+                lastDataReads = 0;
+                lastDataWrites = 0;
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                ulong reads = cpu.GetImcCounterDelta(0x5050, ref lastDataReads);
+                ulong writes = cpu.GetImcCounterDelta(0x5054, ref lastDataWrites);
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = null;
+
+
+                results.overallMetrics = new string[] { "Total", FormatLargeNumber(64*(reads + writes)) + "B/s"  };
+                results.unitMetrics = new string[2][];
+                results.unitMetrics[0] = new string[] { "Read", FormatLargeNumber(64 * reads) + "B/s" };
+                results.unitMetrics[1] = new string[] { "Write", FormatLargeNumber(64 * writes) + "B/s" };
                 return results;
             }
 

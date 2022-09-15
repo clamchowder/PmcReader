@@ -366,7 +366,7 @@
             this.Controls.Add(this.configSelect);
             this.MinimumSize = new System.Drawing.Size(1213, 500);
             this.Name = "HaswellForm";
-            this.Text = "CPU Performance Monitoring";
+            this.Text = "Clam CPU Performance Monitoring (WIP)";
             this.Load += new System.EventHandler(this.HaswellForm_Load);
             this.ResumeLayout(false);
             this.PerformLayout();
