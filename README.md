@@ -25,6 +25,8 @@ Piledriver's northbridge is decently well covered.
 ### Intel, Core Events
 Sandy Bridge and Haswell have the best core event coverage. Skylake and Goldmont Plus are a work in progress, with most basic events covered. On other Intel cores, I have code that can read "architectural" events (instructions, cycles, branch mispredicts, last level cache misses), but other events won't be supported.
 
+There might be some code for Alder Lake, but we don't talk about that. Because it has never been tested.
+
 ### Intel, Non-Core Events
 The program can read basic counters on Haswell client/HEDT and Skylake client uncores for L3 hitrate and system agent arbitration queue events. 
 
