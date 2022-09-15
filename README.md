@@ -28,7 +28,7 @@ Sandy Bridge and Haswell have the best core event coverage. Skylake and Goldmont
 ### Intel, Non-Core Events
 The program can read basic counters on Haswell client/HEDT and Skylake client uncores for L3 hitrate and system agent arbitration queue events. 
 
-There's pretty extensive support for Sandy Bridge HEDT L3 performance counters.
+There's pretty extensive support for Sandy Bridge HEDT L3 performance counters. Sandy Bridge's Power Control Unit (PCU) can be monitored as well.
 
 ## Use of Undocumented Events
 In some places, I use events and unit mask combinations not explcitly documented by AMD or Intel. In some cases, I use a combination of unit mask bits that isn't directly in Intel's docs (since they provide umask values, and don't document what's selected by individual bits). Or, I set combinations of edge/count mask fields that aren't directly documented. I expect those cases to work fine. 
@@ -39,6 +39,11 @@ Anyway, it's best to do your own verification before taking the results as truth
 
 ## General Disclaimer
 Even documented performance monitoring events may be inaccurate. There's *plenty* of errata around performance monitoring events, and they're often never fixed by the manufacturers because an incorrectly counting perf event won't cause crashes or break user programs. And inaccuracies are usually small enough to not seriously affect code optimization efforts.
+
+Also, it's good to read about the events in use in Intel/AMD's docs before interpreting them. I don't expect everyone to do this because documentation can be really hard to parse, so there are the major things to be aware of:
+- Cache requests and misses are generally tracked per cache line. For example, if three instructions miss L1D but requested data from the same 64B cache line, that'll count as one L1D miss/fill request in the cache hierarchy.
+- Many events are "speculative" meaning that counts could be triggered by instructions that are never retired (committed, or have their results made final). For example, instructions could be fetched, pass through rename/execute and cause event count increments there, but then be thrown away before retirement because they came down a mispredicted path. In some cases, similar events on AMD and Intel cannot be directly compared because one is speculative and the other is not.
+- Non-core events should always be considered speculative.
 
 ## Other
 
@@ -54,6 +59,6 @@ Prefetchers can be turned on and off, using MSRs documented by Intel. Specifical
 ### AMD, Testing Controls
 For 17h and newer CPUs (Zen stuff):
 - Op Cache: Can be used to disable the micro-op cache. Not documented by AMD, generally drops performance by a few percent. Use at your own risk.
-- Core Performance Boost: Can be used to disable Core Performance Boost, which will prevent the CPU from raising frequencies beyond base clock.
-- L1D Stream Prefetcher, L2 Stream Prefetcher: Toggles MSR bits that should request the respective prefetchers to be disabled, but not sure if works.
-- Set CPU Name String: Can be used to set the CPU name reported by the CPUID instruction. This can be funny, but can also cause strange behavior. Benchmark apps and CPU-Z may misidentify your CPU. Ryzen Master think you're on a different CPU and not show your saved profiles.
+- Core Performance Boost: Can be used to disable Core Performance Boost, which will prevent the CPU from raising frequencies beyond base clock. Potentially useful for ensuring clock consistency when microbenchmarking, or just making your CPU more power efficient.
+- L1D Stream Prefetcher, L2 Stream Prefetcher: Toggles MSR bits that should request the respective prefetchers to be disabled, but I'm not sure if it works.
+- Set CPU Name String: Can be used to set the CPU name reported by the CPUID instruction. This can be funny, but can also cause strange behavior. Benchmark apps and CPU-Z may misidentify your CPU. Ryzen Master may think you're on a different CPU and not show your saved profiles.
