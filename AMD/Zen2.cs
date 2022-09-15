@@ -1265,7 +1265,7 @@ namespace PmcReader.AMD
                 return results;
             }
 
-            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "Instr Tablewalker 0 Busy", "Instr Tablewalker 1 Busy", "Data Tablewalker 0 Busy", "Data Tablewalker 1 Busy", "Instr Walk Duration", "Data Walk Duration" };
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "Instr Tablewalker 0 Busy", "Instr Tablewalker 1 Busy", "Data Tablewalker 0 Busy", "Data Tablewalker 1 Busy", "Instr Walk Duration", "Data Walk Duration", "Instr Walk/Ki", "Data Walk/Ki" };
 
             public string GetHelpText() 
             { 
@@ -1285,7 +1285,9 @@ namespace PmcReader.AMD
                         FormatPercentage(counterData.ctr2, counterData.aperf),
                         FormatPercentage(counterData.ctr3, counterData.aperf),
                         string.Format("{0:F2} clks", (counterData.ctr0 + counterData.ctr1) / counterData.ctr5),
-                        string.Format("{0:F2} clks", (counterData.ctr2 + counterData.ctr3) / counterData.ctr4)
+                        string.Format("{0:F2} clks", (counterData.ctr2 + counterData.ctr3) / counterData.ctr4),
+                        string.Format("{0:F2}", counterData.ctr5 * 1000 / counterData.instr),
+                        string.Format("{0:F2}", counterData.ctr4 * 1000 / counterData.instr)
                 };
             }
         }
