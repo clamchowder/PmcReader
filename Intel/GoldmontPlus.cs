@@ -5,20 +5,40 @@ namespace PmcReader.Intel
 {
     public class GoldmontPlus : ModernIntelCpu
     {
+        public const uint MSR_OFFCORE_RSP0 = 0x1A6;
+        public const uint MSR_OFFCORE_RSP1 = 0x1A7;
+        public const byte OFFCORE_RESPONSE_EVENT = 0xB7;
+
         public GoldmontPlus()
         {
             List<MonitoringConfig> configs = new List<MonitoringConfig>();
             configs.Add(new ArchitecturalCounters(this));
             configs.Add(new BAClears(this));
             configs.Add(new IFetch(this));
-            configs.Add(new ITLB(this));
+            configs.Add(new InstrPageWalk(this));
+            configs.Add(new IssueHistogram(this));
+            configs.Add(new BackendStall(this));
             configs.Add(new LSU(this));
             configs.Add(new MemMachineClear(this));
             configs.Add(new MachineClear1(this));
             configs.Add(new DTLB(this));
             configs.Add(new MemLoads(this));
+            configs.Add(new RetireHistogram(this));
+            configs.Add(new OffcoreL2(this));
+            configs.Add(new OffcoreHitm(this));
             monitoringConfigs = configs.ToArray();
             architectureName = "Goldmont Plus";
+        }
+
+        /// <summary>
+        /// What to put in Goldmont MSR_OFFCORE_RSPx MSRs
+        /// </summary>
+        /// <returns>Value to put in offcore response config MSR</returns>
+        public static ulong GetGoldmontOffcoreRspRegisterValue(ushort reqType, ushort l2Hit, ushort l2Miss)
+        {
+            return (ulong)reqType |
+                (ulong)l2Hit << 16 |
+                (ulong)l2Miss << 31;
         }
 
         public class BAClears : MonitoringConfig
@@ -166,13 +186,13 @@ namespace PmcReader.Intel
             }
         }
 
-        public class ITLB : MonitoringConfig
+        public class InstrPageWalk : MonitoringConfig
         {
             private GoldmontPlus cpu;
-            public string GetConfigName() { return "Instruction TLB"; }
+            public string GetConfigName() { return "Instr Page Walk"; }
             public string GetHelpText() { return ""; }
 
-            public ITLB(GoldmontPlus intelCpu)
+            public InstrPageWalk(GoldmontPlus intelCpu)
             {
                 cpu = intelCpu;
             }
@@ -613,6 +633,304 @@ namespace PmcReader.Intel
             }
         }
 
+        public class OffcoreL2 : MonitoringConfig
+        {
+            private GoldmontPlus cpu;
+            public string GetConfigName() { return "Offcore: L2"; }
+            public string GetHelpText() { return ""; }
+
+            public OffcoreL2(GoldmontPlus intelCpu)
+            {
+                cpu = intelCpu;
+            }
+
+            public string[] GetColumns()
+            {
+                return columns;
+            }
+
+            public void Initialize()
+            {
+                cpu.EnablePerformanceCounters();
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    ThreadAffinity.Set(1UL << threadIdx);
+                    ulong offcoreRsp0 = GetPerfEvtSelRegisterValue(OFFCORE_RESPONSE_EVENT, 0x1, usr: true, os: true, edge: false, pc: false, interrupt: false, anyThread: false, enable: true, invert: false, cmask: 0);
+                    Ring0.WriteMsr(IA32_PERFEVTSEL0, offcoreRsp0);
+
+                    ulong offcoreRsp1 = GetPerfEvtSelRegisterValue(OFFCORE_RESPONSE_EVENT, 0x2, usr: true, os: true, edge: false, pc: false, interrupt: false, anyThread: false, enable: true, invert: false, cmask: 0);
+                    Ring0.WriteMsr(IA32_PERFEVTSEL1, offcoreRsp1);
+
+                    Ring0.WriteMsr(MSR_OFFCORE_RSP0, 0x48000); //  L2 hit
+                    Ring0.WriteMsr(MSR_OFFCORE_RSP1, 0x18000); // any response
+
+                    ulong l2qReject = GetPerfEvtSelRegisterValue(0x31, 0, true, true, false, false, false, false, true, false, 0);
+                    Ring0.WriteMsr(IA32_PERFEVTSEL2, l2qReject);
+
+                    ulong xqReject = GetPerfEvtSelRegisterValue(0x30, 0, true, true, false, false, false, false, true, false, 0);
+                    Ring0.WriteMsr(IA32_PERFEVTSEL3, xqReject);
+                }
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[cpu.GetThreadCount()][];
+                cpu.InitializeCoreTotals();
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    cpu.UpdateThreadCoreCounterData(threadIdx);
+                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
+                }
+
+                cpu.ReadPackagePowerCounter();
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                results.overallCounterValues = cpu.GetOverallCounterValues("L2 Hit", "L2 Request", "L2Q Reject", "XQ Reject");
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "Pkg Pwr", "Instr/Watt",
+                "L2 Hitrate", "L2 Hit BW", "L2 MPKI", "L2Q Reject/Cycles", "XQ Reject/Cycles" };
+
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
+            {
+
+                return new string[] { label,
+                        FormatLargeNumber(counterData.activeCycles),
+                        FormatLargeNumber(counterData.instr),
+                        string.Format("{0:F2}", counterData.instr / counterData.activeCycles),
+                        string.Format("{0:F2} W", counterData.packagePower),
+                        FormatLargeNumber(counterData.instr / counterData.packagePower), // instr/watt
+                        FormatPercentage(counterData.pmc0, counterData.pmc1),
+                        FormatLargeNumber(64 * counterData.pmc0) + "B/s",
+                        string.Format("{0:F2}", 1000 * (counterData.pmc1 - counterData.pmc0) / counterData.instr),
+                        FormatPercentage(counterData.pmc2, counterData.activeCycles),
+                        FormatPercentage(counterData.pmc3, counterData.activeCycles)
+                };
+            }
+        }
+
+        public class BackendStall : MonitoringConfig
+        {
+            private GoldmontPlus cpu;
+            public string GetConfigName() { return "Backend Stalls"; }
+            public string GetHelpText() { return ""; }
+
+            public BackendStall(GoldmontPlus intelCpu)
+            {
+                cpu = intelCpu;
+            }
+
+            public string[] GetColumns()
+            {
+                return columns;
+            }
+
+            public void Initialize()
+            {
+                cpu.EnablePerformanceCounters();
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    ThreadAffinity.Set(1UL << threadIdx);
+                    ulong resourceFullSlots = GetPerfEvtSelRegisterValue(0xCA, 0x1, usr: true, os: true, edge: false, pc: false, interrupt: false, anyThread: false, enable: true, invert: false, cmask: 0);
+                    Ring0.WriteMsr(IA32_PERFEVTSEL0, resourceFullSlots);
+
+                    ulong recoverySlots = GetPerfEvtSelRegisterValue(0xCA, 0x2, true, true, false, false, false, false, true, false, 0);
+                    Ring0.WriteMsr(IA32_PERFEVTSEL1, recoverySlots);
+
+                    ulong allStallSlots = GetPerfEvtSelRegisterValue(0xCA, 0, true, true, false, false, false, false, true, false, 0);
+                    Ring0.WriteMsr(IA32_PERFEVTSEL2, allStallSlots);
+
+                    ulong mecStall = GetPerfEvtSelRegisterValue(0x9C, 0, true, true, false, false, false, false, true, false, 0);
+                    Ring0.WriteMsr(IA32_PERFEVTSEL3, mecStall);
+                }
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[cpu.GetThreadCount()][];
+                cpu.InitializeCoreTotals();
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    cpu.UpdateThreadCoreCounterData(threadIdx);
+                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
+                }
+
+                cpu.ReadPackagePowerCounter();
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                results.overallCounterValues = cpu.GetOverallCounterValues("Resource Full", "Recovery", "All Slots Not Consumed", "Test");
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "Pkg Pwr", "Instr/Watt",
+                "Resource Full", "Recovery", "All Backend Bound", "All FE Bound" };
+
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
+            {
+                float totalSlots = counterData.activeCycles * 4;
+                return new string[] { label,
+                        FormatLargeNumber(counterData.activeCycles),
+                        FormatLargeNumber(counterData.instr),
+                        string.Format("{0:F2}", counterData.instr / counterData.activeCycles),
+                        string.Format("{0:F2} W", counterData.packagePower),
+                        FormatLargeNumber(counterData.instr / counterData.packagePower),
+                        FormatPercentage(counterData.pmc0, totalSlots),
+                        FormatPercentage(counterData.pmc1, totalSlots),
+                        FormatPercentage(counterData.pmc2, totalSlots),
+                        FormatPercentage(counterData.pmc3, totalSlots)
+                };
+            }
+        }
+
+        public class IssueHistogram : MonitoringConfig
+        {
+            private GoldmontPlus cpu;
+            public string GetConfigName() { return "Rename/Alloc Histogram"; }
+            public string GetHelpText() { return ""; }
+
+            public IssueHistogram(GoldmontPlus intelCpu)
+            {
+                cpu = intelCpu;
+            }
+
+            public string[] GetColumns()
+            {
+                return columns;
+            }
+
+            public void Initialize()
+            {
+                cpu.EnablePerformanceCounters();
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    ThreadAffinity.Set(1UL << threadIdx);
+                    Ring0.WriteMsr(IA32_PERFEVTSEL0, GetPerfEvtSelRegisterValue(0xE, 0, true, true, false, false, false, false, true, false, 1));
+                    Ring0.WriteMsr(IA32_PERFEVTSEL1, GetPerfEvtSelRegisterValue(0xE, 0, true, true, false, false, false, false, true, false, 2));
+                    Ring0.WriteMsr(IA32_PERFEVTSEL2, GetPerfEvtSelRegisterValue(0xE, 0, true, true, false, false, false, false, true, false, 3));
+                    Ring0.WriteMsr(IA32_PERFEVTSEL3, GetPerfEvtSelRegisterValue(0xE, 0, true, true, false, false, false, false, true, false, 4));
+                }
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[cpu.GetThreadCount()][];
+                cpu.InitializeCoreTotals();
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    cpu.UpdateThreadCoreCounterData(threadIdx);
+                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
+                }
+
+                cpu.ReadPackagePowerCounter();
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                results.overallCounterValues = cpu.GetOverallCounterValues("Issue cmask 1", "Issue cmask 2", "Issue cmask 3", "Issue cmask 4");
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "Pkg Pwr", "Instr/Watt",
+                "Ops Issued/Clk", "Issue Active", "1 Op Issued", "2 Ops Issued", "3 Ops Issued", "4 Ops Issued" };
+
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
+            {
+                float oneOp = counterData.pmc0 - counterData.pmc1;
+                float twoOps = counterData.pmc1 - counterData.pmc2;
+                float threeOps = counterData.pmc2 - counterData.pmc3;
+                float fourOps = counterData.pmc3;
+                float totalOps = oneOp + 2 * twoOps + 3 * threeOps + 4 * fourOps;
+                return new string[] { label,
+                        FormatLargeNumber(counterData.activeCycles),
+                        FormatLargeNumber(counterData.instr),
+                        string.Format("{0:F2}", counterData.instr / counterData.activeCycles),
+                        string.Format("{0:F2} W", counterData.packagePower),
+                        FormatLargeNumber(counterData.instr / counterData.packagePower),
+                        string.Format("{0:F2}", totalOps / counterData.activeCycles),
+                        FormatPercentage(counterData.pmc0, counterData.activeCycles),
+                        FormatPercentage(oneOp, counterData.activeCycles),
+                        FormatPercentage(twoOps, counterData.activeCycles),
+                        FormatPercentage(threeOps, counterData.activeCycles),
+                        FormatPercentage(fourOps, counterData.activeCycles),
+                };
+            }
+        }
+
+        public class OffcoreHitm : MonitoringConfig
+        {
+            private GoldmontPlus cpu;
+            public string GetConfigName() { return "Offcore: C2C"; }
+            public string GetHelpText() { return ""; }
+
+            public OffcoreHitm(GoldmontPlus intelCpu)
+            {
+                cpu = intelCpu;
+            }
+
+            public string[] GetColumns()
+            {
+                return columns;
+            }
+
+            public void Initialize()
+            {
+                cpu.EnablePerformanceCounters();
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    ThreadAffinity.Set(1UL << threadIdx);
+                    ulong offcoreRsp0 = GetPerfEvtSelRegisterValue(OFFCORE_RESPONSE_EVENT, 0x1, usr: true, os: true, edge: false, pc: false, interrupt: false, anyThread: false, enable: true, invert: false, cmask: 0);
+                    Ring0.WriteMsr(IA32_PERFEVTSEL0, offcoreRsp0);
+
+                    ulong offcoreRsp1 = GetPerfEvtSelRegisterValue(OFFCORE_RESPONSE_EVENT, 0x2, usr: true, os: true, edge: false, pc: false, interrupt: false, anyThread: false, enable: true, invert: false, cmask: 0);
+                    Ring0.WriteMsr(IA32_PERFEVTSEL1, offcoreRsp1);
+
+                    Ring0.WriteMsr(MSR_OFFCORE_RSP0, 0x1000008000); //  L2 miss, hit modified in another core
+                    Ring0.WriteMsr(MSR_OFFCORE_RSP1, 0x18000); // any response
+
+                    ulong l2qReject = GetPerfEvtSelRegisterValue(0x31, 0, true, true, false, false, false, false, true, false, 0);
+                    Ring0.WriteMsr(IA32_PERFEVTSEL2, l2qReject);
+
+                    ulong xqReject = GetPerfEvtSelRegisterValue(0x30, 0, true, true, false, false, false, false, true, false, 0);
+                    Ring0.WriteMsr(IA32_PERFEVTSEL3, xqReject);
+                }
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[cpu.GetThreadCount()][];
+                cpu.InitializeCoreTotals();
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    cpu.UpdateThreadCoreCounterData(threadIdx);
+                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
+                }
+
+                cpu.ReadPackagePowerCounter();
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                results.overallCounterValues = cpu.GetOverallCounterValues("L2 Miss HitM in Other Core", "L2 Request", "L2Q Reject", "XQ Reject");
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "Pkg Pwr", "Instr/Watt",
+                "% Offcore Reqs = Cross-Core", "Cross-Core BW", "Cross-Core/Ki", "L2Q Reject/Cycles", "XQ Reject/Cycles" };
+
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
+            {
+
+                return new string[] { label,
+                        FormatLargeNumber(counterData.activeCycles),
+                        FormatLargeNumber(counterData.instr),
+                        string.Format("{0:F2}", counterData.instr / counterData.activeCycles),
+                        string.Format("{0:F2} W", counterData.packagePower),
+                        FormatLargeNumber(counterData.instr / counterData.packagePower), // instr/watt
+                        FormatPercentage(counterData.pmc0, counterData.pmc1),
+                        FormatLargeNumber(64 * counterData.pmc0) + "B/s",
+                        string.Format("{0:F2}", 1000 * counterData.pmc0 / counterData.instr),
+                        FormatPercentage(counterData.pmc2, counterData.activeCycles),
+                        FormatPercentage(counterData.pmc3, counterData.activeCycles)
+                };
+            }
+        }
 
     }
 }

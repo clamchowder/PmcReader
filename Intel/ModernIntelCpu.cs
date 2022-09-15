@@ -153,6 +153,11 @@ namespace PmcReader.Intel
             NormalizedTotalCounts.pmc1 = 0;
             NormalizedTotalCounts.pmc2 = 0;
             NormalizedTotalCounts.pmc3 = 0;
+
+            NormalizedTotalCounts.pmc4 = 0;
+            NormalizedTotalCounts.pmc5 = 0;
+            NormalizedTotalCounts.pmc6 = 0;
+            NormalizedTotalCounts.pmc7 = 0;
         }
 
         /// <summary>
@@ -215,6 +220,12 @@ namespace PmcReader.Intel
             public float pmc1;
             public float pmc2;
             public float pmc3;
+
+            public float pmc4;
+            public float pmc5;
+            public float pmc6;
+            public float pmc7;
+
             public float NormalizationFactor;
         }
 
@@ -1164,12 +1175,12 @@ namespace PmcReader.Intel
             }
         }
 
-        public class RetireHistorgram : MonitoringConfig
+        public class RetireHistogram : MonitoringConfig
         {
             private ModernIntelCpu cpu;
             public string GetConfigName() { return "Instr Retire Histogram"; }
 
-            public RetireHistorgram(ModernIntelCpu intelCpu)
+            public RetireHistogram(ModernIntelCpu intelCpu)
             {
                 cpu = intelCpu;
             }

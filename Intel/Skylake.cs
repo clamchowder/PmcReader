@@ -25,7 +25,7 @@ namespace PmcReader.Intel
             configs.Add(new Fp32Flops(this));
             configs.Add(new Fp64Flops(this));
             configs.Add(new OffcoreBurst(this));
-            configs.Add(new RetireHistorgram(this));
+            configs.Add(new RetireHistogram(this));
             monitoringConfigs = configs.ToArray();
             architectureName = "Skylake";
         }

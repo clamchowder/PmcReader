@@ -69,6 +69,14 @@ namespace PmcReader
                     else if (cpuModel == 0x7A)
                     {
                         coreMonitoring.monitoringArea = new Intel.GoldmontPlus();
+                        dfLabelOverride = "Unused";
+                        l3LabelOverride = "Unused";
+                    }
+                    else if (cpuModel == 0x97)
+                    {
+                        coreMonitoring.monitoringArea = new Intel.AlderLake();
+                        dfLabelOverride = "Unused";
+                        l3LabelOverride = "Unused";
                     }
                     else
                     {

@@ -68,6 +68,7 @@
     </Compile>
     <Compile Include="Intel\HaswellEL3.cs" />
     <Compile Include="Intel\GoldmontPlus.cs" />
+    <Compile Include="Intel\AlderLake.cs" />
     <Compile Include="Intel\SkylakeClientArb.cs" />
     <Compile Include="Intel\HaswellClientArb.cs" />
     <Compile Include="Intel\SkylakeClientL3.cs" />
