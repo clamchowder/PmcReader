@@ -291,9 +291,26 @@ namespace PmcReader.Intel
         /// <param name="pmc2">Description for counter 2</param>
         /// <param name="pmc3">Description for counter 3</param>
         /// <returns>Array to put in results object</returns>
-        public Tuple<string, float>[] GetOverallCounterValues(string pmc0, string pmc1, string pmc2, string pmc3)
+        public Tuple<string, float>[] GetOverallCounterValues(string pmc0, string pmc1, string pmc2, string pmc3, 
+            string pmc4 = null, string pmc5 = null, string pmc6 = null, string pmc7 = null)
         {
-            Tuple<string, float>[] retval = new Tuple<string, float>[9];
+            int returnedPoints = 5 + 4;
+            bool sixCounters = false, eightCounters = false;
+            // GMT has six counters
+            if (!string.IsNullOrEmpty(pmc4) && !string.IsNullOrEmpty(pmc5))
+            {
+                sixCounters = true;
+                returnedPoints += 2;
+            }
+
+            // GLC has eight counters, as does ICL
+            if (!string.IsNullOrEmpty(pmc6) && !string.IsNullOrEmpty(pmc7))
+            {
+                eightCounters = true;
+                returnedPoints += 2;
+            }
+
+            Tuple<string, float>[] retval = new Tuple<string, float>[returnedPoints];
             retval[0] = new Tuple<string, float>("Active Cycles", NormalizedTotalCounts.activeCycles);
             retval[1] = new Tuple<string, float>("REF_TSC", NormalizedTotalCounts.refTsc);
             retval[2] = new Tuple<string, float>("Instructions", NormalizedTotalCounts.instr);
@@ -303,6 +320,18 @@ namespace PmcReader.Intel
             retval[6] = new Tuple<string, float>(pmc1, NormalizedTotalCounts.pmc1);
             retval[7] = new Tuple<string, float>(pmc2, NormalizedTotalCounts.pmc2);
             retval[8] = new Tuple<string, float>(pmc3, NormalizedTotalCounts.pmc3);
+            if (sixCounters)
+            {
+                retval[9] = new Tuple<string, float>(pmc4, NormalizedTotalCounts.pmc4);
+                retval[10] = new Tuple<string, float>(pmc4, NormalizedTotalCounts.pmc5);
+            }
+
+            if (eightCounters)
+            {
+                retval[11] = new Tuple<string, float>(pmc4, NormalizedTotalCounts.pmc6);
+                retval[12] = new Tuple<string, float>(pmc4, NormalizedTotalCounts.pmc7);
+            }
+
             return retval;
         }
 

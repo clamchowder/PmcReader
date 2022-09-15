@@ -1,5 +1,5 @@
-﻿using System.Collections.Generic;
-using System.Windows.Forms.VisualStyles;
+﻿using System;
+using System.Collections.Generic;
 using PmcReader.Interop;
 
 namespace PmcReader.Intel
@@ -18,9 +18,12 @@ namespace PmcReader.Intel
         {
             pCores = new List<byte>();
             List<MonitoringConfig> configs = new List<MonitoringConfig>();
+
+            // All ADL SKUs have P-Cores
             configs.Add(new ArchitecturalCounters(this));
             configs.Add(new RetireHistogram(this));
             configs.Add(new PCoreVector(this));
+            configs.Add(new PCorePowerLicense(this));
 
             // Determine if we're on a hybrid model
             OpCode.Cpuid(0x7, 0, out _, out _, out _, out uint edx);
@@ -34,6 +37,12 @@ namespace PmcReader.Intel
                     uint coreType = (eax >> 24) & 0xFF;
                     if (coreType == 0x20) eCores.Add(i);
                     else if (coreType == 0x40) pCores.Add(i);
+                }
+
+                if (eCores.Count > 0)
+                {
+                    configs.Add(new ECoresMemExec(this));
+                    configs.Add(new ECoresBackendBound(this));
                 }
             }
             else
@@ -166,26 +175,20 @@ namespace PmcReader.Intel
             public MonitoringUpdateResults Update()
             {
                 MonitoringUpdateResults results = new MonitoringUpdateResults();
-                results.unitMetrics = new string[cpu.GetThreadCount()][];
+                results.unitMetrics = new string[cpu.pCores.Count][];
                 cpu.InitializeCoreTotals();
 
-                string[] placeholder = new string[columns.Length];
-                for (int i = 0; i < columns.Length; i++) placeholder[i] = "N/A";
-
-                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
-                {
-                    cpu.UpdateThreadCoreCounterData(threadIdx);
-                    results.unitMetrics[threadIdx] = placeholder;
-                }
-
+                int pCoreIdx = 0;
                 foreach (byte threadIdx in cpu.pCores)
                 {
-                    results.unitMetrics[threadIdx] = computeMetrics("P: Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
+                    results.unitMetrics[pCoreIdx] = computeMetrics("P: Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
+                    pCoreIdx++;
                 }
 
                 cpu.ReadPackagePowerCounter();
                 results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
-                results.overallCounterValues = cpu.GetOverallCounterValues("int 128-bit vec", "int 256-bit vec", "128-bit fp32", "128-bit fp64");
+                results.overallCounterValues = cpu.GetOverallCounterValues(
+                    "int 128-bit vec", "int 256-bit vec", "128-bit fp32", "128-bit fp64", "256-bit FP32", "256-bit FP64", "Scalar FP32", "Scalar FP64");
                 return results;
             }
 
@@ -215,6 +218,230 @@ namespace PmcReader.Intel
                         FormatPercentage(counterData.pmc5, counterData.instr),
                         FormatPercentage(counterData.pmc6, counterData.instr),
                         FormatPercentage(counterData.pmc7, counterData.instr),
+                };
+            }
+        }
+
+        public class PCorePowerLicense : MonitoringConfig
+        {
+            private AlderLake cpu;
+            public string GetConfigName() { return "P Cores: Power State/License"; }
+
+            public PCorePowerLicense(AlderLake intelCpu)
+            {
+                cpu = intelCpu;
+            }
+
+            public string[] GetColumns()
+            {
+                return columns;
+            }
+
+            public void Initialize()
+            {
+                ulong license1 = GetPerfEvtSelRegisterValue(0x28, 0x2, true, true, false, false, false, false, true, false, 0);
+                ulong license2 = GetPerfEvtSelRegisterValue(0x28, 0x4, true, true, false, false, false, false, true, false, 0);
+                ulong license3 = GetPerfEvtSelRegisterValue(0x28, 0x8, true, true, false, false, false, false, true, false, 0);
+                ulong c01State = GetPerfEvtSelRegisterValue(0xEC, 0x10, true, true, false, false, false, false, true, false, 0);
+                ulong c02State = GetPerfEvtSelRegisterValue(0xEC, 0x20, true, true, false, false, false, false, true, false, 0);
+                ulong oneThread = GetPerfEvtSelRegisterValue(0x3C, 0x2, true, true, false, false, false, false, true, false, 0);
+                ulong pause = GetPerfEvtSelRegisterValue(0xEC, 0x40, true, true, false, false, false, false, true, false, 0);
+                ulong sd_retired = GetPerfEvtSelRegisterValue(0xC7, 0x1, true, true, false, false, false, false, true, false, 0);
+                cpu.ProgramPCorePerfCounters(license1, license2, license3, c01State, c02State, oneThread, pause, sd_retired);
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[cpu.pCores.Count][];
+                cpu.InitializeCoreTotals();
+
+                int pCoreIdx = 0;
+                foreach (byte threadIdx in cpu.pCores)
+                {
+                    results.unitMetrics[pCoreIdx] = computeMetrics("P: Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
+                    pCoreIdx++;
+                }
+
+                cpu.ReadPackagePowerCounter();
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                results.overallCounterValues = cpu.GetOverallCounterValues("License 1", "License 2", "License 3", "C0.1 State", "C0.2 State", "1T Active", "Paused", "Unused");
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "PkgPower", "Instr/Watt",
+                "License 0", "License 1", "License 2", "C0.1 Pwr Save State", "C0.2 Pwr Save State", "Single Thread Active", "Pause" };
+
+            public string GetHelpText()
+            {
+                return "";
+            }
+
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
+            {
+                return new string[] { label,
+                        FormatLargeNumber(counterData.activeCycles),
+                        FormatLargeNumber(counterData.instr),
+                        string.Format("{0:F2}", counterData.instr / counterData.activeCycles),
+                        string.Format("{0:F2} W", counterData.packagePower),
+                        FormatLargeNumber(counterData.instr / counterData.packagePower),
+                        FormatPercentage(counterData.pmc0, counterData.pmc0 + counterData.pmc1),
+                        string.Format("{0:F2}", 1000 * counterData.pmc1 / counterData.instr),
+                        FormatPercentage(counterData.pmc0, counterData.activeCycles),
+                        FormatPercentage(counterData.pmc1, counterData.activeCycles),
+                        FormatPercentage(counterData.pmc2, counterData.activeCycles),
+                        FormatPercentage(counterData.pmc3, counterData.activeCycles),
+                        FormatPercentage(counterData.pmc4, counterData.activeCycles),
+                        FormatPercentage(counterData.pmc5, counterData.activeCycles),
+                        FormatPercentage(counterData.pmc6, counterData.activeCycles)
+                };
+            }
+        }
+
+        public class ECoresMemExec : MonitoringConfig
+        {
+            private AlderLake cpu;
+            public string GetConfigName() { return "E Cores: Memory Execution"; }
+
+            public ECoresMemExec(AlderLake intelCpu)
+            {
+                cpu = intelCpu;
+            }
+
+            public string[] GetColumns()
+            {
+                return columns;
+            }
+
+            public void Initialize()
+            {
+                ulong loadBufferFull = GetPerfEvtSelRegisterValue(0x4, 0x2, true, true, false, false, false, false, true, false, 0);
+                ulong memRsFull = GetPerfEvtSelRegisterValue(0x4, 0x4, true, true, false, false, false, false, true, false, 0);
+                ulong storeBufferFull = GetPerfEvtSelRegisterValue(0x4, 0x1, true, true, false, false, false, false, true, false, 0);
+
+                // 4K alias check
+                ulong addrAlias = GetPerfEvtSelRegisterValue(0x3, 0x4, true, true, false, false, false, false, true, false, 0);
+                ulong dataUnknown = GetPerfEvtSelRegisterValue(0x3, 0x1, true, true, false, false, false, false, true, false, 0);
+                ulong unused = GetPerfEvtSelRegisterValue(0x0, 0x0, true, true, false, false, false, false, true, false, 0);
+                cpu.ProgramECorePerfCounters(loadBufferFull, memRsFull, storeBufferFull, addrAlias, dataUnknown, unused);
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[cpu.eCores.Count][];
+                cpu.InitializeCoreTotals();
+
+                int eCoreIdx = 0;
+                foreach (byte threadIdx in cpu.eCores)
+                {
+                    results.unitMetrics[eCoreIdx] = computeMetrics("E: Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
+                    eCoreIdx++;
+                }
+
+                cpu.ReadPackagePowerCounter();
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                results.overallCounterValues = cpu.GetOverallCounterValues("Load Buffer Full", "Mem RS Full", "Store Buffer Full", "LD Block 4K Alias", "LD Block Data Unknown", "Unused");
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "PkgPower", "Instr/Watt",
+                "Load Buffer Full", "Store Buffer Full", "Mem Scheduler Full", "Load blocked, 4K alias/Ki", "Load blocked, dependent store data unavailable/Ki" };
+
+            public string GetHelpText()
+            {
+                return "";
+            }
+
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
+            {
+                return new string[] { label,
+                        FormatLargeNumber(counterData.activeCycles),
+                        FormatLargeNumber(counterData.instr),
+                        string.Format("{0:F2}", counterData.instr / counterData.activeCycles),
+                        string.Format("{0:F2} W", counterData.packagePower),
+                        FormatLargeNumber(counterData.instr / counterData.packagePower),
+                        FormatPercentage(counterData.pmc0, counterData.pmc0 + counterData.pmc1),
+                        string.Format("{0:F2}", 1000 * counterData.pmc1 / counterData.instr),
+                        FormatPercentage(counterData.pmc0, counterData.activeCycles),
+                        FormatPercentage(counterData.pmc1, counterData.activeCycles),
+                        FormatPercentage(counterData.pmc2, counterData.activeCycles),
+                        string.Format("{0:F2}", 1000 * counterData.pmc3 / counterData.instr),
+                        string.Format("{0:F2}", 1000 * counterData.pmc4 / counterData.instr),
+                };
+            }
+        }
+
+        public class ECoresBackendBound : MonitoringConfig
+        {
+            private AlderLake cpu;
+            public string GetConfigName() { return "E Cores: Backend Bound"; }
+
+            public ECoresBackendBound(AlderLake intelCpu)
+            {
+                cpu = intelCpu;
+            }
+
+            public string[] GetColumns()
+            {
+                return columns;
+            }
+
+            public void Initialize()
+            {
+                ulong tdAllocRestriction = GetPerfEvtSelRegisterValue(0x74, 0x1, true, true, false, false, false, false, true, false, 0);
+                ulong tdMemSched = GetPerfEvtSelRegisterValue(0x74, 0x2, true, true, false, false, false, false, true, false, 0);
+                ulong tdNonMemSched = GetPerfEvtSelRegisterValue(0x74, 0x8, true, true, false, false, false, false, true, false, 0);
+                ulong tdReg = GetPerfEvtSelRegisterValue(0x74, 0x20, true, true, false, false, false, false, true, false, 0);
+                ulong tdRob = GetPerfEvtSelRegisterValue(0x74, 0x40, true, true, false, false, false, false, true, false, 0);
+                ulong tdSerialization = GetPerfEvtSelRegisterValue(0x74, 0x10, true, true, false, false, false, false, true, false, 0);
+                cpu.ProgramECorePerfCounters(tdAllocRestriction, tdMemSched, tdNonMemSched, tdReg, tdRob, tdSerialization);
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[cpu.eCores.Count][];
+                cpu.InitializeCoreTotals();
+
+                int eCoreIdx = 0;
+                foreach (byte threadIdx in cpu.eCores)
+                {
+                    results.unitMetrics[eCoreIdx] = computeMetrics("E: Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
+                    eCoreIdx++;
+                }
+
+                cpu.ReadPackagePowerCounter();
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                results.overallCounterValues = cpu.GetOverallCounterValues(
+                    "Allocation Restriction", "Mem Scheduler Full", "Non-mem Scheduler Full", "Registers Full", "ROB Full", "Serialization");
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "PkgPower", "Instr/Watt",
+                "Alloc Restriction", "Mem Scheduler Full", "Non-mem Scheduler Full", "Registers Full", "ROB Full", "Serialization" };
+
+            public string GetHelpText()
+            {
+                return "";
+            }
+
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
+            {
+                return new string[] { label,
+                        FormatLargeNumber(counterData.activeCycles),
+                        FormatLargeNumber(counterData.instr),
+                        string.Format("{0:F2}", counterData.instr / counterData.activeCycles),
+                        string.Format("{0:F2} W", counterData.packagePower),
+                        FormatLargeNumber(counterData.instr / counterData.packagePower),
+                        FormatPercentage(counterData.pmc0, counterData.pmc0 + counterData.pmc1),
+                        string.Format("{0:F2}", 1000 * counterData.pmc1 / counterData.instr),
+                        FormatPercentage(counterData.pmc0, counterData.activeCycles),
+                        FormatPercentage(counterData.pmc1, counterData.activeCycles),
+                        FormatPercentage(counterData.pmc2, counterData.activeCycles),
+                        FormatPercentage(counterData.pmc3, counterData.activeCycles),
+                        FormatPercentage(counterData.pmc4, counterData.activeCycles),
+                        FormatPercentage(counterData.pmc5, counterData.activeCycles)
                 };
             }
         }

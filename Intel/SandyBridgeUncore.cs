@@ -37,7 +37,7 @@ namespace PmcReader.Intel
             configs.Add(new VoltageTransitions(this));
             configs.Add(new Limits(this));
             configs.Add(new ChangeAndPhaseShedding(this));
-            configs.Add(new MemoryBandwidth(this)); // does not work because writing pci config doesn't work
+            //configs.Add(new MemoryBandwidth(this)); // does not work because writing pci config doesn't work
             monitoringConfigs = configs.ToArray();
         }
 
