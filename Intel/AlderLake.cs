@@ -13,6 +13,10 @@ namespace PmcReader.Intel
         public const uint IA32_PERFEVTSEL5 = 0x18B;
         public const uint IA32_PERFEVTSEL6 = 0x18C;
         public const uint IA32_PERFEVTSEL7 = 0x18D;
+        public const uint IA32_A_PMC4 = 0x4C5;
+        public const uint IA32_A_PMC5 = 0x4C6;
+        public const uint IA32_A_PMC6 = 0x4C7;
+        public const uint IA32_A_PMC7 = 0x4C8;
 
         public AlderLake()
         {
@@ -107,6 +111,7 @@ namespace PmcReader.Intel
             {
                 ThreadAffinity.Set(1UL << threadIdx);
                 ulong activeCycles, retiredInstructions, refTsc, pmc0, pmc1, pmc2, pmc3;
+                ulong pmc4, pmc5, pmc6, pmc7;
                 float normalizationFactor = GetNormalizationFactor(threadIdx);
                 retiredInstructions = ReadAndClearMsr(IA32_FIXED_CTR0);
                 activeCycles = ReadAndClearMsr(IA32_FIXED_CTR1);
@@ -115,6 +120,10 @@ namespace PmcReader.Intel
                 pmc1 = ReadAndClearMsr(IA32_A_PMC1);
                 pmc2 = ReadAndClearMsr(IA32_A_PMC2);
                 pmc3 = ReadAndClearMsr(IA32_A_PMC3);
+                pmc4 = ReadAndClearMsr(IA32_A_PMC4);
+                pmc5 = ReadAndClearMsr(IA32_A_PMC5);
+                pmc6 = ReadAndClearMsr(IA32_A_PMC6);
+                pmc7 = ReadAndClearMsr(IA32_A_PMC7);
 
                 if (NormalizedThreadCounts == null)
                 {
@@ -133,6 +142,10 @@ namespace PmcReader.Intel
                 NormalizedThreadCounts[threadIdx].pmc1 = pmc1 * normalizationFactor;
                 NormalizedThreadCounts[threadIdx].pmc2 = pmc2 * normalizationFactor;
                 NormalizedThreadCounts[threadIdx].pmc3 = pmc3 * normalizationFactor;
+                NormalizedThreadCounts[threadIdx].pmc4 = pmc4 * normalizationFactor;
+                NormalizedThreadCounts[threadIdx].pmc5 = pmc5 * normalizationFactor;
+                NormalizedThreadCounts[threadIdx].pmc6 = pmc6 * normalizationFactor;
+                NormalizedThreadCounts[threadIdx].pmc7 = pmc7 * normalizationFactor;
                 NormalizedThreadCounts[threadIdx].NormalizationFactor = normalizationFactor;
                 NormalizedTotalCounts.activeCycles += NormalizedThreadCounts[threadIdx].activeCycles;
                 NormalizedTotalCounts.instr += NormalizedThreadCounts[threadIdx].instr;
@@ -141,6 +154,60 @@ namespace PmcReader.Intel
                 NormalizedTotalCounts.pmc1 += NormalizedThreadCounts[threadIdx].pmc1;
                 NormalizedTotalCounts.pmc2 += NormalizedThreadCounts[threadIdx].pmc2;
                 NormalizedTotalCounts.pmc3 += NormalizedThreadCounts[threadIdx].pmc3;
+                NormalizedTotalCounts.pmc4 += NormalizedThreadCounts[threadIdx].pmc4;
+                NormalizedTotalCounts.pmc5 += NormalizedThreadCounts[threadIdx].pmc5;
+                NormalizedTotalCounts.pmc6 += NormalizedThreadCounts[threadIdx].pmc6;
+                NormalizedTotalCounts.pmc7 += NormalizedThreadCounts[threadIdx].pmc7;
+            }
+        }
+
+        public void UpdateECoreCounterData()
+        {
+            foreach (byte threadIdx in this.eCores)
+            {
+                ThreadAffinity.Set(1UL << threadIdx);
+                ulong activeCycles, retiredInstructions, refTsc, pmc0, pmc1, pmc2, pmc3;
+                ulong pmc4, pmc5;
+                float normalizationFactor = GetNormalizationFactor(threadIdx);
+                retiredInstructions = ReadAndClearMsr(IA32_FIXED_CTR0);
+                activeCycles = ReadAndClearMsr(IA32_FIXED_CTR1);
+                refTsc = ReadAndClearMsr(IA32_FIXED_CTR2);
+                pmc0 = ReadAndClearMsr(IA32_A_PMC0);
+                pmc1 = ReadAndClearMsr(IA32_A_PMC1);
+                pmc2 = ReadAndClearMsr(IA32_A_PMC2);
+                pmc3 = ReadAndClearMsr(IA32_A_PMC3);
+                pmc4 = ReadAndClearMsr(IA32_A_PMC4);
+                pmc5 = ReadAndClearMsr(IA32_A_PMC5);
+
+                if (NormalizedThreadCounts == null)
+                {
+                    NormalizedThreadCounts = new NormalizedCoreCounterData[threadCount];
+                }
+
+                if (NormalizedThreadCounts[threadIdx] == null)
+                {
+                    NormalizedThreadCounts[threadIdx] = new NormalizedCoreCounterData();
+                }
+
+                NormalizedThreadCounts[threadIdx].activeCycles = activeCycles * normalizationFactor;
+                NormalizedThreadCounts[threadIdx].instr = retiredInstructions * normalizationFactor;
+                NormalizedThreadCounts[threadIdx].refTsc = refTsc * normalizationFactor;
+                NormalizedThreadCounts[threadIdx].pmc0 = pmc0 * normalizationFactor;
+                NormalizedThreadCounts[threadIdx].pmc1 = pmc1 * normalizationFactor;
+                NormalizedThreadCounts[threadIdx].pmc2 = pmc2 * normalizationFactor;
+                NormalizedThreadCounts[threadIdx].pmc3 = pmc3 * normalizationFactor;
+                NormalizedThreadCounts[threadIdx].pmc4 = pmc4 * normalizationFactor;
+                NormalizedThreadCounts[threadIdx].pmc5 = pmc5 * normalizationFactor;
+                NormalizedThreadCounts[threadIdx].NormalizationFactor = normalizationFactor;
+                NormalizedTotalCounts.activeCycles += NormalizedThreadCounts[threadIdx].activeCycles;
+                NormalizedTotalCounts.instr += NormalizedThreadCounts[threadIdx].instr;
+                NormalizedTotalCounts.refTsc += NormalizedThreadCounts[threadIdx].refTsc;
+                NormalizedTotalCounts.pmc0 += NormalizedThreadCounts[threadIdx].pmc0;
+                NormalizedTotalCounts.pmc1 += NormalizedThreadCounts[threadIdx].pmc1;
+                NormalizedTotalCounts.pmc2 += NormalizedThreadCounts[threadIdx].pmc2;
+                NormalizedTotalCounts.pmc3 += NormalizedThreadCounts[threadIdx].pmc3;
+                NormalizedTotalCounts.pmc4 += NormalizedThreadCounts[threadIdx].pmc4;
+                NormalizedTotalCounts.pmc5 += NormalizedThreadCounts[threadIdx].pmc5;
             }
         }
 
@@ -177,7 +244,7 @@ namespace PmcReader.Intel
                 MonitoringUpdateResults results = new MonitoringUpdateResults();
                 results.unitMetrics = new string[cpu.pCores.Count][];
                 cpu.InitializeCoreTotals();
-
+                cpu.UpdatePCoreCounterData();
                 int pCoreIdx = 0;
                 foreach (byte threadIdx in cpu.pCores)
                 {
@@ -255,7 +322,7 @@ namespace PmcReader.Intel
                 MonitoringUpdateResults results = new MonitoringUpdateResults();
                 results.unitMetrics = new string[cpu.pCores.Count][];
                 cpu.InitializeCoreTotals();
-
+                cpu.UpdatePCoreCounterData();
                 int pCoreIdx = 0;
                 foreach (byte threadIdx in cpu.pCores)
                 {
@@ -331,7 +398,7 @@ namespace PmcReader.Intel
                 MonitoringUpdateResults results = new MonitoringUpdateResults();
                 results.unitMetrics = new string[cpu.eCores.Count][];
                 cpu.InitializeCoreTotals();
-
+                cpu.UpdateECoreCounterData();
                 int eCoreIdx = 0;
                 foreach (byte threadIdx in cpu.eCores)
                 {
@@ -403,10 +470,11 @@ namespace PmcReader.Intel
                 MonitoringUpdateResults results = new MonitoringUpdateResults();
                 results.unitMetrics = new string[cpu.eCores.Count][];
                 cpu.InitializeCoreTotals();
-
+                cpu.UpdateECoreCounterData();
                 int eCoreIdx = 0;
                 foreach (byte threadIdx in cpu.eCores)
                 {
+                    
                     results.unitMetrics[eCoreIdx] = computeMetrics("E: Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
                     eCoreIdx++;
                 }
