@@ -92,11 +92,17 @@ namespace PmcReader
             {
                 if (cpuFamily == 0x17)
                 {
-                    if (cpuModel == 0x71 || cpuModel == 0x31 || cpuModel == 0x90)
+                    // Matisse (desktop), Epyc/Threadripper, Van Gogh (tiny APU), Renoir (APU)
+                    if (cpuModel == 0x71 || cpuModel == 0x31 || cpuModel == 0x90 || cpuModel == 0x60)
                     {
                         coreMonitoring.monitoringArea = new AMD.Zen2();
                         l3Monitoring.monitoringArea = new AMD.Zen2L3Cache();
-                        dfMonitoring.monitoringArea = new AMD.Zen2DataFabric();
+
+                        if (cpuModel == 0x71) dfMonitoring.monitoringArea = new AMD.Zen2DataFabric(AMD.Zen2DataFabric.DfType.DesktopMatisse);
+
+                        // Epyc and TR have the same CPU model so we'll drop Epyc on the floor.
+                        // We only have enough DF counters to track four channels at a time anyway
+                        else if (cpuModel == 0x31) dfMonitoring.monitoringArea = new AMD.Zen2DataFabric(AMD.Zen2DataFabric.DfType.DestkopThreadripper);
                     }
                     else if (cpuModel == 0x1 || cpuModel == 0x18 || cpuModel == 0x8)
                     {
@@ -110,7 +116,7 @@ namespace PmcReader
                 {
                     coreMonitoring.monitoringArea = new AMD.Zen3();
                     l3Monitoring.monitoringArea = new AMD.Zen3L3Cache();
-                    dfMonitoring.monitoringArea = new AMD.Zen2DataFabric();
+                    dfMonitoring.monitoringArea = new AMD.Zen2DataFabric(AMD.Zen2DataFabric.DfType.DesktopMatisse);
                     crazyThings = new AMD.Amd17hCpu();
                 }
                 else if (cpuFamily == 0x15 && cpuModel == 0x2)
