@@ -59,7 +59,8 @@ namespace PmcReader
                             dfLabelOverride = "Power Control Unit Monitoring Configs (pick one):";
                         }
                     }
-                    else if ((cpuModel & 0xF) == 0xE)
+                    // low 4 bits of SKL model = 0xE, except for comet lake h/s, which has model = 0xa5
+                    else if ((cpuModel & 0xF) == 0xE || cpuModel == 0xA5)
                     {
                         coreMonitoring.monitoringArea = new Intel.Skylake();
                         l3Monitoring.monitoringArea = new Intel.SkylakeClientL3();

@@ -51,7 +51,7 @@ namespace PmcReader.AMD
         public const uint MSR_PKG_ENERGY_STAT = 0xC001029B;
 
         public const uint MSR_LS_CFG = 0xC0011020; // bit 4 = zen 1 lock errata 
-        public const uint MSR_IC_CFG = 0xC0011021; // bit 5 = disable OC
+        public const uint MSR_IC_CFG = 0xC0011021; // bit 5 = disable OC. 0x800 = disable IC sequential prefetch on Athlon
         public const uint MSR_DC_CFG = 0xC0011022; // data cache config? bit 16 = disable L1D stream prefetcher
         public const uint MSR_FP_CFG = 0xC0011028; // bit 4 = zen 1 FCMOV errata
         public const uint MSR_DE_CFG = 0xC0011029; // bit 13 = zen 1 stale store forward errata
@@ -481,7 +481,15 @@ namespace PmcReader.AMD
             boostCheckbox.CheckedChanged += HandleCorePerformanceBoostCheckbox;
             boostCheckbox.Width = TextRenderer.MeasureText(boostCheckbox.Text, boostCheckbox.Font).Width + 20;
             flowLayoutPanel.Controls.Add(boostCheckbox);
-            flowLayoutPanel.SetFlowBreak(boostCheckbox, true);
+            //flowLayoutPanel.SetFlowBreak(boostCheckbox, true);
+
+            CheckBox stlfErrataCheckbox = new CheckBox();
+            stlfErrataCheckbox.Text = "Zen 1 STLF Errata Fix";
+            stlfErrataCheckbox.Checked = GetStlfErrataEnabled();
+            stlfErrataCheckbox.CheckedChanged += HandleStlfErrataCheckbox;
+            stlfErrataCheckbox.Width = TextRenderer.MeasureText(stlfErrataCheckbox.Text, stlfErrataCheckbox.Font).Width + 20;
+            flowLayoutPanel.Controls.Add(stlfErrataCheckbox);
+            flowLayoutPanel.SetFlowBreak(stlfErrataCheckbox, true);
 
             CheckBox l1dStreamPrefetchCheckbox = new CheckBox();
             l1dStreamPrefetchCheckbox.Text = "L1D Stream Prefetcher";
@@ -566,6 +574,37 @@ namespace PmcReader.AMD
             if (enabled) dcCfg &= ~(1UL << 16);
             else dcCfg |= (1UL << 16);
             Ring0.WriteMsr(MSR_DC_CFG, dcCfg);
+        }
+
+        public bool GetStlfErrataEnabled()
+        {
+            Ring0.ReadMsr(MSR_DE_CFG, out ulong deCfg);
+            return (deCfg & (1UL << 13)) == 1;
+        }
+
+        public void SetStlfErrataStatus(bool enabled)
+        {
+            Ring0.ReadMsr(MSR_DE_CFG, out ulong deCfg);
+            if (enabled) deCfg |= (1UL << 13);
+            else deCfg &= ~(1UL << 13);
+            Ring0.WriteMsr(MSR_DE_CFG, deCfg);
+        }
+
+        public void HandleStlfErrataCheckbox(object sender, EventArgs e)
+        {
+            CheckBox checkbox = (CheckBox)sender;
+            bool stlfErrataStatus = checkbox.Checked;
+            for (int threadIdx = 0; threadIdx < GetThreadCount(); threadIdx++)
+            {
+                SetStlfErrataStatus(checkbox.Checked);
+                bool threadStatus = GetStlfErrataEnabled();
+                if (checkbox.Checked) stlfErrataStatus &= threadStatus;
+                else stlfErrataStatus |= threadStatus;
+            }
+
+            if (stlfErrataStatus) errorLabel.Text = "Zen 1 STLF errata fix enabled";
+            else errorLabel.Text = "Zen 1 STLF errata fix disabled";
+            checkbox.Checked = stlfErrataStatus;
         }
 
         private bool GetOpCacheEnabledStatus()
