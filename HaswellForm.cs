@@ -99,7 +99,8 @@ namespace PmcReader
                         coreMonitoring.monitoringArea = new AMD.Zen2();
                         l3Monitoring.monitoringArea = new AMD.Zen2L3Cache();
 
-                        if (cpuModel == 0x71) dfMonitoring.monitoringArea = new AMD.Zen2DataFabric(AMD.Zen2DataFabric.DfType.DesktopMatisse);
+                        // At least the counters that work on Matisse also seem to work in the same way on Renoir
+                        if (cpuModel == 0x71 || cpuModel == 0x90 || cpuModel == 0x60) dfMonitoring.monitoringArea = new AMD.Zen2DataFabric(AMD.Zen2DataFabric.DfType.Client);
 
                         // Epyc and TR have the same CPU model so we'll drop Epyc on the floor.
                         // We only have enough DF counters to track four channels at a time anyway
@@ -117,7 +118,7 @@ namespace PmcReader
                 {
                     coreMonitoring.monitoringArea = new AMD.Zen3();
                     l3Monitoring.monitoringArea = new AMD.Zen3L3Cache();
-                    dfMonitoring.monitoringArea = new AMD.Zen2DataFabric(AMD.Zen2DataFabric.DfType.DesktopMatisse);
+                    dfMonitoring.monitoringArea = new AMD.Zen2DataFabric(AMD.Zen2DataFabric.DfType.Client);
                     crazyThings = new AMD.Amd17hCpu();
                 }
                 else if (cpuFamily == 0x15 && cpuModel == 0x2)

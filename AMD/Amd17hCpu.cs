@@ -10,8 +10,8 @@ namespace PmcReader.AMD
     {
         public const uint HWCR = 0xC0010015;
         public const uint MSR_INSTR_RETIRED = 0xC00000E9;
-        public const uint MSR_APERF = 0x000000E8;
-        public const uint MSR_MPERF = 0x000000E7;
+        public const uint MSR_APERF_READONLY = 0xC00000E8;
+        public const uint MSR_MPERF_READONLY = 0xC00000E7;
         public const uint MSR_TSC = 0x00000010;
         public const uint MSR_PERF_CTR_0 = 0xC0010201;
         public const uint MSR_PERF_CTR_1 = 0xC0010203;
@@ -197,10 +197,10 @@ namespace PmcReader.AMD
                 Ring0.WriteMsr(HWCR, hwcrValue);
 
                 // Initialize fixed counter values
-                Ring0.ReadMsr(MSR_APERF, out lastThreadAperf[threadIdx]);
+                Ring0.ReadMsr(MSR_APERF_READONLY, out lastThreadAperf[threadIdx]);
                 Ring0.ReadMsr(MSR_INSTR_RETIRED, out lastThreadRetiredInstructions[threadIdx]);
                 Ring0.ReadMsr(MSR_TSC, out lastThreadTsc[threadIdx]);
-                Ring0.ReadMsr(MSR_MPERF, out lastThreadMperf[threadIdx]);
+                Ring0.ReadMsr(MSR_MPERF_READONLY, out lastThreadMperf[threadIdx]);
             }
         }
 
@@ -215,10 +215,10 @@ namespace PmcReader.AMD
                 Ring0.WriteMsr(HWCR, hwcrValue);
 
                 // Initialize fixed counter values
-                Ring0.ReadMsr(MSR_APERF, out lastThreadAperf[threadIdx]);
+                Ring0.ReadMsr(MSR_APERF_READONLY, out lastThreadAperf[threadIdx]);
                 Ring0.ReadMsr(MSR_INSTR_RETIRED, out lastThreadRetiredInstructions[threadIdx]);
                 Ring0.ReadMsr(MSR_TSC, out lastThreadTsc[threadIdx]);
-                Ring0.ReadMsr(MSR_MPERF, out lastThreadMperf[threadIdx]);
+                Ring0.ReadMsr(MSR_MPERF_READONLY, out lastThreadMperf[threadIdx]);
 
                 Ring0.WriteMsr(MSR_PERF_CTL_0, ctr0);
                 Ring0.WriteMsr(MSR_PERF_CTL_1, ctr1);
@@ -265,10 +265,10 @@ namespace PmcReader.AMD
         public void ReadFixedCounters(int threadIdx, out ulong elapsedAperf, out ulong elapsedInstr, out ulong elapsedTsc, out ulong elapsedMperf)
         {
             ulong aperf, instr, tsc, mperf;
-            Ring0.ReadMsr(MSR_APERF, out aperf);
+            Ring0.ReadMsr(MSR_APERF_READONLY, out aperf);
             Ring0.ReadMsr(MSR_INSTR_RETIRED, out instr);
             Ring0.ReadMsr(MSR_TSC, out tsc);
-            Ring0.ReadMsr(MSR_MPERF, out mperf);
+            Ring0.ReadMsr(MSR_MPERF_READONLY, out mperf);
 
             elapsedAperf = aperf;
             elapsedInstr = instr;

@@ -8,7 +8,7 @@ namespace PmcReader.AMD
     {
         public enum DfType
         {
-            DesktopMatisse = 0,
+            Client = 0,
             DestkopThreadripper = 1,
             Server = 2
         }
@@ -16,7 +16,7 @@ namespace PmcReader.AMD
         {
             architectureName = "Zen 2 Data Fabric";
             List<MonitoringConfig> monitoringConfigList = new List<MonitoringConfig>();
-            if (dfType == DfType.DesktopMatisse) monitoringConfigList.Add(new MattiseBwConfig(this));
+            if (dfType == DfType.Client) monitoringConfigList.Add(new ClientBwConfig(this));
             else if (dfType == DfType.DestkopThreadripper) monitoringConfigList.Add(new TrDramBwConfig(this));
             monitoringConfigs = monitoringConfigList.ToArray();
         }
@@ -84,7 +84,7 @@ namespace PmcReader.AMD
             }
         }
 
-        public class MattiseBwConfig : MonitoringConfig
+        public class ClientBwConfig : MonitoringConfig
         {
             private Zen2DataFabric dataFabric;
             private long lastUpdateTime;
@@ -92,12 +92,12 @@ namespace PmcReader.AMD
 
             public string[] columns = new string[] { "Item", "Count * 64B", "Count", "Pkg Pwr" };
             public string GetHelpText() { return ""; }
-            public MattiseBwConfig(Zen2DataFabric dataFabric)
+            public ClientBwConfig(Zen2DataFabric dataFabric)
             {
                 this.dataFabric = dataFabric;
             }
 
-            public string GetConfigName() { return "Mattise DRAM Bandwidth??"; }
+            public string GetConfigName() { return "MTS/RNR DRAM Bandwidth??"; }
             public string[] GetColumns() { return columns; }
             public void Initialize()
             {
@@ -111,6 +111,9 @@ namespace PmcReader.AMD
                  * bit 5: reads
                  * bit 6: unknown (zero)
                  * bit 7: unknown (zero)
+                 * Unit masks tested on a 3950X and 4800H
+                 * These work for events 0x7 and 0x47, which seem to correspond to the two memory channels
+                 * based on one of them reading zero if the DIMMs for one channel are pulled
                  */
                 Ring0.WriteMsr(MSR_DF_PERF_CTL_0, GetDFPerfCtlValue(0x7, 0x20, true, 0, 0)); // ch0 read?
                 Ring0.WriteMsr(MSR_DF_PERF_CTL_1, GetDFPerfCtlValue(0x7, 0x8, true, 0, 0));  // ch0 write?
@@ -148,9 +151,9 @@ namespace PmcReader.AMD
                 results.overallCounterValues = new Tuple<string, float>[5];
                 results.overallCounterValues[0] = new Tuple<string, float>("Package Power", dataFabric.NormalizedTotalCounts.watts);
                 results.overallCounterValues[1] = new Tuple<string, float>("Ch 0 Read?", ctr0);
-                results.overallCounterValues[2] = new Tuple<string, float>("Ch 0 Write?", ctr0);
-                results.overallCounterValues[3] = new Tuple<string, float>("Ch 1 Read?", ctr1);
-                results.overallCounterValues[4] = new Tuple<string, float>("Ch 1 Write?", ctr1);
+                results.overallCounterValues[2] = new Tuple<string, float>("Ch 0 Write?", ctr1);
+                results.overallCounterValues[3] = new Tuple<string, float>("Ch 1 Read?", ctr2);
+                results.overallCounterValues[4] = new Tuple<string, float>("Ch 1 Write?", ctr3);
                 return results;
             }
         }
