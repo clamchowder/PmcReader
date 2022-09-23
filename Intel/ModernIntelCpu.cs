@@ -30,6 +30,15 @@ namespace PmcReader.Intel
         // Hardware prefetch control
         public const uint MSR_PF_CTL = 0x1A4;
 
+        // applies to Gracemont and Goldmont Plus
+        public const uint MSR_OFFCORE_RSP0 = 0x1A6;
+        public const uint MSR_OFFCORE_RSP1 = 0x1A7;
+        public const byte OFFCORE_RESPONSE_EVENT = 0xB7;
+
+        // applies to big cores, which don't use a unit mask to select
+        // an offcore response register
+        public const byte OFFCORE_RESPONSE_EVENT_1 = 0xBB;
+
         public NormalizedCoreCounterData[] NormalizedThreadCounts;
         public NormalizedCoreCounterData NormalizedTotalCounts;
 
@@ -1159,7 +1168,7 @@ namespace PmcReader.Intel
                     // PMC2 - LLC References
                     Ring0.WriteMsr(IA32_PERFEVTSEL2, GetPerfEvtSelRegisterValue(0x2E, 0x4F, true, true, false, false, false, false, true, false, 0));
 
-                    // PMC2 - LLC Misses
+                    // PMC3 - LLC Misses
                     Ring0.WriteMsr(IA32_PERFEVTSEL3, GetPerfEvtSelRegisterValue(0x2E, 0x41, true, true, false, false, false, false, true, false, 0));
                 }
             }
@@ -1181,7 +1190,7 @@ namespace PmcReader.Intel
                 return results;
             }
 
-            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "BPU Accuracy", "Branch MPKI", "% Branches", "LLC MPKI", "LLC References" };
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "BPU Accuracy", "Branch MPKI", "% Branches", "LLC Hitrate", "LLC MPKI", "LLC References" };
 
             public string GetHelpText()
             {
@@ -1198,6 +1207,7 @@ namespace PmcReader.Intel
                         string.Format("{0:F2}%", 100 * (1 - counterData.pmc1 / counterData.pmc0)),
                         string.Format("{0:F2}", 1000 * counterData.pmc1 / counterData.instr),
                         string.Format("{0:F2}%", 100 * counterData.pmc0 / counterData.instr),
+                        FormatPercentage((counterData.pmc2 - counterData.pmc3), counterData.pmc2),
                         string.Format("{0:F2}", 1000 * counterData.pmc3 / counterData.instr),
                         FormatLargeNumber(counterData.pmc3)
                 };

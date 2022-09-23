@@ -5,10 +5,6 @@ namespace PmcReader.Intel
 {
     public class GoldmontPlus : ModernIntelCpu
     {
-        public const uint MSR_OFFCORE_RSP0 = 0x1A6;
-        public const uint MSR_OFFCORE_RSP1 = 0x1A7;
-        public const byte OFFCORE_RESPONSE_EVENT = 0xB7;
-
         public GoldmontPlus()
         {
             List<MonitoringConfig> configs = new List<MonitoringConfig>();
