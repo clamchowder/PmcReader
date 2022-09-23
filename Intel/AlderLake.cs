@@ -28,6 +28,7 @@ namespace PmcReader.Intel
             configs.Add(new RetireHistogram(this));
             configs.Add(new PCoreVector(this));
             configs.Add(new PCorePowerLicense(this));
+            configs.Add(new LoadDataSources(this));
 
             // Determine if we're on a hybrid model
             OpCode.Cpuid(0x7, 0, out _, out _, out _, out uint edx);
@@ -510,6 +511,89 @@ namespace PmcReader.Intel
                         FormatPercentage(counterData.pmc3, counterData.activeCycles),
                         FormatPercentage(counterData.pmc4, counterData.activeCycles),
                         FormatPercentage(counterData.pmc5, counterData.activeCycles)
+                };
+            }
+        }
+
+        public class LoadDataSources : MonitoringConfig
+        {
+            private AlderLake cpu;
+            public string GetConfigName() { return "Retired Data Loads"; }
+
+            public LoadDataSources(AlderLake intelCpu)
+            {
+                cpu = intelCpu;
+            }
+
+            public string[] GetColumns()
+            {
+                return columns;
+            }
+
+            public void Initialize()
+            {
+                // Pick a set of four events for both the P-Cores and E-Cores
+                // Intel annoyingly doesn't match them up. I suspect some umasks are just undocumented, but without a chip to test
+                // I'm gonna try to stick with documented unit masks
+                // Also super sketchy because Gracemont counts retired uops for these events, while Golden Cove counts instructions
+                ulong retiredLoads = GetPerfEvtSelRegisterValue(0xD0, 0x81, true, true, false, false, false, false, true, false, 0);
+                ulong l2Hit = GetPerfEvtSelRegisterValue(0xD1, 0x2, true, true, false, false, false, false, true, false, 0);
+                ulong l3Hit = GetPerfEvtSelRegisterValue(0xD1, 0x4, true, true, false, false, false, false, true, false, 0);
+                ulong l3Miss = GetPerfEvtSelRegisterValue(0xD1, 0x20, true, true, false, false, false, false, true, false, 0);
+                ulong unused = GetPerfEvtSelRegisterValue(0, 0, true, true, false, false, false, false, true, false, 0);
+                cpu.ProgramPCorePerfCounters(retiredLoads, l2Hit, l3Hit, l3Miss, unused, unused, unused, unused);
+
+                if (cpu.eCores != null && cpu.eCores.Count > 0)
+                {
+                    // DRAM hit and L3 miss should be close enough
+                    ulong dramHit = GetPerfEvtSelRegisterValue(0xD1, 0x8, true, true, false, false, false, false, true, false, 0);
+                    cpu.ProgramECorePerfCounters(retiredLoads, l2Hit, l3Hit, dramHit, unused, unused);
+                }
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[cpu.pCores.Count][];
+                cpu.InitializeCoreTotals();
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    cpu.UpdateThreadCoreCounterData(threadIdx);
+                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
+                }
+
+                cpu.ReadPackagePowerCounter();
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                results.overallCounterValues = cpu.GetOverallCounterValues("Retired Loads", "L2 Hit", "L3 Hit", "L3 Miss or DRAM Hit");
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "PkgPower", "Instr/Watt",
+                "L1/FB Hitrate", "L1/LFB MPKI", "L2 Hitrate", "L2 MPKI", "L3 Hitrate", "L3 MPKI" };
+
+            public string GetHelpText()
+            {
+                return "";
+            }
+
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
+            {
+                // L1 and load fill buffer hits = loads that were not served from L2, L3, or DRAM
+                float l1FbHits = counterData.pmc0 - counterData.pmc1 - counterData.pmc2 - counterData.pmc3;
+                float l2Reqs = counterData.pmc0 - l1FbHits; // L2 requests = l1 and fill buffer misses
+                float l3Reqs = l2Reqs - counterData.pmc1;
+                return new string[] { label,
+                        FormatLargeNumber(counterData.activeCycles),
+                        FormatLargeNumber(counterData.instr),
+                        string.Format("{0:F2}", counterData.instr / counterData.activeCycles),
+                        string.Format("{0:F2} W", counterData.packagePower),
+                        FormatLargeNumber(counterData.instr / counterData.packagePower),
+                        FormatPercentage(l1FbHits, counterData.pmc0),                            // L1 and fill buffer hitrate
+                        string.Format("{0:F2}", 1000 * l2Reqs / counterData.instr),              // L1 MPKI
+                        FormatPercentage(counterData.pmc1, l2Reqs),                              // L2 hitrate
+                        string.Format("{0:F2}", 1000 * l3Reqs / counterData.instr),              // L2 MPKI
+                        FormatPercentage(counterData.pmc2, l3Reqs),                              // L3 hitrate
+                        string.Format("{0:F2}", 1000 * counterData.pmc3 / counterData.instr)     // L3 MPKI
                 };
             }
         }
