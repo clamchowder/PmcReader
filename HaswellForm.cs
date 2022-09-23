@@ -73,11 +73,12 @@ namespace PmcReader
                         dfLabelOverride = "Unused";
                         l3LabelOverride = "Unused";
                     }
-                    else if (cpuModel == 0x97)
+                    // wikichip says these are for ADL-S and ADL-P, respectively
+                    else if (cpuModel == 0x97 || cpuModel == 0x9A)
                     {
                         coreMonitoring.monitoringArea = new Intel.AlderLake();
+                        l3Monitoring.monitoringArea = new Intel.AlderLakeL3();
                         dfLabelOverride = "Unused";
-                        l3LabelOverride = "Unused";
                     }
                     else
                     {

@@ -71,8 +71,10 @@
     <Compile Include="Intel\AlderLake.cs" />
     <Compile Include="Intel\SkylakeClientArb.cs" />
     <Compile Include="Intel\HaswellClientArb.cs" />
+    <Compile Include="Intel\AlderLakeL3.cs" />
     <Compile Include="Intel\SkylakeClientL3.cs" />
     <Compile Include="Intel\HaswellClientL3.cs" />
+    <Compile Include="Intel\AlderLakeUncore.cs" />
     <Compile Include="Intel\SkylakeClientUncore.cs" />
     <Compile Include="Intel\HaswellClientUncore.cs" />
     <Compile Include="Intel\SandyBridgeUncore.cs" />
