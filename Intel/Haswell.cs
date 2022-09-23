@@ -28,6 +28,7 @@ namespace PmcReader.Intel
             configList.Add(new OffcoreReqs(this));
             configList.Add(new OffcoreBw(this));
             configList.Add(new RetireSlots(this));
+            configList.Add(new ArchitecturalCounters(this));
             monitoringConfigs = configList.ToArray();
 
             architectureName = "Haswell";

@@ -20,9 +20,9 @@ namespace PmcReader.Intel
             architectureName = "Alder Lake Client L3";
 
             // intel developer manual table 2-30 says bits 0-3 encode number of C-Box
-            // "subtract one to determine number of CBo units"
+            // ADL no longer requires subtracting one from the reported C-Box count, unlike Haswell and Skylake
             Ring0.ReadMsr(MSR_UNC_CBO_CONFIG, out cboConfig);
-            CboCount = (int)((cboConfig & 0xF) - 1);
+            CboCount = (int)(cboConfig & 0xF);
             cboData = new NormalizedCboCounterData[CboCount];
 
             List<MonitoringConfig> monitoringConfigList = new List<MonitoringConfig>();
