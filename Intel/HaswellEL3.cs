@@ -312,7 +312,9 @@ namespace PmcReader.Intel
             {
                 // umask 0b1 = filter (mandatory), 0b10 = data read, 0b100 = write, 0b1000 = remote snoop. LLC lookup must go in ctr0 or ctr1
                 ulong clockticks = GetUncorePerfEvtSelRegisterValue(0, 0, false, false, false, true, false, 0);
-                ulong llcLookup = GetUncorePerfEvtSelRegisterValue(0x34, 0xF, false, false, false, true, false, 0);
+
+                // umask: any = 0b10001
+                ulong llcLookup = GetUncorePerfEvtSelRegisterValue(0x34, 0b10001, false, false, false, true, false, 0);
                 // 0x1D = BL ring (block/data ring) used cycles, 0b1 = up direction even polarity. 0b10 = up direction odd polarity. must go in ctr2 or ctr3
                 ulong blRingUp = GetUncorePerfEvtSelRegisterValue(0x1D, RING_UP_EVEN | RING_UP_ODD, false, false, false, true, false, 0);
                 // 0b100 = down direction even polarity, 0b1000 = down direction odd polarity

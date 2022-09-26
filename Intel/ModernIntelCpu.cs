@@ -1190,7 +1190,7 @@ namespace PmcReader.Intel
                 return results;
             }
 
-            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "BPU Accuracy", "Branch MPKI", "% Branches", "LLC Hitrate", "LLC MPKI", "LLC References" };
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "BPU Accuracy", "Branch MPKI", "% Branches", "LLC Hitrate", "LLC MPKI", "LLC References", "LLC Hit BW" };
 
             public string GetHelpText()
             {
@@ -1209,7 +1209,8 @@ namespace PmcReader.Intel
                         string.Format("{0:F2}%", 100 * counterData.pmc0 / counterData.instr),
                         FormatPercentage((counterData.pmc2 - counterData.pmc3), counterData.pmc2),
                         string.Format("{0:F2}", 1000 * counterData.pmc3 / counterData.instr),
-                        FormatLargeNumber(counterData.pmc3)
+                        FormatLargeNumber(counterData.pmc3),
+                        FormatLargeNumber(64 * (counterData.pmc2 - counterData.pmc3)) + "B/s",
                 };
             }
         }
