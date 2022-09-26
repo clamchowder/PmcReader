@@ -739,11 +739,13 @@ namespace PmcReader.AMD
             {
                 cpu.EnablePerformanceCounters();
                 ulong dcAccess = GetPerfCtlValue(0x40, 0, true, true, false, false, true, false, 0, 0, false, false);
-                ulong lsMabAlloc = GetPerfCtlValue(0x41, 0x3, true, true, false, false, true, false, 0, 0, false, false);
+
+                // include DcPrefetcher in miss, for LsMabAlloc
+                ulong lsMabAlloc = GetPerfCtlValue(0x41, 0xB, true, true, false, false, true, false, 0, 0, false, false);
                 ulong dcRefillFromL2 = GetPerfCtlValue(evt, 0x1, true, true, false, false, true, false, 0, 0, false, false);
                 ulong dcRefillFromL3 = GetPerfCtlValue(evt, 0x12, true, true, false, false, true, false, 0, 0, false, false);
                 ulong dcRefillFromDram = GetPerfCtlValue(evt, 0x48, true, true, false, false, true, false, 0, 0, false, false);
-                ulong dcHwPrefetch = GetPerfCtlValue(0x5A, 0x5B, true, true, false, false, true, false, 0, 0, false, false);
+                ulong mabMatch = GetPerfCtlValue(0x55, 0, true, true, false, false, true, false, 0, 0, false, false);
 
                 for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
                 {
@@ -753,7 +755,7 @@ namespace PmcReader.AMD
                     Ring0.WriteMsr(MSR_PERF_CTL_2, dcRefillFromL2);
                     Ring0.WriteMsr(MSR_PERF_CTL_3, dcRefillFromL3);
                     Ring0.WriteMsr(MSR_PERF_CTL_4, dcRefillFromDram);
-                    Ring0.WriteMsr(MSR_PERF_CTL_5, dcHwPrefetch);
+                    Ring0.WriteMsr(MSR_PERF_CTL_5, mabMatch);
                 }
             }
 
@@ -768,13 +770,13 @@ namespace PmcReader.AMD
                     results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
                 }
 
-                results.overallCounterValues = cpu.GetOverallCounterValues("DC Access", "LsMabAlloc", "DC Refill From L2", "DC Refill From L3", "DC Refill From DRAM", "DC HW Prefetch");
+                results.overallCounterValues = cpu.GetOverallCounterValues("DC Access", "LsMabAlloc", "DC Refill From L2", "DC Refill From L3", "DC Refill From DRAM", "MAB Match");
                 results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
                 return results;
             }
 
-            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "L1D Hitrate?", "L1D/MAB Hit BW?", "L1D MPKI", "L2 Refill BW", 
-                "Fill from L2/Ki", "L3 Refill BW", "Fill from L3/Ki", "DRAM Refill BW", "Fill from DRAM/Ki", "Hw Prefetch BW", };
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "L1D Hitrate", "L1D Hit BW?", "MAB Match", "L1D MPKI", "L2 Refill BW", 
+                "Fill from L2/Ki", "L2 Hitrate", "L3 Refill BW", "Fill from L3/Ki", "L3 Hitrate", "DRAM Refill BW", "Fill from DRAM/Ki", };
 
             public string GetHelpText()
             {
@@ -792,27 +794,29 @@ namespace PmcReader.AMD
                 float dcRefillFromL2 = counterData.ctr2;
                 float dcRefillFromL3 = counterData.ctr3;
                 float dcRefillFromDram = counterData.ctr4;
-                float dcHwPrefetch = counterData.ctr5;
-                float dcHitrate = (1 - lsMabAlloc / dcAccess) * 100;
+                float mabMatch = counterData.ctr5;
+                float dcHitrate = (1 - (lsMabAlloc + mabMatch) / dcAccess) * 100;
                 float dcHitBw = (dcAccess - lsMabAlloc) * 8; // "each increment represents an eight byte access"
                 float l2RefillBw = dcRefillFromL2 * 64;
                 float l3RefillBw = dcRefillFromL3 * 64;
                 float dramRefillBw = dcRefillFromDram * 64;
-                float prefetchBw = dcHwPrefetch * 64;
                 return new string[] { label,
                     FormatLargeNumber(counterData.aperf),
                     FormatLargeNumber(counterData.instr),
                     string.Format("{0:F2}", counterData.instr / counterData.aperf),
                     string.Format("{0:F2}%", dcHitrate),
                     FormatLargeNumber(dcHitBw) + "B/s",
+                    FormatPercentage(mabMatch, dcAccess),
                     string.Format("{0:F2}", 1000 * lsMabAlloc / counterData.instr),
                     FormatLargeNumber(l2RefillBw) + "B/s",
                     string.Format("{0:F2}", 1000 * dcRefillFromL2 / counterData.instr),
+                    FormatPercentage(dcRefillFromL2, dcRefillFromL2 + dcRefillFromL3 + dcRefillFromDram),
                     FormatLargeNumber(l3RefillBw) + "B/s",
                     string.Format("{0:F2}", 1000 * dcRefillFromL3 / counterData.instr),
+                    FormatPercentage(dcRefillFromL3, dcRefillFromL3 + dcRefillFromDram),
                     FormatLargeNumber(dramRefillBw) + "B/s",
                     string.Format("{0:F2}", 1000 * dcRefillFromDram / counterData.instr),
-                    FormatLargeNumber(prefetchBw) + "B/s"};
+                };
             }
         }
 
