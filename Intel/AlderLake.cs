@@ -554,7 +554,7 @@ namespace PmcReader.Intel
             public MonitoringUpdateResults Update()
             {
                 MonitoringUpdateResults results = new MonitoringUpdateResults();
-                results.unitMetrics = new string[cpu.pCores.Count][];
+                results.unitMetrics = new string[cpu.pCores.Count + cpu.eCores.Count][];
                 cpu.InitializeCoreTotals();
                 for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
                 {
