@@ -2,6 +2,8 @@
 using System.Diagnostics;
 using PmcReader.Interop;
 using System.Windows.Forms;
+using System.Security.Policy;
+using System.Runtime.InteropServices;
 
 namespace PmcReader.Intel
 {
@@ -12,14 +14,34 @@ namespace PmcReader.Intel
         public const uint IA32_FIXED_CTR0 = 0x309;
         public const uint IA32_FIXED_CTR1 = 0x30A;
         public const uint IA32_FIXED_CTR2 = 0x30B;
+        public static readonly uint[] IA32_FIXED_CTR = {  IA32_FIXED_CTR0 +  0, IA32_FIXED_CTR0 +  1, IA32_FIXED_CTR0 +  2,
+                                                          IA32_FIXED_CTR0 +  3, IA32_FIXED_CTR0 +  4, IA32_FIXED_CTR0 +  5,
+                                                          IA32_FIXED_CTR0 +  6, IA32_FIXED_CTR0 +  7, IA32_FIXED_CTR0 +  8,
+                                                          IA32_FIXED_CTR0 +  9, IA32_FIXED_CTR0 + 10, IA32_FIXED_CTR0 +  5,
+                                                          IA32_FIXED_CTR0 + 12, IA32_FIXED_CTR0 + 13, IA32_FIXED_CTR0 + 14,
+                                                          IA32_FIXED_CTR0 + 15 };
+
         public const uint IA32_PERFEVTSEL0 = 0x186;
         public const uint IA32_PERFEVTSEL1 = 0x187;
         public const uint IA32_PERFEVTSEL2 = 0x188;
         public const uint IA32_PERFEVTSEL3 = 0x189;
+        public static readonly uint[] IA32_PERFEVTSEL = {  IA32_PERFEVTSEL0 +  0, IA32_PERFEVTSEL0 +  1, IA32_PERFEVTSEL0 +  2,
+                                                           IA32_PERFEVTSEL0 +  3, IA32_PERFEVTSEL0 +  4, IA32_PERFEVTSEL0 +  5,
+                                                           IA32_PERFEVTSEL0 +  6, IA32_PERFEVTSEL0 +  7, IA32_PERFEVTSEL0 +  8,
+                                                           IA32_PERFEVTSEL0 +  9, IA32_PERFEVTSEL0 + 10, IA32_PERFEVTSEL0 +  5,
+                                                           IA32_PERFEVTSEL0 + 12, IA32_PERFEVTSEL0 + 13, IA32_PERFEVTSEL0 + 14,
+                                                           IA32_PERFEVTSEL0 + 15 };
+
         public const uint IA32_A_PMC0 = 0x4C1;
         public const uint IA32_A_PMC1 = 0x4C2;
         public const uint IA32_A_PMC2 = 0x4C3;
         public const uint IA32_A_PMC3 = 0x4C4;
+        public static readonly uint[] IA32_A_PMC = {  IA32_A_PMC0 +  0, IA32_A_PMC0 +  1, IA32_A_PMC0 +  2,
+                                                      IA32_A_PMC0 +  3, IA32_A_PMC0 +  4, IA32_A_PMC0 +  5,
+                                                      IA32_A_PMC0 +  6, IA32_A_PMC0 +  7, IA32_A_PMC0 +  8,
+                                                      IA32_A_PMC0 +  9, IA32_A_PMC0 + 10, IA32_A_PMC0 +  5,
+                                                      IA32_A_PMC0 + 12, IA32_A_PMC0 + 13, IA32_A_PMC0 + 14,
+                                                      IA32_A_PMC0 + 15 };
 
         // RAPL only applies to sandy bridge and later
         public const uint MSR_RAPL_POWER_UNIT = 0x606;
@@ -46,6 +68,8 @@ namespace PmcReader.Intel
         private Stopwatch lastPkgPwrTime;
         private ulong lastPkgPwr = 0;
         private ulong lastPp0Pwr = 0;
+        private uint pmcCount = 4;
+        private uint fixedMask = 0x7;
 
         public ModernIntelCpu()
         {
@@ -103,23 +127,26 @@ namespace PmcReader.Intel
         public void EnablePerformanceCounters()
         {
             // enable fixed performance counters (3) and programmable counters (4)
-            ulong enablePMCsValue = 1 |          // enable PMC0
-                                    1UL << 1 |   // enable PMC1
-                                    1UL << 2 |   // enable PMC2
-                                    1UL << 3 |   // enable PMC3
-                                    1UL << 32 |  // enable FixedCtr0 - retired instructions
-                                    1UL << 33 |  // enable FixedCtr1 - unhalted cycles
-                                    1UL << 34;   // enable FixedCtr2 - reference clocks
-            ulong fixedCounterConfigurationValue = 1 |        // enable FixedCtr0 for os (count kernel mode instructions retired)
-                                                               1UL << 1 | // enable FixedCtr0 for usr (count user mode instructions retired)
-                                                               1UL << 4 | // enable FixedCtr1 for os (count kernel mode unhalted thread cycles)
-                                                               1UL << 5 | // enable FixedCtr1 for usr (count user mode unhalted thread cycles)
-                                                               1UL << 8 | // enable FixedCtr2 for os (reference clocks in kernel mode)
-                                                               1UL << 9;  // enable FixedCtr2 for usr (reference clocks in user mode)
+            ulong enablePMCsValue = 0;
+            ulong fixedCounterConfigurationValue = 0;
+            for (byte pmcIdx = 0; pmcIdx < pmcCount; pmcIdx++)
+                enablePMCsValue |= (1UL << pmcIdx); // General purpose counters
+
+            for (byte fixedIdx = 0; fixedIdx < 32; fixedIdx++)
+            {
+                if (((fixedMask >> fixedIdx) & 0x1) == 0x1)
+                {
+                    enablePMCsValue |= (1UL << (fixedIdx + 32)); // Fixed counters
+                    fixedCounterConfigurationValue |= (1UL << ((fixedIdx * 4) + 0)); // Kernel mode
+                    fixedCounterConfigurationValue |= (1UL << ((fixedIdx * 4) + 1)); // User Mode
+                }
+            }
+
             for (int threadIdx = 0; threadIdx < GetThreadCount(); threadIdx++)
             {
-                Ring0.WriteMsr(IA32_PERF_GLOBAL_CTRL, enablePMCsValue, 1UL << threadIdx);
-                Ring0.WriteMsr(IA32_FIXED_CTR_CTRL, fixedCounterConfigurationValue, 1UL << threadIdx);
+                ThreadAffinity.Set(1UL << threadIdx);
+                Ring0.WriteMsr(IA32_PERF_GLOBAL_CTRL, enablePMCsValue);
+                Ring0.WriteMsr(IA32_FIXED_CTR_CTRL, fixedCounterConfigurationValue);
             }
         }
 
@@ -133,14 +160,22 @@ namespace PmcReader.Intel
         /// <param name="pmc3">counter 3 config</param>
         public void ProgramPerfCounters(ulong pmc0, ulong pmc1, ulong pmc2, ulong pmc3)
         {
+            ProgramPerfCounters(new ulong[] { pmc0, pmc1, pmc2, pmc3 });
+        }
+
+        /// <summary>
+        /// Set up programmable perf counters. Supports a generic counter size.
+        /// </summary>
+        /// <param name="pmc">counter array config</param>
+        public void ProgramPerfCounters(ulong[] pmc)
+        {
             EnablePerformanceCounters();
             for (int threadIdx = 0; threadIdx < GetThreadCount(); threadIdx++)
             {
                 ThreadAffinity.Set(1UL << threadIdx);
-                Ring0.WriteMsr(IA32_PERFEVTSEL0, pmc0);
-                Ring0.WriteMsr(IA32_PERFEVTSEL1, pmc1);
-                Ring0.WriteMsr(IA32_PERFEVTSEL2, pmc2);
-                Ring0.WriteMsr(IA32_PERFEVTSEL3, pmc3);
+                uint pmcCnt = (pmc.Length <= pmcCount) ? (uint)pmc.Length : pmcCount;
+                for (byte pmcIdx = 0; pmcIdx < pmcCnt; pmcIdx++)
+                    Ring0.WriteMsr(IA32_PERFEVTSEL[pmcIdx], pmc[pmcIdx]);
             }
         }
 
@@ -158,15 +193,8 @@ namespace PmcReader.Intel
             NormalizedTotalCounts.instr = 0;
             NormalizedTotalCounts.refTsc = 0;
             NormalizedTotalCounts.packagePower = 0;
-            NormalizedTotalCounts.pmc0 = 0;
-            NormalizedTotalCounts.pmc1 = 0;
-            NormalizedTotalCounts.pmc2 = 0;
-            NormalizedTotalCounts.pmc3 = 0;
-
-            NormalizedTotalCounts.pmc4 = 0;
-            NormalizedTotalCounts.pmc5 = 0;
-            NormalizedTotalCounts.pmc6 = 0;
-            NormalizedTotalCounts.pmc7 = 0;
+            for (byte pmcIdx = 0; pmcIdx < NormalizedTotalCounts.pmc.Length; pmcIdx++)
+                NormalizedTotalCounts.pmc[pmcIdx] = 0;
         }
 
         /// <summary>
@@ -177,16 +205,15 @@ namespace PmcReader.Intel
         public void UpdateThreadCoreCounterData(int threadIdx)
         {
             ThreadAffinity.Set(1UL << threadIdx);
-            ulong activeCycles, retiredInstructions, refTsc, pmc0, pmc1, pmc2, pmc3;
+            ulong activeCycles, retiredInstructions, refTsc;
             float normalizationFactor = GetNormalizationFactor(threadIdx);
             retiredInstructions = ReadAndClearMsr(IA32_FIXED_CTR0);
             activeCycles = ReadAndClearMsr(IA32_FIXED_CTR1);
             refTsc = ReadAndClearMsr(IA32_FIXED_CTR2);
-            pmc0 = ReadAndClearMsr(IA32_A_PMC0);
-            pmc1 = ReadAndClearMsr(IA32_A_PMC1);
-            pmc2 = ReadAndClearMsr(IA32_A_PMC2);
-            pmc3 = ReadAndClearMsr(IA32_A_PMC3);
-
+            float[] pmc = new float[pmcCount]; // SJR
+            for (byte pmcIdx = 0; pmcIdx < pmc.Length; pmcIdx++)
+                pmc[pmcIdx] = ReadAndClearMsr(IA32_A_PMC[pmcIdx]);
+                
             if (NormalizedThreadCounts == null)
             {
                 NormalizedThreadCounts = new NormalizedCoreCounterData[threadCount];
@@ -200,18 +227,14 @@ namespace PmcReader.Intel
             NormalizedThreadCounts[threadIdx].activeCycles = activeCycles * normalizationFactor;
             NormalizedThreadCounts[threadIdx].instr = retiredInstructions * normalizationFactor;
             NormalizedThreadCounts[threadIdx].refTsc = refTsc * normalizationFactor;
-            NormalizedThreadCounts[threadIdx].pmc0 = pmc0 * normalizationFactor;
-            NormalizedThreadCounts[threadIdx].pmc1 = pmc1 * normalizationFactor;
-            NormalizedThreadCounts[threadIdx].pmc2 = pmc2 * normalizationFactor;
-            NormalizedThreadCounts[threadIdx].pmc3 = pmc3 * normalizationFactor;
+            for (byte pmcIdx = 0; pmcIdx < pmc.Length; pmcIdx++)
+                NormalizedThreadCounts[threadIdx].pmc[pmcIdx] = pmc[pmcIdx] * normalizationFactor;
             NormalizedThreadCounts[threadIdx].NormalizationFactor = normalizationFactor;
             NormalizedTotalCounts.activeCycles += NormalizedThreadCounts[threadIdx].activeCycles;
             NormalizedTotalCounts.instr += NormalizedThreadCounts[threadIdx].instr;
             NormalizedTotalCounts.refTsc += NormalizedThreadCounts[threadIdx].refTsc;
-            NormalizedTotalCounts.pmc0 += NormalizedThreadCounts[threadIdx].pmc0;
-            NormalizedTotalCounts.pmc1 += NormalizedThreadCounts[threadIdx].pmc1;
-            NormalizedTotalCounts.pmc2 += NormalizedThreadCounts[threadIdx].pmc2;
-            NormalizedTotalCounts.pmc3 += NormalizedThreadCounts[threadIdx].pmc3;
+            for (byte pmcIdx = 0; pmcIdx < pmc.Length; pmcIdx++)
+                NormalizedTotalCounts.pmc[pmcIdx] += NormalizedThreadCounts[threadIdx].pmc[pmcIdx];
         }
 
         /// <summary>
@@ -225,17 +248,8 @@ namespace PmcReader.Intel
             public float refTsc;
             public float packagePower;
             public float pp0Power;
-            public float pmc0;
-            public float pmc1;
-            public float pmc2;
-            public float pmc3;
-
-            public float pmc4;
-            public float pmc5;
-            public float pmc6;
-            public float pmc7;
-
-            public float NormalizationFactor;
+            public float[] pmc = new float[16];
+            public float NormalizationFactor;    
         }
 
         /// <summary>
@@ -300,50 +314,31 @@ namespace PmcReader.Intel
         /// <param name="pmc2">Description for counter 2</param>
         /// <param name="pmc3">Description for counter 3</param>
         /// <returns>Array to put in results object</returns>
-        public Tuple<string, float>[] GetOverallCounterValues(string pmc0, string pmc1, string pmc2, string pmc3, 
-            string pmc4 = null, string pmc5 = null, string pmc6 = null, string pmc7 = null)
+        public Tuple<string, float>[] GetOverallCounterValues(string pmc0, string pmc1, string pmc2, string pmc3)
         {
-            int returnedPoints = 5 + 4;
-            bool sixCounters = false, eightCounters = false;
-            // GMT has six counters
-            if (!string.IsNullOrEmpty(pmc4) && !string.IsNullOrEmpty(pmc5))
-            {
-                sixCounters = true;
-                returnedPoints += 2;
-            }
+            return GetOverallCounterValues(new string[] {pmc0, pmc1, pmc2, pmc3});
+        }
 
-            // GLC has eight counters, as does ICL
-            if (!string.IsNullOrEmpty(pmc6) && !string.IsNullOrEmpty(pmc7))
-            {
-                eightCounters = true;
-                returnedPoints += 2;
-            }
-
+        /// <summary>
+        /// Assemble overall counter values into a Tuple of string, float array.
+        /// </summary>
+        /// <param name="pmc">Description for counter array</param>
+        /// <returns>Array to put in results object</returns>
+        public Tuple<string, float>[] GetOverallCounterValues(string[] pmc)
+        {
+            int returnedPoints = 5 + pmc.Length;
             Tuple<string, float>[] retval = new Tuple<string, float>[returnedPoints];
             retval[0] = new Tuple<string, float>("Active Cycles", NormalizedTotalCounts.activeCycles);
             retval[1] = new Tuple<string, float>("REF_TSC", NormalizedTotalCounts.refTsc);
             retval[2] = new Tuple<string, float>("Instructions", NormalizedTotalCounts.instr);
             retval[3] = new Tuple<string, float>("Package Power", NormalizedTotalCounts.packagePower);
             retval[4] = new Tuple<string, float>("PP0 Power", NormalizedTotalCounts.pp0Power);
-            retval[5] = new Tuple<string, float>(pmc0, NormalizedTotalCounts.pmc0);
-            retval[6] = new Tuple<string, float>(pmc1, NormalizedTotalCounts.pmc1);
-            retval[7] = new Tuple<string, float>(pmc2, NormalizedTotalCounts.pmc2);
-            retval[8] = new Tuple<string, float>(pmc3, NormalizedTotalCounts.pmc3);
-            if (sixCounters)
-            {
-                retval[9] = new Tuple<string, float>(pmc4, NormalizedTotalCounts.pmc4);
-                retval[10] = new Tuple<string, float>(pmc4, NormalizedTotalCounts.pmc5);
-            }
-
-            if (eightCounters)
-            {
-                retval[11] = new Tuple<string, float>(pmc4, NormalizedTotalCounts.pmc6);
-                retval[12] = new Tuple<string, float>(pmc4, NormalizedTotalCounts.pmc7);
-            }
+            for (byte pmcIdx = 0; pmcIdx < pmc.Length; pmcIdx++)
+                retval[pmcIdx + 5] = new Tuple<string, float>(pmc[pmcIdx], NormalizedTotalCounts.pmc[pmcIdx]);
 
             return retval;
         }
-
+        
         private Label errorLabel;
         public override void InitializeCrazyControls(FlowLayoutPanel flowLayoutPanel, Label errLabel)
         {
@@ -576,11 +571,11 @@ namespace PmcReader.Intel
 
             private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
             {
-                float bpuAccuracy = (1 - counterData.pmc1 / counterData.pmc0) * 100;
+                float bpuAccuracy = (1 - counterData.pmc[1] / counterData.pmc[0]) * 100;
                 float ipc = counterData.instr / counterData.activeCycles;
-                float branchMpki = counterData.pmc1 / counterData.instr * 1000;
-                float btbHitrate = (1 - counterData.pmc2 / counterData.pmc0) * 100;
-                float branchRate = counterData.pmc0 / counterData.instr * 100;
+                float branchMpki = counterData.pmc[1] / counterData.instr * 1000;
+                float btbHitrate = (1 - counterData.pmc[2] / counterData.pmc[0]) * 100;
+                float branchRate = counterData.pmc[0] / counterData.instr * 100;
 
                 return new string[] { label,
                     string.Format("{0:F2}", counterData.NormalizationFactor),
@@ -665,13 +660,13 @@ namespace PmcReader.Intel
                     FormatLargeNumber(counterData.activeCycles),
                     FormatLargeNumber(counterData.instr),
                     string.Format("{0:F2}", ipc),
-                    string.Format("{0:F2}%", 100 * counterData.pmc0 / (counterData.pmc0 + counterData.pmc2)),
-                    string.Format("{0:F2}", counterData.pmc0 / counterData.pmc1),
-                    string.Format("{0:F2}%", 100 * counterData.pmc1 / counterData.activeCycles),
-                    string.Format("{0:F2}", counterData.pmc2 / counterData.pmc3),
-                    string.Format("{0:F2}%", 100 * counterData.pmc3 / counterData.activeCycles),
-                    FormatLargeNumber(counterData.pmc0),
-                    FormatLargeNumber(counterData.pmc2)};
+                    string.Format("{0:F2}%", 100 * counterData.pmc[0] / (counterData.pmc[0] + counterData.pmc[2])),
+                    string.Format("{0:F2}", counterData.pmc[0] / counterData.pmc[1]),
+                    string.Format("{0:F2}%", 100 * counterData.pmc[1] / counterData.activeCycles),
+                    string.Format("{0:F2}", counterData.pmc[2] / counterData.pmc[3]),
+                    string.Format("{0:F2}%", 100 * counterData.pmc[3] / counterData.activeCycles),
+                    FormatLargeNumber(counterData.pmc[0]),
+                    FormatLargeNumber(counterData.pmc[2])};
             }
         }
 
@@ -736,19 +731,19 @@ namespace PmcReader.Intel
 
             private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
             {
-                float totalOps = counterData.pmc0 + counterData.pmc1 + counterData.pmc2 + counterData.pmc3;
+                float totalOps = counterData.pmc[0] + counterData.pmc[1] + counterData.pmc[2] + counterData.pmc[3];
                 return new string[] { label,
                         FormatLargeNumber(counterData.activeCycles),
                         FormatLargeNumber(counterData.instr),
                         string.Format("{0:F2}", counterData.instr / counterData.activeCycles),
-                        FormatLargeNumber(counterData.pmc0),
-                        FormatPercentage(counterData.pmc0, totalOps),
-                        FormatLargeNumber(counterData.pmc1),
-                        FormatPercentage(counterData.pmc1, totalOps),
-                        FormatLargeNumber(counterData.pmc2),
-                        FormatPercentage(counterData.pmc2, totalOps),
-                        FormatLargeNumber(counterData.pmc3),
-                        FormatPercentage(counterData.pmc3, totalOps)
+                        FormatLargeNumber(counterData.pmc[0]),
+                        FormatPercentage(counterData.pmc[0], totalOps),
+                        FormatLargeNumber(counterData.pmc[1]),
+                        FormatPercentage(counterData.pmc[1], totalOps),
+                        FormatLargeNumber(counterData.pmc[2]),
+                        FormatPercentage(counterData.pmc[2], totalOps),
+                        FormatLargeNumber(counterData.pmc[3]),
+                        FormatPercentage(counterData.pmc[3], totalOps)
                 };
             }
         }
@@ -815,23 +810,23 @@ namespace PmcReader.Intel
 
             private string[] computeMetrics(string label, NormalizedCoreCounterData counterData, bool overall)
             {
-                float oneOp = counterData.pmc0 - counterData.pmc1;
-                float twoOps = counterData.pmc1 - counterData.pmc2;
-                float threeOps = counterData.pmc2 - counterData.pmc3;
-                float decoderOps = oneOp + 2 * twoOps + 3 * threeOps + 4 * counterData.pmc3;
+                float oneOp = counterData.pmc[0] - counterData.pmc[1];
+                float twoOps = counterData.pmc[1] - counterData.pmc[2];
+                float threeOps = counterData.pmc[2] - counterData.pmc[3];
+                float decoderOps = oneOp + 2 * twoOps + 3 * threeOps + 4 * counterData.pmc[3];
                 return new string[] { label,
                        FormatLargeNumber(counterData.activeCycles),
                        FormatLargeNumber(counterData.instr),
                        string.Format("{0:F2}", counterData.instr / counterData.activeCycles),
                        overall ? string.Format("{0:F2} W", counterData.packagePower) : "N/A",
                        overall ? FormatLargeNumber(counterData.instr / counterData.packagePower) : "N/A",
-                       FormatPercentage(counterData.pmc0, counterData.activeCycles),
+                       FormatPercentage(counterData.pmc[0], counterData.activeCycles),
                        FormatLargeNumber(decoderOps),
-                       string.Format("{0:F2}", decoderOps / counterData.pmc0),
-                       FormatPercentage(oneOp, counterData.pmc0),
-                       FormatPercentage(twoOps, counterData.pmc0),
-                       FormatPercentage(threeOps, counterData.pmc0),
-                       FormatPercentage(counterData.pmc3, counterData.pmc0),
+                       string.Format("{0:F2}", decoderOps / counterData.pmc[0]),
+                       FormatPercentage(oneOp, counterData.pmc[0]),
+                       FormatPercentage(twoOps, counterData.pmc[0]),
+                       FormatPercentage(threeOps, counterData.pmc[0]),
+                       FormatPercentage(counterData.pmc[3], counterData.pmc[0]),
                 };
             }
         }
@@ -898,23 +893,23 @@ namespace PmcReader.Intel
 
             private string[] computeMetrics(string label, NormalizedCoreCounterData counterData, bool overall)
             {
-                float oneOp = counterData.pmc0 - counterData.pmc1;
-                float twoOps = counterData.pmc1 - counterData.pmc2;
-                float threeOps = counterData.pmc2 - counterData.pmc3;
-                float opCacheOps = oneOp + 2 * twoOps + 3 * threeOps + 4 * counterData.pmc3;
+                float oneOp = counterData.pmc[0] - counterData.pmc[1];
+                float twoOps = counterData.pmc[1] - counterData.pmc[2];
+                float threeOps = counterData.pmc[2] - counterData.pmc[3];
+                float opCacheOps = oneOp + 2 * twoOps + 3 * threeOps + 4 * counterData.pmc[3];
                 return new string[] { label,
                        FormatLargeNumber(counterData.activeCycles),
                        FormatLargeNumber(counterData.instr),
                        string.Format("{0:F2}", counterData.instr / counterData.activeCycles),
                        overall ? string.Format("{0:F2} W", counterData.packagePower) : "N/A",
                        overall ? FormatLargeNumber(counterData.instr / counterData.packagePower) : "N/A",
-                       FormatPercentage(counterData.pmc0, counterData.activeCycles),
+                       FormatPercentage(counterData.pmc[0], counterData.activeCycles),
                        FormatLargeNumber(opCacheOps),
-                       string.Format("{0:F2}", opCacheOps / counterData.pmc0),
-                       FormatPercentage(oneOp, counterData.pmc0),
-                       FormatPercentage(twoOps, counterData.pmc0),
-                       FormatPercentage(threeOps, counterData.pmc0),
-                       FormatPercentage(counterData.pmc3, counterData.pmc0),
+                       string.Format("{0:F2}", opCacheOps / counterData.pmc[0]),
+                       FormatPercentage(oneOp, counterData.pmc[0]),
+                       FormatPercentage(twoOps, counterData.pmc[0]),
+                       FormatPercentage(threeOps, counterData.pmc[0]),
+                       FormatPercentage(counterData.pmc[3], counterData.pmc[0]),
                 };
             }
         }
@@ -979,16 +974,16 @@ namespace PmcReader.Intel
 
             private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
             {
-                float totalOps = counterData.pmc0 + counterData.pmc1 + counterData.pmc2 + counterData.pmc3;
+                float totalOps = counterData.pmc[0] + counterData.pmc[1] + counterData.pmc[2] + counterData.pmc[3];
                 return new string[] { label,
                         FormatLargeNumber(counterData.activeCycles),
                         FormatLargeNumber(counterData.instr),
                         string.Format("{0:F2}", counterData.instr / counterData.activeCycles),
-                        FormatLargeNumber(counterData.pmc0 * 64) + "B",
-                        string.Format("{0:F2}", counterData.pmc2 / counterData.activeCycles),
-                        FormatLargeNumber(counterData.pmc1),
-                        string.Format("{0:F2}%", 100 * counterData.pmc3 / counterData.activeCycles),
-                        string.Format("{0:F2} clk", counterData.pmc2 / counterData.pmc0)
+                        FormatLargeNumber(counterData.pmc[0] * 64) + "B",
+                        string.Format("{0:F2}", counterData.pmc[2] / counterData.activeCycles),
+                        FormatLargeNumber(counterData.pmc[1]),
+                        string.Format("{0:F2}%", 100 * counterData.pmc[3] / counterData.activeCycles),
+                        string.Format("{0:F2} clk", counterData.pmc[2] / counterData.pmc[0])
                 };
             }
         }
@@ -1049,10 +1044,10 @@ namespace PmcReader.Intel
                         string.Format("{0:F2}", counterData.instr / counterData.activeCycles),
                         string.Format("{0:F2} W", counterData.packagePower),
                         FormatLargeNumber(counterData.instr / counterData.packagePower),
-                        string.Format("{0:F2}%", 100 * counterData.pmc0 / counterData.activeCycles),
-                        string.Format("{0:F2}%", 100 * counterData.pmc1 / counterData.activeCycles),
-                        string.Format("{0:F2}%", 100 * counterData.pmc2 / counterData.activeCycles),
-                        string.Format("{0:F2}%", 100 * counterData.pmc3 / counterData.activeCycles)
+                        string.Format("{0:F2}%", 100 * counterData.pmc[0] / counterData.activeCycles),
+                        string.Format("{0:F2}%", 100 * counterData.pmc[1] / counterData.activeCycles),
+                        string.Format("{0:F2}%", 100 * counterData.pmc[2] / counterData.activeCycles),
+                        string.Format("{0:F2}%", 100 * counterData.pmc[3] / counterData.activeCycles)
                 };
             }
         }
@@ -1119,20 +1114,20 @@ namespace PmcReader.Intel
 
             private string[] computeMetrics(string label, NormalizedCoreCounterData counterData, bool overall)
             {
-                float oneOp = counterData.pmc0 - counterData.pmc1;
-                float twoOps = counterData.pmc1 - counterData.pmc2;
-                float threeOps = counterData.pmc2 - counterData.pmc3;
-                float opCacheOps = oneOp + 2 * twoOps + 3 * threeOps + 4 * counterData.pmc3;
+                float oneOp = counterData.pmc[0] - counterData.pmc[1];
+                float twoOps = counterData.pmc[1] - counterData.pmc[2];
+                float threeOps = counterData.pmc[2] - counterData.pmc[3];
+                float opCacheOps = oneOp + 2 * twoOps + 3 * threeOps + 4 * counterData.pmc[3];
                 return new string[] { label,
                        FormatLargeNumber(counterData.activeCycles),
                        FormatLargeNumber(counterData.instr),
                        string.Format("{0:F2}", counterData.instr / counterData.activeCycles),
                        overall ? string.Format("{0:F2} W", counterData.packagePower) : "N/A",
                        overall ? FormatLargeNumber(counterData.instr / counterData.packagePower) : "N/A",
-                       FormatPercentage(counterData.pmc0, counterData.activeCycles),
-                       FormatPercentage(counterData.pmc1, counterData.activeCycles),
-                       FormatPercentage(counterData.pmc2, counterData.activeCycles),
-                       FormatPercentage(counterData.pmc3, counterData.activeCycles),
+                       FormatPercentage(counterData.pmc[0], counterData.activeCycles),
+                       FormatPercentage(counterData.pmc[1], counterData.activeCycles),
+                       FormatPercentage(counterData.pmc[2], counterData.activeCycles),
+                       FormatPercentage(counterData.pmc[3], counterData.activeCycles),
                 };
             }
         }
@@ -1199,18 +1194,18 @@ namespace PmcReader.Intel
 
             private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
             {
-                float totalOps = counterData.pmc0 + counterData.pmc1 + counterData.pmc2 + counterData.pmc3;
+                float totalOps = counterData.pmc[0] + counterData.pmc[1] + counterData.pmc[2] + counterData.pmc[3];
                 return new string[] { label,
                         FormatLargeNumber(counterData.activeCycles),
                         FormatLargeNumber(counterData.instr),
                         string.Format("{0:F2}", counterData.instr / counterData.activeCycles),
-                        string.Format("{0:F2}%", 100 * (1 - counterData.pmc1 / counterData.pmc0)),
-                        string.Format("{0:F2}", 1000 * counterData.pmc1 / counterData.instr),
-                        string.Format("{0:F2}%", 100 * counterData.pmc0 / counterData.instr),
-                        FormatPercentage((counterData.pmc2 - counterData.pmc3), counterData.pmc2),
-                        string.Format("{0:F2}", 1000 * counterData.pmc3 / counterData.instr),
-                        FormatLargeNumber(counterData.pmc3),
-                        FormatLargeNumber(64 * (counterData.pmc2 - counterData.pmc3)) + "B/s",
+                        string.Format("{0:F2}%", 100 * (1 - counterData.pmc[1] / counterData.pmc[0])),
+                        string.Format("{0:F2}", 1000 * counterData.pmc[1] / counterData.instr),
+                        string.Format("{0:F2}%", 100 * counterData.pmc[0] / counterData.instr),
+                        FormatPercentage((counterData.pmc[2] - counterData.pmc[3]), counterData.pmc[2]),
+                        string.Format("{0:F2}", 1000 * counterData.pmc[3] / counterData.instr),
+                        FormatLargeNumber(counterData.pmc[3]),
+                        FormatLargeNumber(64 * (counterData.pmc[2] - counterData.pmc[3])) + "B/s",
                 };
             }
         }
@@ -1274,11 +1269,11 @@ namespace PmcReader.Intel
                         FormatLargeNumber(counterData.activeCycles),
                         FormatLargeNumber(counterData.instr),
                         string.Format("{0:F2}", counterData.instr / counterData.activeCycles),
-                        string.Format("{0:F2}%", 100 * counterData.pmc0 / counterData.activeCycles),
-                        string.Format("{0:F2}%", 100 * (counterData.pmc0 - counterData.pmc1) / counterData.activeCycles),
-                        string.Format("{0:F2}%", 100 * (counterData.pmc1 - counterData.pmc2) / counterData.activeCycles),
-                        string.Format("{0:F2}%", 100 * (counterData.pmc2 - counterData.pmc3) / counterData.activeCycles),
-                        string.Format("{0:F2}%", 100 * counterData.pmc3 / counterData.activeCycles)
+                        string.Format("{0:F2}%", 100 * counterData.pmc[0] / counterData.activeCycles),
+                        string.Format("{0:F2}%", 100 * (counterData.pmc[0] - counterData.pmc[1]) / counterData.activeCycles),
+                        string.Format("{0:F2}%", 100 * (counterData.pmc[1] - counterData.pmc[2]) / counterData.activeCycles),
+                        string.Format("{0:F2}%", 100 * (counterData.pmc[2] - counterData.pmc[3]) / counterData.activeCycles),
+                        string.Format("{0:F2}%", 100 * counterData.pmc[3] / counterData.activeCycles)
                 };
             }
         }
