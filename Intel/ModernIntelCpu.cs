@@ -4,6 +4,7 @@ using PmcReader.Interop;
 using System.Windows.Forms;
 using System.Security.Policy;
 using System.Runtime.InteropServices;
+using System.Collections.Generic;
 
 namespace PmcReader.Intel
 {
@@ -68,14 +69,92 @@ namespace PmcReader.Intel
         private Stopwatch lastPkgPwrTime;
         private ulong lastPkgPwr = 0;
         private ulong lastPp0Pwr = 0;
-        private uint pmcCount = 4;
-        private uint fixedMask = 0x7;
+        public struct CoreType
+        {
+            public CoreType(string name, byte type, ulong coreMask, byte pmcCounters = 4, uint fixedCounterMask = 0x7)
+            {
+                Name = name;
+                Type = type;
+                CoreMask = coreMask;
+                PmcCounters = pmcCounters;
+                FixedCounterMask = fixedCounterMask;
+            }
+            public string Name;
+            public byte Type;
+            public ulong CoreMask;
+            public byte PmcCounters;
+            public uint FixedCounterMask;
+        }
+        public CoreType[] cores;
 
         public ModernIntelCpu()
         {
             this.architectureName = "Modern P6 Family CPU";
             monitoringConfigs = new MonitoringConfig[1];
             monitoringConfigs[0] = new ArchitecturalCounters(this);
+
+            // Determine the number of different types of cores within the system
+            List<byte> coreTypes = new List<byte>();
+            for (byte threadIdx = 0; threadIdx < GetThreadCount(); threadIdx++)
+            {
+                ThreadAffinity.Set(1UL << threadIdx);
+                OpCode.Cpuid(0x1A, 0, out uint eax, out _, out _, out _); // Core
+                byte coreType = (byte)((eax >> 24) & 0xFF);
+                bool newType = true;
+                foreach (byte type in coreTypes)
+                {
+                    if (type == coreType)
+                    {
+                        newType = false;
+                        break;
+                    }
+                }
+                if (newType)
+                    coreTypes.Add(coreType);
+            }
+
+            if (coreTypes.Count > 1)
+                this.architectureName += " (Hybrid)";
+
+            cores = new CoreType[coreTypes.Count];
+
+            for (byte coreIdx = 0; coreIdx < coreTypes.Count; coreIdx++)
+            {
+                byte type = coreTypes[coreIdx];
+                ulong coreMask = 0;
+                uint fixedMask = 0;
+                byte pmcCount = 4;
+
+                // Query each logical processor to determine its type
+                for (byte threadIdx = 0; threadIdx < threadCount; threadIdx++)
+                {
+                    ThreadAffinity.Set(1UL << threadIdx);
+                    OpCode.Cpuid(0x1A, 0, out uint eax, out _, out _, out _);
+                    byte coreType = (byte)((eax >> 24) & 0xFF);
+                    if (type == coreType)
+                    {
+                        // If this is the first core of this type, read the number of
+                        // general and fixed counters that are present.
+                        if (coreMask == 0)
+                        {
+                            OpCode.Cpuid(0x0A, 0, out eax, out _, out uint ecx, out uint edx);
+                            pmcCount = (byte)((eax >> 8) & 0xFF);
+                            byte fixedCounters = (byte)((edx >> 0) & 0x1F);
+                            uint fixedCounterMask = (ecx & 0xFFFF);
+                            for(int fixedIdx = 0; fixedIdx < 16; fixedIdx++)
+                            {
+                                // A fixed counter exists if it's within the identified total or if the mask says it exists
+                                if ((fixedIdx < fixedCounters) || ((fixedCounterMask & 0x1) == 0x1))
+                                    fixedMask |= (1U << fixedIdx);
+                                fixedCounterMask >>= 1;
+                            }
+                        }
+                        coreMask |= (1UL << threadIdx); // Track which threads are of this core type
+                    }
+                }
+                // Console.WriteLine("Creating core type: ID {0} Type 0x{1,2:X2} coreMask 0x{2,8:X8} PMC {3} fixedMask 0x{4,4:X4}", coreIdx, type, coreMask, pmcCount, fixedMask);
+                cores[coreIdx] = new CoreType("Type" + coreIdx, type, coreMask, pmcCount, fixedMask);
+            }
         }
 
         /// <summary>
@@ -96,15 +175,15 @@ namespace PmcReader.Intel
         /// <returns>Value to put in performance event select register</returns>
         public static ulong GetPerfEvtSelRegisterValue(byte perfEvent,
                                            byte umask,
-                                           bool usr,
-                                           bool os,
-                                           bool edge,
-                                           bool pc,
-                                           bool interrupt,
-                                           bool anyThread,
-                                           bool enable,
-                                           bool invert,
-                                           byte cmask)
+                                           bool usr = true,
+                                           bool os = true,
+                                           bool edge = false,
+                                           bool pc = false,
+                                           bool interrupt = false,
+                                           bool anyThread = false,
+                                           bool enable = true,
+                                           bool invert = false,
+                                           byte cmask = 0)
         {
             ulong value = (ulong)perfEvent |
                 (ulong)umask << 8 |
@@ -124,29 +203,38 @@ namespace PmcReader.Intel
         /// Set up fixed counters and enable programmable ones. 
         /// Works on Sandy Bridge, Haswell, and Skylake
         /// </summary>
-        public void EnablePerformanceCounters()
+        public void EnablePerformanceCounters(byte type = 0xFF)
         {
-            // enable fixed performance counters (3) and programmable counters (4)
-            ulong enablePMCsValue = 0;
-            ulong fixedCounterConfigurationValue = 0;
-            for (byte pmcIdx = 0; pmcIdx < pmcCount; pmcIdx++)
-                enablePMCsValue |= (1UL << pmcIdx); // General purpose counters
-
-            for (byte fixedIdx = 0; fixedIdx < 32; fixedIdx++)
+            foreach (CoreType coreType in cores)
             {
-                if (((fixedMask >> fixedIdx) & 0x1) == 0x1)
+                if ((type != 0xFF) && (coreType.Type != type))
+                    continue;
+
+                // enable fixed performance counters (3) and programmable counters (4)
+                ulong enablePMCsValue = 0;
+                ulong fixedCounterConfigurationValue = 0;
+                for (byte pmcIdx = 0; pmcIdx < coreType.PmcCounters; pmcIdx++)
+                    enablePMCsValue |= (1UL << pmcIdx); // General purpose counters
+
+                for (byte fixedIdx = 0; fixedIdx < 16; fixedIdx++)
                 {
-                    enablePMCsValue |= (1UL << (fixedIdx + 32)); // Fixed counters
-                    fixedCounterConfigurationValue |= (1UL << ((fixedIdx * 4) + 0)); // Kernel mode
-                    fixedCounterConfigurationValue |= (1UL << ((fixedIdx * 4) + 1)); // User Mode
+                    if (((coreType.FixedCounterMask >> fixedIdx) & 0x1) == 0x1)
+                    {
+                        enablePMCsValue |= (1UL << (fixedIdx + 32)); // Fixed counters
+                        fixedCounterConfigurationValue |= (1UL << ((fixedIdx * 4) + 0)); // Kernel mode
+                        fixedCounterConfigurationValue |= (1UL << ((fixedIdx * 4) + 1)); // User Mode
+                    }
                 }
-            }
 
-            for (int threadIdx = 0; threadIdx < GetThreadCount(); threadIdx++)
-            {
-                ThreadAffinity.Set(1UL << threadIdx);
-                Ring0.WriteMsr(IA32_PERF_GLOBAL_CTRL, enablePMCsValue);
-                Ring0.WriteMsr(IA32_FIXED_CTR_CTRL, fixedCounterConfigurationValue);
+                for (int threadIdx = 0; threadIdx < GetThreadCount(); threadIdx++)
+                {
+                    if (((coreType.CoreMask >> threadIdx) & 0x1) == 0x1)
+                    {
+                        ThreadAffinity.Set(1UL << threadIdx);
+                        Ring0.WriteMsr(IA32_PERF_GLOBAL_CTRL, enablePMCsValue);
+                        Ring0.WriteMsr(IA32_FIXED_CTR_CTRL, fixedCounterConfigurationValue);
+                    }
+                }
             }
         }
 
@@ -167,18 +255,33 @@ namespace PmcReader.Intel
         /// Set up programmable perf counters. Supports a generic counter size.
         /// </summary>
         /// <param name="pmc">counter array config</param>
-        public void ProgramPerfCounters(ulong[] pmc)
+        public void ProgramPerfCounters(ulong[] pmc, byte type = 0xFF)
         {
-            EnablePerformanceCounters();
-            for (int threadIdx = 0; threadIdx < GetThreadCount(); threadIdx++)
+            bool found = false;
+            foreach (CoreType coreType in cores)
             {
-                ThreadAffinity.Set(1UL << threadIdx);
-                uint pmcCnt = (pmc.Length <= pmcCount) ? (uint)pmc.Length : pmcCount;
-                for (byte pmcIdx = 0; pmcIdx < pmcCnt; pmcIdx++)
-                    Ring0.WriteMsr(IA32_PERFEVTSEL[pmcIdx], pmc[pmcIdx]);
+                if ((type != 0xFF) && (coreType.Type != type))
+                    continue;
+
+                for (int threadIdx = 0; threadIdx < GetThreadCount(); threadIdx++)
+                {
+                    if (((coreType.CoreMask >> threadIdx) & 0x1) == 0x1)
+                    {
+                        found = true;
+                        ThreadAffinity.Set(1UL << threadIdx);
+                        uint pmcCnt = (pmc.Length <= coreType.PmcCounters) ? (uint)pmc.Length : coreType.PmcCounters;
+                        for (byte pmcIdx = 0; pmcIdx < pmcCnt; pmcIdx++)
+                        {
+                            Ring0.WriteMsr(IA32_PERFEVTSEL[pmcIdx], pmc[pmcIdx]);
+                            Ring0.WriteMsr(IA32_A_PMC[pmcIdx], 0);
+                        }
+                    }
+                }
+                if (found)
+                    EnablePerformanceCounters(coreType.Type);
             }
         }
-
+        
         /// <summary>
         /// Reset accumulated totals for core counter data
         /// </summary>
@@ -205,36 +308,43 @@ namespace PmcReader.Intel
         public void UpdateThreadCoreCounterData(int threadIdx)
         {
             ThreadAffinity.Set(1UL << threadIdx);
-            ulong activeCycles, retiredInstructions, refTsc;
-            float normalizationFactor = GetNormalizationFactor(threadIdx);
-            retiredInstructions = ReadAndClearMsr(IA32_FIXED_CTR0);
-            activeCycles = ReadAndClearMsr(IA32_FIXED_CTR1);
-            refTsc = ReadAndClearMsr(IA32_FIXED_CTR2);
-            float[] pmc = new float[pmcCount]; // SJR
-            for (byte pmcIdx = 0; pmcIdx < pmc.Length; pmcIdx++)
-                pmc[pmcIdx] = ReadAndClearMsr(IA32_A_PMC[pmcIdx]);
-                
-            if (NormalizedThreadCounts == null)
+            foreach (CoreType coreType in cores)
             {
-                NormalizedThreadCounts = new NormalizedCoreCounterData[threadCount];
-            }
+                if (((coreType.CoreMask >> threadIdx) & 0x1) == 0x0)
+                    continue;
 
-            if (NormalizedThreadCounts[threadIdx] == null)
-            {
-                NormalizedThreadCounts[threadIdx] = new NormalizedCoreCounterData();
-            }
+                ulong activeCycles, retiredInstructions, refTsc;
+                float normalizationFactor = GetNormalizationFactor(threadIdx);
+                retiredInstructions = ReadAndClearMsr(IA32_FIXED_CTR0);
+                activeCycles = ReadAndClearMsr(IA32_FIXED_CTR1);
+                refTsc = ReadAndClearMsr(IA32_FIXED_CTR2);
+                float[] pmc = new float[coreType.PmcCounters];
+                for (byte pmcIdx = 0; pmcIdx < pmc.Length; pmcIdx++)
+                    pmc[pmcIdx] = ReadAndClearMsr(IA32_A_PMC[pmcIdx]);
 
-            NormalizedThreadCounts[threadIdx].activeCycles = activeCycles * normalizationFactor;
-            NormalizedThreadCounts[threadIdx].instr = retiredInstructions * normalizationFactor;
-            NormalizedThreadCounts[threadIdx].refTsc = refTsc * normalizationFactor;
-            for (byte pmcIdx = 0; pmcIdx < pmc.Length; pmcIdx++)
-                NormalizedThreadCounts[threadIdx].pmc[pmcIdx] = pmc[pmcIdx] * normalizationFactor;
-            NormalizedThreadCounts[threadIdx].NormalizationFactor = normalizationFactor;
-            NormalizedTotalCounts.activeCycles += NormalizedThreadCounts[threadIdx].activeCycles;
-            NormalizedTotalCounts.instr += NormalizedThreadCounts[threadIdx].instr;
-            NormalizedTotalCounts.refTsc += NormalizedThreadCounts[threadIdx].refTsc;
-            for (byte pmcIdx = 0; pmcIdx < pmc.Length; pmcIdx++)
-                NormalizedTotalCounts.pmc[pmcIdx] += NormalizedThreadCounts[threadIdx].pmc[pmcIdx];
+                if (NormalizedThreadCounts == null)
+                {
+                    NormalizedThreadCounts = new NormalizedCoreCounterData[threadCount];
+                }
+
+                if (NormalizedThreadCounts[threadIdx] == null)
+                {
+                    NormalizedThreadCounts[threadIdx] = new NormalizedCoreCounterData();
+                }
+
+                NormalizedThreadCounts[threadIdx].activeCycles = activeCycles * normalizationFactor;
+                NormalizedThreadCounts[threadIdx].instr = retiredInstructions * normalizationFactor;
+                NormalizedThreadCounts[threadIdx].refTsc = refTsc * normalizationFactor;
+                for (byte pmcIdx = 0; pmcIdx < pmc.Length; pmcIdx++)
+                    NormalizedThreadCounts[threadIdx].pmc[pmcIdx] = pmc[pmcIdx] * normalizationFactor;
+                NormalizedThreadCounts[threadIdx].NormalizationFactor = normalizationFactor;
+                NormalizedTotalCounts.activeCycles += NormalizedThreadCounts[threadIdx].activeCycles;
+                NormalizedTotalCounts.instr += NormalizedThreadCounts[threadIdx].instr;
+                NormalizedTotalCounts.refTsc += NormalizedThreadCounts[threadIdx].refTsc;
+                for (byte pmcIdx = 0; pmcIdx < pmc.Length; pmcIdx++)
+                    NormalizedTotalCounts.pmc[pmcIdx] += NormalizedThreadCounts[threadIdx].pmc[pmcIdx];
+                break;
+            }
         }
 
         /// <summary>
@@ -249,7 +359,7 @@ namespace PmcReader.Intel
             public float packagePower;
             public float pp0Power;
             public float[] pmc = new float[16];
-            public float NormalizationFactor;    
+            public float NormalizationFactor;
         }
 
         /// <summary>
@@ -1149,23 +1259,12 @@ namespace PmcReader.Intel
 
             public void Initialize()
             {
-                cpu.EnablePerformanceCounters();
-
-                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
-                {
-                    ThreadAffinity.Set(1UL << threadIdx);
-                    // PMC0 - Retired Branches
-                    Ring0.WriteMsr(IA32_PERFEVTSEL0, GetPerfEvtSelRegisterValue(0xC4, 0, true, true, false, false, false, false, true, false, 0));
-
-                    // PMC1 - Retired Mispredicted Branches
-                    Ring0.WriteMsr(IA32_PERFEVTSEL1, GetPerfEvtSelRegisterValue(0xC5, 0, true, true, false, false, false, false, true, false, 0));
-
-                    // PMC2 - LLC References
-                    Ring0.WriteMsr(IA32_PERFEVTSEL2, GetPerfEvtSelRegisterValue(0x2E, 0x4F, true, true, false, false, false, false, true, false, 0));
-
-                    // PMC3 - LLC Misses
-                    Ring0.WriteMsr(IA32_PERFEVTSEL3, GetPerfEvtSelRegisterValue(0x2E, 0x41, true, true, false, false, false, false, true, false, 0));
-                }
+                ulong[] pmc = new ulong[4];
+                pmc[0] = GetPerfEvtSelRegisterValue(0xC4, 0x00); // Retired Branches
+                pmc[1] = GetPerfEvtSelRegisterValue(0xC5, 0x00); // Mispredicted Branches
+                pmc[2] = GetPerfEvtSelRegisterValue(0x2E, 0x4F); // LLC References
+                pmc[3] = GetPerfEvtSelRegisterValue(0x2E, 0x41); // LLC Misses
+                cpu.ProgramPerfCounters(pmc);
             }
 
             public MonitoringUpdateResults Update()
