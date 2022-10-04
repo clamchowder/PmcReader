@@ -139,26 +139,26 @@ namespace PmcReader.Intel
                 NormalizedThreadCounts[threadIdx].activeCycles = activeCycles * normalizationFactor;
                 NormalizedThreadCounts[threadIdx].instr = retiredInstructions * normalizationFactor;
                 NormalizedThreadCounts[threadIdx].refTsc = refTsc * normalizationFactor;
-                NormalizedThreadCounts[threadIdx].pmc0 = pmc0 * normalizationFactor;
-                NormalizedThreadCounts[threadIdx].pmc1 = pmc1 * normalizationFactor;
-                NormalizedThreadCounts[threadIdx].pmc2 = pmc2 * normalizationFactor;
-                NormalizedThreadCounts[threadIdx].pmc3 = pmc3 * normalizationFactor;
-                NormalizedThreadCounts[threadIdx].pmc4 = pmc4 * normalizationFactor;
-                NormalizedThreadCounts[threadIdx].pmc5 = pmc5 * normalizationFactor;
-                NormalizedThreadCounts[threadIdx].pmc6 = pmc6 * normalizationFactor;
-                NormalizedThreadCounts[threadIdx].pmc7 = pmc7 * normalizationFactor;
+                NormalizedThreadCounts[threadIdx].pmc[0] = pmc0 * normalizationFactor;
+                NormalizedThreadCounts[threadIdx].pmc[1] = pmc1 * normalizationFactor;
+                NormalizedThreadCounts[threadIdx].pmc[2] = pmc2 * normalizationFactor;
+                NormalizedThreadCounts[threadIdx].pmc[3] = pmc3 * normalizationFactor;
+                NormalizedThreadCounts[threadIdx].pmc[4] = pmc4 * normalizationFactor;
+                NormalizedThreadCounts[threadIdx].pmc[5] = pmc5 * normalizationFactor;
+                NormalizedThreadCounts[threadIdx].pmc[6] = pmc6 * normalizationFactor;
+                NormalizedThreadCounts[threadIdx].pmc[7] = pmc7 * normalizationFactor;
                 NormalizedThreadCounts[threadIdx].NormalizationFactor = normalizationFactor;
                 NormalizedTotalCounts.activeCycles += NormalizedThreadCounts[threadIdx].activeCycles;
                 NormalizedTotalCounts.instr += NormalizedThreadCounts[threadIdx].instr;
                 NormalizedTotalCounts.refTsc += NormalizedThreadCounts[threadIdx].refTsc;
-                NormalizedTotalCounts.pmc0 += NormalizedThreadCounts[threadIdx].pmc0;
-                NormalizedTotalCounts.pmc1 += NormalizedThreadCounts[threadIdx].pmc1;
-                NormalizedTotalCounts.pmc2 += NormalizedThreadCounts[threadIdx].pmc2;
-                NormalizedTotalCounts.pmc3 += NormalizedThreadCounts[threadIdx].pmc3;
-                NormalizedTotalCounts.pmc4 += NormalizedThreadCounts[threadIdx].pmc4;
-                NormalizedTotalCounts.pmc5 += NormalizedThreadCounts[threadIdx].pmc5;
-                NormalizedTotalCounts.pmc6 += NormalizedThreadCounts[threadIdx].pmc6;
-                NormalizedTotalCounts.pmc7 += NormalizedThreadCounts[threadIdx].pmc7;
+                NormalizedTotalCounts.pmc[0] += NormalizedThreadCounts[threadIdx].pmc[0];
+                NormalizedTotalCounts.pmc[1] += NormalizedThreadCounts[threadIdx].pmc[1];
+                NormalizedTotalCounts.pmc[2] += NormalizedThreadCounts[threadIdx].pmc[2];
+                NormalizedTotalCounts.pmc[3] += NormalizedThreadCounts[threadIdx].pmc[3];
+                NormalizedTotalCounts.pmc[4] += NormalizedThreadCounts[threadIdx].pmc[4];
+                NormalizedTotalCounts.pmc[5] += NormalizedThreadCounts[threadIdx].pmc[5];
+                NormalizedTotalCounts.pmc[6] += NormalizedThreadCounts[threadIdx].pmc[6];
+                NormalizedTotalCounts.pmc[7] += NormalizedThreadCounts[threadIdx].pmc[7];
             }
         }
 
@@ -193,22 +193,22 @@ namespace PmcReader.Intel
                 NormalizedThreadCounts[threadIdx].activeCycles = activeCycles * normalizationFactor;
                 NormalizedThreadCounts[threadIdx].instr = retiredInstructions * normalizationFactor;
                 NormalizedThreadCounts[threadIdx].refTsc = refTsc * normalizationFactor;
-                NormalizedThreadCounts[threadIdx].pmc0 = pmc0 * normalizationFactor;
-                NormalizedThreadCounts[threadIdx].pmc1 = pmc1 * normalizationFactor;
-                NormalizedThreadCounts[threadIdx].pmc2 = pmc2 * normalizationFactor;
-                NormalizedThreadCounts[threadIdx].pmc3 = pmc3 * normalizationFactor;
-                NormalizedThreadCounts[threadIdx].pmc4 = pmc4 * normalizationFactor;
-                NormalizedThreadCounts[threadIdx].pmc5 = pmc5 * normalizationFactor;
+                NormalizedThreadCounts[threadIdx].pmc[0] = pmc0 * normalizationFactor;
+                NormalizedThreadCounts[threadIdx].pmc[1] = pmc1 * normalizationFactor;
+                NormalizedThreadCounts[threadIdx].pmc[2] = pmc2 * normalizationFactor;
+                NormalizedThreadCounts[threadIdx].pmc[3] = pmc3 * normalizationFactor;
+                NormalizedThreadCounts[threadIdx].pmc[4] = pmc4 * normalizationFactor;
+                NormalizedThreadCounts[threadIdx].pmc[5] = pmc5 * normalizationFactor;
                 NormalizedThreadCounts[threadIdx].NormalizationFactor = normalizationFactor;
                 NormalizedTotalCounts.activeCycles += NormalizedThreadCounts[threadIdx].activeCycles;
                 NormalizedTotalCounts.instr += NormalizedThreadCounts[threadIdx].instr;
                 NormalizedTotalCounts.refTsc += NormalizedThreadCounts[threadIdx].refTsc;
-                NormalizedTotalCounts.pmc0 += NormalizedThreadCounts[threadIdx].pmc0;
-                NormalizedTotalCounts.pmc1 += NormalizedThreadCounts[threadIdx].pmc1;
-                NormalizedTotalCounts.pmc2 += NormalizedThreadCounts[threadIdx].pmc2;
-                NormalizedTotalCounts.pmc3 += NormalizedThreadCounts[threadIdx].pmc3;
-                NormalizedTotalCounts.pmc4 += NormalizedThreadCounts[threadIdx].pmc4;
-                NormalizedTotalCounts.pmc5 += NormalizedThreadCounts[threadIdx].pmc5;
+                NormalizedTotalCounts.pmc[0] += NormalizedThreadCounts[threadIdx].pmc[0];
+                NormalizedTotalCounts.pmc[1] += NormalizedThreadCounts[threadIdx].pmc[1];
+                NormalizedTotalCounts.pmc[2] += NormalizedThreadCounts[threadIdx].pmc[2];
+                NormalizedTotalCounts.pmc[3] += NormalizedThreadCounts[threadIdx].pmc[3];
+                NormalizedTotalCounts.pmc[4] += NormalizedThreadCounts[threadIdx].pmc[4];
+                NormalizedTotalCounts.pmc[5] += NormalizedThreadCounts[threadIdx].pmc[5];
             }
         }
 
@@ -255,8 +255,8 @@ namespace PmcReader.Intel
 
                 cpu.ReadPackagePowerCounter();
                 results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
-                results.overallCounterValues = cpu.GetOverallCounterValues(
-                    "int 128-bit vec", "int 256-bit vec", "128-bit fp32", "128-bit fp64", "256-bit FP32", "256-bit FP64", "Scalar FP32", "Scalar FP64");
+                results.overallCounterValues = cpu.GetOverallCounterValues( new String[] {
+                    "int 128-bit vec", "int 256-bit vec", "128-bit fp32", "128-bit fp64", "256-bit FP32", "256-bit FP64", "Scalar FP32", "Scalar FP64" });
                 return results;
             }
 
@@ -276,16 +276,16 @@ namespace PmcReader.Intel
                         string.Format("{0:F2}", counterData.instr / counterData.activeCycles),
                         string.Format("{0:F2} W", counterData.packagePower),
                         FormatLargeNumber(counterData.instr / counterData.packagePower),
-                        FormatPercentage(counterData.pmc0, counterData.pmc0 + counterData.pmc1),
-                        string.Format("{0:F2}", 1000 * counterData.pmc1 / counterData.instr),
-                        FormatPercentage(counterData.pmc0, counterData.instr),
-                        FormatPercentage(counterData.pmc1, counterData.instr),
-                        FormatPercentage(counterData.pmc2, counterData.instr),
-                        FormatPercentage(counterData.pmc3, counterData.instr),
-                        FormatPercentage(counterData.pmc4, counterData.instr),
-                        FormatPercentage(counterData.pmc5, counterData.instr),
-                        FormatPercentage(counterData.pmc6, counterData.instr),
-                        FormatPercentage(counterData.pmc7, counterData.instr),
+                        FormatPercentage(counterData.pmc[0], counterData.pmc[0] + counterData.pmc[1]),
+                        string.Format("{0:F2}", 1000 * counterData.pmc[1] / counterData.instr),
+                        FormatPercentage(counterData.pmc[0], counterData.instr),
+                        FormatPercentage(counterData.pmc[1], counterData.instr),
+                        FormatPercentage(counterData.pmc[2], counterData.instr),
+                        FormatPercentage(counterData.pmc[3], counterData.instr),
+                        FormatPercentage(counterData.pmc[4], counterData.instr),
+                        FormatPercentage(counterData.pmc[5], counterData.instr),
+                        FormatPercentage(counterData.pmc[6], counterData.instr),
+                        FormatPercentage(counterData.pmc[7], counterData.instr),
                 };
             }
         }
@@ -333,7 +333,7 @@ namespace PmcReader.Intel
 
                 cpu.ReadPackagePowerCounter();
                 results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
-                results.overallCounterValues = cpu.GetOverallCounterValues("License 1", "License 2", "License 3", "C0.1 State", "C0.2 State", "1T Active", "Paused", "Unused");
+                results.overallCounterValues = cpu.GetOverallCounterValues(new String[] { "License 1", "License 2", "License 3", "C0.1 State", "C0.2 State", "1T Active", "Paused", "Unused" });
                 return results;
             }
 
@@ -353,15 +353,15 @@ namespace PmcReader.Intel
                         string.Format("{0:F2}", counterData.instr / counterData.activeCycles),
                         string.Format("{0:F2} W", counterData.packagePower),
                         FormatLargeNumber(counterData.instr / counterData.packagePower),
-                        FormatPercentage(counterData.pmc0, counterData.pmc0 + counterData.pmc1),
-                        string.Format("{0:F2}", 1000 * counterData.pmc1 / counterData.instr),
-                        FormatPercentage(counterData.pmc0, counterData.activeCycles),
-                        FormatPercentage(counterData.pmc1, counterData.activeCycles),
-                        FormatPercentage(counterData.pmc2, counterData.activeCycles),
-                        FormatPercentage(counterData.pmc3, counterData.activeCycles),
-                        FormatPercentage(counterData.pmc4, counterData.activeCycles),
-                        FormatPercentage(counterData.pmc5, counterData.activeCycles),
-                        FormatPercentage(counterData.pmc6, counterData.activeCycles)
+                        FormatPercentage(counterData.pmc[0], counterData.pmc[0] + counterData.pmc[1]),
+                        string.Format("{0:F2}", 1000 * counterData.pmc[1] / counterData.instr),
+                        FormatPercentage(counterData.pmc[0], counterData.activeCycles),
+                        FormatPercentage(counterData.pmc[1], counterData.activeCycles),
+                        FormatPercentage(counterData.pmc[2], counterData.activeCycles),
+                        FormatPercentage(counterData.pmc[3], counterData.activeCycles),
+                        FormatPercentage(counterData.pmc[4], counterData.activeCycles),
+                        FormatPercentage(counterData.pmc[5], counterData.activeCycles),
+                        FormatPercentage(counterData.pmc[6], counterData.activeCycles)
                 };
             }
         }
@@ -409,7 +409,7 @@ namespace PmcReader.Intel
 
                 cpu.ReadPackagePowerCounter();
                 results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
-                results.overallCounterValues = cpu.GetOverallCounterValues("Load Buffer Full", "Mem RS Full", "Store Buffer Full", "LD Block 4K Alias", "LD Block Data Unknown", "Unused");
+                results.overallCounterValues = cpu.GetOverallCounterValues(new String[] { "Load Buffer Full", "Mem RS Full", "Store Buffer Full", "LD Block 4K Alias", "LD Block Data Unknown", "Unused" });
                 return results;
             }
 
@@ -429,13 +429,13 @@ namespace PmcReader.Intel
                         string.Format("{0:F2}", counterData.instr / counterData.activeCycles),
                         string.Format("{0:F2} W", counterData.packagePower),
                         FormatLargeNumber(counterData.instr / counterData.packagePower),
-                        FormatPercentage(counterData.pmc0, counterData.pmc0 + counterData.pmc1),
-                        string.Format("{0:F2}", 1000 * counterData.pmc1 / counterData.instr),
-                        FormatPercentage(counterData.pmc0, counterData.activeCycles),
-                        FormatPercentage(counterData.pmc1, counterData.activeCycles),
-                        FormatPercentage(counterData.pmc2, counterData.activeCycles),
-                        string.Format("{0:F2}", 1000 * counterData.pmc3 / counterData.instr),
-                        string.Format("{0:F2}", 1000 * counterData.pmc4 / counterData.instr),
+                        FormatPercentage(counterData.pmc[0], counterData.pmc[0] + counterData.pmc[1]),
+                        string.Format("{0:F2}", 1000 * counterData.pmc[1] / counterData.instr),
+                        FormatPercentage(counterData.pmc[0], counterData.activeCycles),
+                        FormatPercentage(counterData.pmc[1], counterData.activeCycles),
+                        FormatPercentage(counterData.pmc[2], counterData.activeCycles),
+                        string.Format("{0:F2}", 1000 * counterData.pmc[3] / counterData.instr),
+                        string.Format("{0:F2}", 1000 * counterData.pmc[4] / counterData.instr),
                 };
             }
         }
@@ -475,15 +475,15 @@ namespace PmcReader.Intel
                 int eCoreIdx = 0;
                 foreach (byte threadIdx in cpu.eCores)
                 {
-                    
+
                     results.unitMetrics[eCoreIdx] = computeMetrics("E: Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
                     eCoreIdx++;
                 }
 
                 cpu.ReadPackagePowerCounter();
                 results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
-                results.overallCounterValues = cpu.GetOverallCounterValues(
-                    "Allocation Restriction", "Mem Scheduler Full", "Non-mem Scheduler Full", "Registers Full", "ROB Full", "Serialization");
+                results.overallCounterValues = cpu.GetOverallCounterValues( new String[] {
+                    "Allocation Restriction", "Mem Scheduler Full", "Non-mem Scheduler Full", "Registers Full", "ROB Full", "Serialization" });
                 return results;
             }
 
@@ -503,14 +503,14 @@ namespace PmcReader.Intel
                         string.Format("{0:F2}", counterData.instr / counterData.activeCycles),
                         string.Format("{0:F2} W", counterData.packagePower),
                         FormatLargeNumber(counterData.instr / counterData.packagePower),
-                        FormatPercentage(counterData.pmc0, counterData.pmc0 + counterData.pmc1),
-                        string.Format("{0:F2}", 1000 * counterData.pmc1 / counterData.instr),
-                        FormatPercentage(counterData.pmc0, counterData.activeCycles),
-                        FormatPercentage(counterData.pmc1, counterData.activeCycles),
-                        FormatPercentage(counterData.pmc2, counterData.activeCycles),
-                        FormatPercentage(counterData.pmc3, counterData.activeCycles),
-                        FormatPercentage(counterData.pmc4, counterData.activeCycles),
-                        FormatPercentage(counterData.pmc5, counterData.activeCycles)
+                        FormatPercentage(counterData.pmc[0], counterData.pmc[0] + counterData.pmc[1]),
+                        string.Format("{0:F2}", 1000 * counterData.pmc[1] / counterData.instr),
+                        FormatPercentage(counterData.pmc[0], counterData.activeCycles),
+                        FormatPercentage(counterData.pmc[1], counterData.activeCycles),
+                        FormatPercentage(counterData.pmc[2], counterData.activeCycles),
+                        FormatPercentage(counterData.pmc[3], counterData.activeCycles),
+                        FormatPercentage(counterData.pmc[4], counterData.activeCycles),
+                        FormatPercentage(counterData.pmc[5], counterData.activeCycles)
                 };
             }
         }
@@ -554,7 +554,7 @@ namespace PmcReader.Intel
             public MonitoringUpdateResults Update()
             {
                 MonitoringUpdateResults results = new MonitoringUpdateResults();
-                results.unitMetrics = new string[cpu.pCores.Count][];
+                results.unitMetrics = new string[cpu.pCores.Count + cpu.eCores.Count][];
                 cpu.InitializeCoreTotals();
                 for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
                 {
@@ -579,21 +579,21 @@ namespace PmcReader.Intel
             private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
             {
                 // L1 and load fill buffer hits = loads that were not served from L2, L3, or DRAM
-                float l1FbHits = counterData.pmc0 - counterData.pmc1 - counterData.pmc2 - counterData.pmc3;
-                float l2Reqs = counterData.pmc0 - l1FbHits; // L2 requests = l1 and fill buffer misses
-                float l3Reqs = l2Reqs - counterData.pmc1;
+                float l1FbHits = counterData.pmc[0] - counterData.pmc[1] - counterData.pmc[2] - counterData.pmc[3];
+                float l2Reqs = counterData.pmc[0] - l1FbHits; // L2 requests = l1 and fill buffer misses
+                float l3Reqs = l2Reqs - counterData.pmc[1];
                 return new string[] { label,
                         FormatLargeNumber(counterData.activeCycles),
                         FormatLargeNumber(counterData.instr),
                         string.Format("{0:F2}", counterData.instr / counterData.activeCycles),
                         string.Format("{0:F2} W", counterData.packagePower),
                         FormatLargeNumber(counterData.instr / counterData.packagePower),
-                        FormatPercentage(l1FbHits, counterData.pmc0),                            // L1 and fill buffer hitrate
+                        FormatPercentage(l1FbHits, counterData.pmc[0]),                            // L1 and fill buffer hitrate
                         string.Format("{0:F2}", 1000 * l2Reqs / counterData.instr),              // L1 MPKI
-                        FormatPercentage(counterData.pmc1, l2Reqs),                              // L2 hitrate
+                        FormatPercentage(counterData.pmc[1], l2Reqs),                              // L2 hitrate
                         string.Format("{0:F2}", 1000 * l3Reqs / counterData.instr),              // L2 MPKI
-                        FormatPercentage(counterData.pmc2, l3Reqs),                              // L3 hitrate
-                        string.Format("{0:F2}", 1000 * counterData.pmc3 / counterData.instr)     // L3 MPKI
+                        FormatPercentage(counterData.pmc[2], l3Reqs),                              // L3 hitrate
+                        string.Format("{0:F2}", 1000 * counterData.pmc[3] / counterData.instr)     // L3 MPKI
                 };
             }
         }
