@@ -755,7 +755,7 @@ namespace PmcReader.Intel
                 };
             }
         }
-        public class RetireHistogram : MonitoringConfig
+        public new class RetireHistogram : MonitoringConfig
         {
             private SandyBridge cpu;
             public string GetConfigName() { return "Retire Histogram"; }

@@ -71,19 +71,23 @@ namespace PmcReader.Intel
         private ulong lastPp0Pwr = 0;
         public struct CoreType
         {
-            public CoreType(string name, byte type, ulong coreMask, byte pmcCounters = 4, uint fixedCounterMask = 0x7)
+            public CoreType(string name, byte type, byte coreCount, ulong coreMask, byte pmcCounters = 4, uint fixedCounterMask = 0x7, byte allocWidth = 4)
             {
                 Name = name;
                 Type = type;
+                CoreCount = coreCount;
                 CoreMask = coreMask;
                 PmcCounters = pmcCounters;
                 FixedCounterMask = fixedCounterMask;
+                AllocWidth = allocWidth;
             }
             public string Name;
             public byte Type;
+            public byte CoreCount;
             public ulong CoreMask;
             public byte PmcCounters;
             public uint FixedCounterMask;
+            public byte AllocWidth;
         }
         public CoreType[] cores;
 
@@ -121,6 +125,7 @@ namespace PmcReader.Intel
             for (byte coreIdx = 0; coreIdx < coreTypes.Count; coreIdx++)
             {
                 byte type = coreTypes[coreIdx];
+                byte coreCount = 0;
                 ulong coreMask = 0;
                 uint fixedMask = 0;
                 byte pmcCount = 4;
@@ -139,6 +144,9 @@ namespace PmcReader.Intel
                         {
                             OpCode.Cpuid(0x0A, 0, out eax, out _, out uint ecx, out uint edx);
                             pmcCount = (byte)((eax >> 8) & 0xFF);
+                            if (pmcCount == 0)
+                                pmcCount = 4; // Default if enumeration returns 0
+
                             byte fixedCounters = (byte)((edx >> 0) & 0x1F);
                             uint fixedCounterMask = (ecx & 0xFFFF);
                             for(int fixedIdx = 0; fixedIdx < 16; fixedIdx++)
@@ -148,13 +156,21 @@ namespace PmcReader.Intel
                                     fixedMask |= (1U << fixedIdx);
                                 fixedCounterMask >>= 1;
                             }
+                            if (fixedCounterMask == 0)
+                                fixedCounterMask = 0x3;  // Default if enumeration returns 0
                         }
+                        coreCount++;
                         coreMask |= (1UL << threadIdx); // Track which threads are of this core type
                     }
                 }
                 // Console.WriteLine("Creating core type: ID {0} Type 0x{1,2:X2} coreMask 0x{2,8:X8} PMC {3} fixedMask 0x{4,4:X4}", coreIdx, type, coreMask, pmcCount, fixedMask);
-                cores[coreIdx] = new CoreType("Type" + coreIdx, type, coreMask, pmcCount, fixedMask);
+                cores[coreIdx] = new CoreType("Type" + coreIdx, type, coreCount, coreMask, pmcCount, fixedMask);
             }
+        }
+
+        ~ModernIntelCpu()
+        {
+            DisablePerformanceCounters();
         }
 
         /// <summary>
@@ -239,6 +255,39 @@ namespace PmcReader.Intel
         }
 
         /// <summary>
+        /// Disable fixed/general programmable counters 
+        /// </summary>
+        public void DisablePerformanceCounters(byte type = 0xFF)
+        {
+            foreach (CoreType coreType in cores)
+            {
+                if ((type != 0xFF) && (coreType.Type != type))
+                    continue;
+
+                for (int threadIdx = 0; threadIdx < GetThreadCount(); threadIdx++)
+                {
+                    if (((coreType.CoreMask >> threadIdx) & 0x1) == 0x1)
+                    {
+                        ThreadAffinity.Set(1UL << threadIdx);
+                        Ring0.WriteMsr(IA32_PERF_GLOBAL_CTRL, 0);
+                        Ring0.WriteMsr(IA32_FIXED_CTR_CTRL, 0);
+                        for (byte pmcIdx = 0; pmcIdx < 16; pmcIdx++)
+                        {
+                            Ring0.WriteMsr(IA32_PERFEVTSEL[pmcIdx], 0);
+                            Ring0.WriteMsr(IA32_A_PMC[pmcIdx], 0);
+                        }
+                        for (byte fixedIdx = 0; fixedIdx < 16; fixedIdx++)
+                        {
+                            Ring0.WriteMsr(IA32_FIXED_CTR[fixedIdx], 0);
+                        }
+                    }
+                }
+                if (type != 0xFF)
+                    break;
+            }
+        }
+
+        /// <summary>
         /// Set up programmable perf counters. All modern Intel CPUs have 4 perf counters.
         /// Ice Lake or >Haswell with SMT off have 8 programmable counters but too much trouble to do that detection
         /// </summary>
@@ -259,7 +308,7 @@ namespace PmcReader.Intel
         {
             bool found = false;
             foreach (CoreType coreType in cores)
-            {
+            {             
                 if ((type != 0xFF) && (coreType.Type != type))
                     continue;
 
@@ -278,7 +327,7 @@ namespace PmcReader.Intel
                     }
                 }
                 if (found)
-                    EnablePerformanceCounters(coreType.Type);
+                    EnablePerformanceCounters(coreType.Type);             
             }
         }
         
