@@ -8,7 +8,7 @@ namespace PmcReader.AMD
     {
         public Piledriver()
         {
-            monitoringConfigs = new MonitoringConfig[11];
+            monitoringConfigs = new MonitoringConfig[12];
             monitoringConfigs[0] = new BpuMonitoringConfig(this);
             monitoringConfigs[1] = new IFetch(this);
             monitoringConfigs[2] = new DataCache(this);
@@ -20,6 +20,7 @@ namespace PmcReader.AMD
             monitoringConfigs[8] = new DispatchStallMisc(this);
             monitoringConfigs[9] = new DTLB(this);
             monitoringConfigs[10] = new FPU(this);
+            monitoringConfigs[11] = new Offcore(this);
             architectureName = "Piledriver";
         }
 
@@ -125,7 +126,7 @@ namespace PmcReader.AMD
             }
 
             public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", 
-                "Uops/C", "Uops/Instr", "IC Hitrate", "IC Hit BW", "IC MPKI", "L2->IC Fill BW", "Sys->IC Fill BW", "Self Modifying Code Pipeline Restarts" };
+                "Uops/C", "Uops/Instr", "IC Hitrate", "IC Hit BW", "IC MPKI", "L2->IC Fill BW", "L2 Code Hitrate", "L2 Code MPKI", "Sys->IC Fill BW", "Self Modifying Code Pipeline Restarts" };
 
             public string GetHelpText()
             {
@@ -146,6 +147,8 @@ namespace PmcReader.AMD
                         FormatLargeNumber(32 * icHits) + "B/s",                                   // IC Hit BW
                         string.Format("{0:F2}", 1000 * (counterData.ctr1 + counterData.ctr2) / instr), // IC MPKI
                         FormatLargeNumber(64 * counterData.ctr1) + "B/s", // IC refill from L2
+                        FormatPercentage(counterData.ctr1, counterData.ctr1 + counterData.ctr2),       // L2 code hitrate
+                        string.Format("{0:F2}", 1000 * counterData.ctr2 / instr), // L2 code MPKI
                         FormatLargeNumber(64 * counterData.ctr2) + "B/s", // IC refill from system
                         FormatLargeNumber(counterData.ctr5)};   
             }
@@ -191,7 +194,7 @@ namespace PmcReader.AMD
             }
 
             public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC",
-                "L1D Hitrate", "L1D MPKI", "L1D/MAB Hit BW", "L2->L1D BW", "Sys->L1D BW", "LDQ Full", "STQ Full" };
+                "L1D Hitrate", "L1D MPKI", "L1D/MAB Hit BW", "L2->L1D BW", "L2 Data Hitrate", "L2 Data MPKI", "Sys->L1D BW", "LDQ Full", "STQ Full" };
 
             public string GetHelpText()
             {
@@ -210,6 +213,8 @@ namespace PmcReader.AMD
                         string.Format("{0:F2}", 1000 * counterData.ctr4 / instr),
                         FormatLargeNumber(16 * dcHits) + "B/s", // each data cache hit should be 16B
                         FormatLargeNumber(64 * (counterData.ctr4 - counterData.ctr2)) + "B/s",
+                        FormatPercentage(counterData.ctr4 - counterData.ctr2, counterData.ctr4),
+                        string.Format("{0:F2}", 1000 * counterData.ctr2 / instr),
                         FormatLargeNumber(64 * counterData.ctr2) + "B/s",
                         FormatPercentage(counterData.ctr0, counterData.aperf),
                         FormatPercentage(counterData.ctr1, counterData.aperf)};
@@ -233,7 +238,7 @@ namespace PmcReader.AMD
                 cpu.ProgramPerfCounters(
                     GetPerfCtlValue(0x32, 0, false, 0, 0), // misaligned stores
                     GetPerfCtlValue(0x41, 0b11, false, 0, 0), // DC Miss
-                    GetPerfCtlValue(0x29, 3, false, 0, 0), // LS dispatch
+                    GetPerfCtlValue(0x47, 0, false, 0, 0), // misaligned access
                     GetPerfCtlValue(0xC0, 0, false, 0, 0), // ret instr
                     GetPerfCtlValue(0x40, 0, false, 1, 0), // DC access, cmask 1
                     GetPerfCtlValue(0x40, 0, false, 2, 0));  // DC access, cmask 2
@@ -251,12 +256,12 @@ namespace PmcReader.AMD
                 }
 
                 results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
-                results.overallCounterValues = cpu.GetOverallCounterValues("Misaligned Store", "DC Miss", "LS Dispatch", "Instr", "DC Access Cmask 1", "DC Access Cmask 2");
+                results.overallCounterValues = cpu.GetOverallCounterValues("Misaligned Store", "DC Miss", "Misaligned Access", "Instr", "DC Access Cmask 1", "DC Access Cmask 2");
                 return results;
             }
 
             public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC",
-                "L1D Hitrate", "L1D MPKI", "L1D/MAB Hit BW", "DC Active", "DC 2 Accesses/c", "Misaligned Stores", "LS Dispatch" };
+                "L1D Hitrate", "L1D MPKI", "L1D/MAB Hit BW", "DC Active", "DC 2 Accesses/c", "Misaligned Accesses", "Misaligned Stores" };
 
             public string GetHelpText()
             {
@@ -277,8 +282,8 @@ namespace PmcReader.AMD
                         FormatLargeNumber(16 * dcHits) + "B/s", // each data cache hit should be 16B
                         FormatPercentage(counterData.ctr4, counterData.aperf),
                         FormatPercentage(counterData.ctr5, counterData.aperf),
-                        FormatLargeNumber(counterData.ctr0),
-                        FormatLargeNumber(counterData.ctr2)};
+                        string.Format("{0:F2}/Ki", 1000 * counterData.ctr2 / instr),
+                        string.Format("{0:F2}/Ki", 1000 * counterData.ctr0 / instr)};
             }
         }
 
@@ -765,6 +770,67 @@ namespace PmcReader.AMD
                         FormatPercentage(counterData.ctr4, counterData.aperf),
                         FormatLargeNumber(counterData.ctr5)
                         };
+            }
+        }
+
+        public class Offcore : MonitoringConfig
+        {
+            private Piledriver cpu;
+            public string GetConfigName() { return "Off-Module Transfers"; }
+
+            public Offcore(Piledriver amdCpu)
+            {
+                cpu = amdCpu;
+            }
+
+            public string[] GetColumns() { return columns; }
+
+            public void Initialize()
+            {
+                cpu.ProgramPerfCounters(
+                    GetPerfCtlValue(0x6C, 0x2F, false, 0, 0), // Response from system on cache refill, everything except data error
+                    GetPerfCtlValue(0x6D, 1, false, 0, 0), // octwords (16B) written to system
+                    GetPerfCtlValue(0x65, 1, false, 0, 0), // requests to uncacheable (UC) memory
+                    GetPerfCtlValue(0xC0, 0, false, 0, 0), // instructions retired
+                    GetPerfCtlValue(0, 0, false, 0, 0), 
+                    GetPerfCtlValue(0, 0, false, 0, 0));  
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[cpu.GetThreadCount()][];
+                cpu.InitializeCoreTotals();
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    cpu.UpdateThreadCoreCounterData(threadIdx);
+                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
+                }
+
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                results.overallCounterValues = cpu.GetOverallCounterValues("Response from System for Cache Fill", "Octwords Written to System", "UC Mem Requests", "Instructions", "Unused", "Unused");
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC",
+                "Response from System", "Written to System", "UC Mem Requests" };
+
+            public string GetHelpText()
+            {
+                return "aaaaaa";
+            }
+
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
+            {
+                float instr = counterData.ctr3;
+                return new string[] { label,
+                        FormatLargeNumber(counterData.aperf),
+                        FormatLargeNumber(instr),
+                        string.Format("{0:F2}", instr / counterData.aperf),                       // IPC
+                        FormatLargeNumber(counterData.ctr0 * 64) + "B/s",
+                        FormatLargeNumber(counterData.ctr1 * 16) + "B/s",
+                        FormatLargeNumber(counterData.ctr3)
+                };
             }
         }
     }

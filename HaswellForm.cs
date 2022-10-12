@@ -122,12 +122,24 @@ namespace PmcReader
                     dfMonitoring.monitoringArea = new AMD.Zen2DataFabric(AMD.Zen2DataFabric.DfType.Client);
                     crazyThings = new AMD.Amd17hCpu();
                 }
-                else if (cpuFamily == 0x15 && cpuModel == 0x2)
+                else if (cpuFamily == 0x15)
                 {
-                    coreMonitoring.monitoringArea = new AMD.Piledriver();
-                    l3Monitoring.monitoringArea = new AMD.PiledriverNorthbridge();
-                    dfLabelOverride = "Unused";
-                    l3LabelOverride = "Northbridge PMC Configurations (pick one):";
+                    if (cpuModel == 0x2)
+                    {
+                        coreMonitoring.monitoringArea = new AMD.Piledriver();
+                        l3Monitoring.monitoringArea = new AMD.PiledriverNorthbridge();
+                        dfLabelOverride = "Unused";
+                        l3LabelOverride = "Northbridge PMC Configurations (pick one):";
+                    }
+                    else if (cpuModel == 0x1)
+                    {
+                        coreMonitoring.monitoringArea = new AMD.Bulldozer();
+                        l3Monitoring.monitoringArea = new AMD.PiledriverNorthbridge();
+                        dfLabelOverride = "Unused";
+                        l3LabelOverride = "Northbridge PMC Configurations (pick one):";
+                    }
+
+                    crazyThings = new AMD.Amd15hCpu();
                 }
             }
 
@@ -324,8 +336,9 @@ namespace PmcReader
 
                     setup.monitoringThreadCancellation = new CancellationTokenSource();
                     setup.monitoringThread = Task.Run(() => setup.monitoringArea.MonitoringThread(cfgIdx, setup.targetListView, setup.monitoringThreadCancellation.Token));
-                    errorLabel.Text = "";
                 });
+
+                errorLabel.Text = "";
             }
         }
 
