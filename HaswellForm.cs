@@ -141,6 +141,12 @@ namespace PmcReader
 
                     crazyThings = new AMD.Amd15hCpu();
                 }
+                else if (cpuFamily == 0x10)
+                {
+                    coreMonitoring.monitoringArea = new AMD.K10();
+                    dfLabelOverride = "Unused";
+                    l3LabelOverride = "Unused";
+                }
             }
 
             InitializeComponent();
