@@ -10,8 +10,16 @@ namespace PmcReader.AMD
             List<MonitoringConfig> configs = new List<MonitoringConfig>();
             configs.Add(new BpuMonitoringConfig(this));
             configs.Add(new L1iConfig(this));
+            configs.Add(new DispatchStalls1(this));
+            configs.Add(new DispatchStalls2(this));
+            configs.Add(new DispatchStalls3(this));
             configs.Add(new L1DConfig(this));
+            configs.Add(new L1DBW(this));
+            configs.Add(new FPUConfig(this));
+            configs.Add(new SSEFlops(this));
             configs.Add(new L2Config(this));
+            configs.Add(new L3Config(this));
+            configs.Add(new DRAMConfig(this));
             configs.Add(new HTConfig(this));
             monitoringConfigs = configs.ToArray();
             architectureName = "K10";
@@ -191,6 +199,64 @@ namespace PmcReader.AMD
             }
         }
 
+        public class L1DBW : MonitoringConfig
+        {
+            private K10 cpu;
+            public string GetConfigName() { return "L1D BW"; }
+
+            public L1DBW(K10 amdCpu)
+            {
+                cpu = amdCpu;
+            }
+
+            public string[] GetColumns() { return columns; }
+
+            public void Initialize()
+            {
+                cpu.ProgramPerfCounters(
+                    GetPerfCtlValue(0x76, 0, false, 0, 0), // unhalted clocks
+                    GetPerfCtlValue(0xC0, 0, false, 0, 0), // ret instr
+                    GetPerfCtlValue(0x40, 0, false, 1, 0),
+                    GetPerfCtlValue(0x40, 0, false, 2, 0));
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[cpu.GetThreadCount()][];
+                cpu.InitializeCoreTotals();
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    cpu.UpdateThreadCoreCounterData(threadIdx);
+                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
+                }
+
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                results.overallCounterValues = cpu.GetOverallCounterValues("cycles", "instructions", "DC Access cmask 1", "DC Acces cmask 2");
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "L1D Access BW", "L1D Active", "L1D 2 Accesses" };
+
+            public string GetHelpText()
+            {
+                return "aaaaaa";
+            }
+
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
+            {
+                float instr = counterData.ctr1;
+                float cycles = counterData.ctr0;
+                return new string[] { label,
+                        FormatLargeNumber(cycles),
+                        FormatLargeNumber(instr),
+                        string.Format("{0:F2}", instr / cycles),
+                        FormatLargeNumber(8 * ((counterData.ctr2 - counterData.ctr3) + 2 * counterData.ctr3)) + "B/s",
+                        FormatPercentage(counterData.ctr2, cycles),
+                        FormatPercentage(counterData.ctr3, cycles)};
+            }
+        }
+
         public class L2Config : MonitoringConfig
         {
             private K10 cpu;
@@ -249,6 +315,283 @@ namespace PmcReader.AMD
             }
         }
 
+        public class FPUConfig : MonitoringConfig
+        {
+            private K10 cpu;
+            public string GetConfigName() { return "FP Pipes"; }
+
+            public FPUConfig(K10 amdCpu)
+            {
+                cpu = amdCpu;
+            }
+
+            public string[] GetColumns() { return columns; }
+
+            public void Initialize()
+            {
+                cpu.ProgramPerfCounters(
+                    GetPerfCtlValue(0x76, 0, false, 0, 0), // unhalted clocks
+                    GetPerfCtlValue(0, 1 | 0x8, false, 0, 0), // add
+                    GetPerfCtlValue(0, 2 | 0x10, false, 0, 0), // mul
+                    GetPerfCtlValue(0, 4 | 0x20, false, 0, 0)); // store
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[cpu.GetThreadCount()][];
+                cpu.InitializeCoreTotals();
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    cpu.UpdateThreadCoreCounterData(threadIdx);
+                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
+                }
+
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                results.overallCounterValues = cpu.GetOverallCounterValues("cycles", "fadd", "fmul", "fstore");
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Active Cycles", "FAdd", "FMul", "FStore" };
+
+            public string GetHelpText()
+            {
+                return "aaaaaa";
+            }
+
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
+            {
+                float cycles = counterData.ctr0;
+                return new string[] { label,
+                        FormatLargeNumber(cycles),
+                        FormatPercentage(counterData.ctr1, cycles),
+                        FormatPercentage(counterData.ctr2, cycles),
+                        FormatPercentage(counterData.ctr3, cycles)};
+            }
+        }
+
+        public class SSEFlops : MonitoringConfig
+        {
+            private K10 cpu;
+            public string GetConfigName() { return "SSE FLOPS"; }
+
+            public SSEFlops(K10 amdCpu)
+            {
+                cpu = amdCpu;
+            }
+
+            public string[] GetColumns() { return columns; }
+
+            public void Initialize()
+            {
+                cpu.ProgramPerfCounters(
+                    GetPerfCtlValue(0x76, 0, false, 0, 0), // unhalted clocks
+                    GetPerfCtlValue(0xC0, 0, false, 0, 0), // instr
+                    GetPerfCtlValue(0x3, 0b111 | 0x40, false, 0, 0), // FP32 flops
+                    GetPerfCtlValue(0x3, 0b111000 | 0x40, false, 0, 0)); // FP64 flops
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[cpu.GetThreadCount()][];
+                cpu.InitializeCoreTotals();
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    cpu.UpdateThreadCoreCounterData(threadIdx);
+                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
+                }
+
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                results.overallCounterValues = cpu.GetOverallCounterValues("cycles", "instructions", "FP32 FLOPS", "FP64 FLOPS");
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "FP32 FLOPS", "FP64 FLOPS" };
+
+            public string GetHelpText()
+            {
+                return "aaaaaa";
+            }
+
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
+            {
+                float cycles = counterData.ctr0;
+                float instr = counterData.ctr1;
+                return new string[] { label,
+                        FormatLargeNumber(cycles),
+                        FormatLargeNumber(instr),
+                        string.Format("{0:F2}", instr / cycles),
+                        FormatLargeNumber(counterData.ctr2),
+                        FormatLargeNumber(counterData.ctr3)};
+            }
+        }
+
+        public class DispatchStalls1 : MonitoringConfig
+        {
+            private K10 cpu;
+            public string GetConfigName() { return "Dispatch Stalls"; }
+
+            public DispatchStalls1(K10 amdCpu)
+            {
+                cpu = amdCpu;
+            }
+
+            public string[] GetColumns() { return columns; }
+
+            public void Initialize()
+            {
+                cpu.ProgramPerfCounters(
+                    GetPerfCtlValue(0x76, 0, false, 0, 0), // unhalted clocks
+                    GetPerfCtlValue(0xD1, 0, false, 0, 0), // dispatch stalls
+                    GetPerfCtlValue(0xD5, 0, false, 0, 0), // rob full
+                    GetPerfCtlValue(0xD6, 0, false, 0, 0)); // int rs full
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[cpu.GetThreadCount()][];
+                cpu.InitializeCoreTotals();
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    cpu.UpdateThreadCoreCounterData(threadIdx);
+                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
+                }
+
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                results.overallCounterValues = cpu.GetOverallCounterValues("cycles", "dispatch stalls", "rob full", "int rs full");
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Active Cycles", "Dispatch Stalls", "ROB Full", "INT RS Full" };
+
+            public string GetHelpText()
+            {
+                return "aaaaaa";
+            }
+
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
+            {
+                float cycles = counterData.ctr0;
+                return new string[] { label,
+                        FormatLargeNumber(cycles),
+                        FormatPercentage(counterData.ctr1, cycles),
+                        FormatPercentage(counterData.ctr2, cycles),
+                        FormatPercentage(counterData.ctr3, cycles)};
+            }
+        }
+
+        public class DispatchStalls2 : MonitoringConfig
+        {
+            private K10 cpu;
+            public string GetConfigName() { return "Dispatch Stalls 2"; }
+
+            public DispatchStalls2(K10 amdCpu)
+            {
+                cpu = amdCpu;
+            }
+
+            public string[] GetColumns() { return columns; }
+
+            public void Initialize()
+            {
+                cpu.ProgramPerfCounters(
+                    GetPerfCtlValue(0x76, 0, false, 0, 0), // unhalted clocks
+                    GetPerfCtlValue(0xD7, 0, false, 0, 0), // FPU Full
+                    GetPerfCtlValue(0xD8, 0, false, 0, 0), // LS Full
+                    GetPerfCtlValue(0xD2, 0, false, 0, 0)); // branch abort
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[cpu.GetThreadCount()][];
+                cpu.InitializeCoreTotals();
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    cpu.UpdateThreadCoreCounterData(threadIdx);
+                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
+                }
+
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                results.overallCounterValues = cpu.GetOverallCounterValues("cycles", "FPU Full", "LS Full", "Branch Abort");
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Active Cycles", "FPU Full", "LS Full", "Branch Abort" };
+
+            public string GetHelpText()
+            {
+                return "aaaaaa";
+            }
+
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
+            {
+                float cycles = counterData.ctr0;
+                return new string[] { label,
+                        FormatLargeNumber(cycles),
+                        FormatPercentage(counterData.ctr1, cycles),
+                        FormatPercentage(counterData.ctr2, cycles),
+                        FormatPercentage(counterData.ctr3, cycles)};
+            }
+        }
+
+        public class DispatchStalls3 : MonitoringConfig
+        {
+            private K10 cpu;
+            public string GetConfigName() { return "Dispatch Stalls (Rare)"; }
+
+            public DispatchStalls3(K10 amdCpu)
+            {
+                cpu = amdCpu;
+            }
+
+            public string[] GetColumns() { return columns; }
+
+            public void Initialize()
+            {
+                cpu.ProgramPerfCounters(
+                    GetPerfCtlValue(0x76, 0, false, 0, 0), // unhalted clocks
+                    GetPerfCtlValue(0xD3, 0, false, 0, 0), // Dispatch Stall, serialization
+                    GetPerfCtlValue(0xD9, 0, false, 0, 0), // ... wait for all quiet
+                    GetPerfCtlValue(0xDA, 0, false, 0, 0)); // far transfer/resync
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[cpu.GetThreadCount()][];
+                cpu.InitializeCoreTotals();
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    cpu.UpdateThreadCoreCounterData(threadIdx);
+                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
+                }
+
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                results.overallCounterValues = cpu.GetOverallCounterValues("cycles", "Serializing Operation", "Wait for All Quiet", "Far Transfer/Resync");
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Active Cycles", "Serializing Operation", "Wait for All Quiet", "Far Transfer/Resync" };
+
+            public string GetHelpText()
+            {
+                return "aaaaaa";
+            }
+
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
+            {
+                float cycles = counterData.ctr0;
+                return new string[] { label,
+                        FormatLargeNumber(cycles),
+                        FormatPercentage(counterData.ctr1, cycles),
+                        FormatPercentage(counterData.ctr2, cycles),
+                        FormatPercentage(counterData.ctr3, cycles)};
+            }
+        }
+
         public class HTConfig : MonitoringConfig
         {
             private K10 cpu;
@@ -288,6 +631,104 @@ namespace PmcReader.AMD
             }
 
             public string[] columns = new string[] { "Item", "Data BW" };
+
+            public string GetHelpText()
+            {
+                return "aaaaaa";
+            }
+        }
+
+        public class DRAMConfig : MonitoringConfig
+        {
+            private K10 cpu;
+            public string GetConfigName() { return "DRAM Controller"; }
+
+            public DRAMConfig(K10 amdCpu)
+            {
+                cpu = amdCpu;
+            }
+
+            public string[] GetColumns() { return columns; }
+
+            public void Initialize()
+            {
+                cpu.ProgramPerfCounters(
+                    GetPerfCtlValue(0xE0, 1, false, 0, 0),
+                    GetPerfCtlValue(0xE0, 0b110, false, 0, 0),
+                    GetPerfCtlValue(0xE0, 8, false, 0, 0),
+                    GetPerfCtlValue(0xE0, 0b110000, false, 0, 0));
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[2][];
+                cpu.InitializeCoreTotals();
+                cpu.UpdateThreadCoreCounterData(0);
+                float dct0PageHit = cpu.NormalizedThreadCounts[0].ctr0;
+                float dct0PageMiss = cpu.NormalizedThreadCounts[0].ctr1;
+                float dct1PageHit = cpu.NormalizedThreadCounts[0].ctr2;
+                float dct1PageMiss = cpu.NormalizedThreadCounts[0].ctr3;
+                float dct0Bw = 64 * (dct0PageHit + dct0PageMiss);
+                float dct1Bw = 64 * (dct1PageHit + dct1PageMiss);
+                results.unitMetrics[0] = new string[] { "DCT0", FormatLargeNumber(dct0Bw) + "B/s", FormatPercentage(dct0PageHit, dct0PageHit + dct0PageMiss) };
+                results.unitMetrics[1] = new string[] { "DCT1", FormatLargeNumber(dct1Bw) + "B/s", FormatPercentage(dct1PageHit, dct1PageHit + dct1PageMiss) };
+
+                results.overallMetrics = new string[] { "Total", FormatLargeNumber(dct0Bw + dct1Bw) + "B/s", FormatPercentage(dct0PageHit + dct1PageHit, dct0PageHit + dct1PageHit + dct0PageMiss + dct1PageMiss) };
+                results.overallCounterValues = cpu.GetOverallCounterValues("DCT0 Page Hit", "DCT0 Page Miss", "DCT1 Page Hit", "DCT1 Page Miss");
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Bandwidth", "Page Hit %" };
+
+            public string GetHelpText()
+            {
+                return "aaaaaa";
+            }
+        }
+
+        public class L3Config : MonitoringConfig
+        {
+            private K10 cpu;
+            public string GetConfigName() { return "L3 Cache"; }
+
+            public L3Config(K10 amdCpu)
+            {
+                cpu = amdCpu;
+            }
+
+            public string[] GetColumns() { return columns; }
+
+            public void Initialize()
+            {
+                cpu.ProgramPerfCounters(
+                    GetPerfCtlValue(0xE0, 0b111 | 0xF0, false, 0, 4), // L3 read
+                    GetPerfCtlValue(0xE1, 0b111 | 0xF0, false, 0, 4), // L3 miss
+                    GetPerfCtlValue(0xE2, 0xFF, false, 0, 0),            // L3 fill from L2
+                    GetPerfCtlValue(0xE3, 0x8, false, 0, 4));    // L3 eviction, modified
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[4][];
+                cpu.InitializeCoreTotals();
+                cpu.UpdateThreadCoreCounterData(0);
+                float l3read = cpu.NormalizedThreadCounts[0].ctr0;
+                float l3miss = cpu.NormalizedThreadCounts[0].ctr1;
+                float l3fill = cpu.NormalizedThreadCounts[0].ctr2;
+                float l3ModifiedEviction = cpu.NormalizedThreadCounts[0].ctr3;
+                results.unitMetrics[0] = new string[] { "Hitrate", FormatPercentage(l3read - l3miss, l3read) };
+                results.unitMetrics[1] = new string[] { "Hit BW", FormatLargeNumber(64 *(l3read - l3miss)) + "B/s" };
+                results.unitMetrics[2] = new string[] { "Fill BW", FormatLargeNumber(64 * l3fill) + "B/s" };
+                results.unitMetrics[3] = new string[] { "Writeback BW", FormatLargeNumber(64 * l3ModifiedEviction) + "B/s" };
+
+                results.overallMetrics = new string[] { "Total BW", FormatLargeNumber(64 * ((l3read - l3miss) + l3fill + l3ModifiedEviction)) + "B/s"};
+                results.overallCounterValues = cpu.GetOverallCounterValues("L3 Read", "L3 Miss", "L3 Fill From L2", "L3 Modified Eviction");
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Value" };
 
             public string GetHelpText()
             {
