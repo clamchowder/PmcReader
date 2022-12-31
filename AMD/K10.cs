@@ -311,7 +311,7 @@ namespace PmcReader.AMD
                         string.Format("{0:F2}", instr / cycles),
                         string.Format("{0:F2}%", 100 * (1 - counterData.ctr3 / counterData.ctr2)),
                         string.Format("{0:F2}", counterData.ctr3 / instr * 1000),
-                        FormatLargeNumber(16 * (counterData.ctr2 - counterData.ctr3)) + "B/s"};
+                        FormatLargeNumber(64 * (counterData.ctr2 - counterData.ctr3)) + "B/s"};
             }
         }
 
@@ -701,29 +701,49 @@ namespace PmcReader.AMD
 
             public void Initialize()
             {
-                cpu.ProgramPerfCounters(
-                    GetPerfCtlValue(0xE0, 0b111 | 0xF0, false, 0, 4), // L3 read
-                    GetPerfCtlValue(0xE1, 0b111 | 0xF0, false, 0, 4), // L3 miss
-                    GetPerfCtlValue(0xE2, 0xFF, false, 0, 0),            // L3 fill from L2
-                    GetPerfCtlValue(0xE3, 0x8, false, 0, 4));    // L3 eviction, modified
+                ulong ctr0 = GetPerfCtlValue(0xE0, 0b111 | 0xF0, false, 0, 4); // L3 read
+                ulong ctr1 = GetPerfCtlValue(0xE1, 0b111 | 0xF0, false, 0, 4); // L3 miss
+                ulong ctr2 = GetPerfCtlValue(0xE2, 0xFF, false, 0, 0);            // L3 fill from L2
+                ulong ctr3 = GetPerfCtlValue(0xC0, 0, false, 0, 0);    // instructions
+
+                // use thread 0 to read cpu counters
+                ThreadAffinity.Set(1UL);
+                Ring0.WriteMsr(MSR_PERF_CTL_0, ctr0);
+                Ring0.WriteMsr(MSR_PERF_CTL_1, ctr1);
+                Ring0.WriteMsr(MSR_PERF_CTL_2, ctr2);
+                Ring0.WriteMsr(MSR_PERF_CTL_3, ctr3);
+
+                // monitor instructions on all other threads
+                for (int threadIdx = 1; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    ThreadAffinity.Set(1UL << threadIdx);
+                    Ring0.WriteMsr(MSR_PERF_CTL_0, 0);
+                    Ring0.WriteMsr(MSR_PERF_CTL_1, 0);
+                    Ring0.WriteMsr(MSR_PERF_CTL_2, 0);
+                    Ring0.WriteMsr(MSR_PERF_CTL_3, ctr3);
+                }
             }
 
             public MonitoringUpdateResults Update()
             {
                 MonitoringUpdateResults results = new MonitoringUpdateResults();
-                results.unitMetrics = new string[4][];
+                results.unitMetrics = new string[5][];
                 cpu.InitializeCoreTotals();
-                cpu.UpdateThreadCoreCounterData(0);
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    cpu.UpdateThreadCoreCounterData(threadIdx);
+                }
+
                 float l3read = cpu.NormalizedThreadCounts[0].ctr0;
                 float l3miss = cpu.NormalizedThreadCounts[0].ctr1;
                 float l3fill = cpu.NormalizedThreadCounts[0].ctr2;
-                float l3ModifiedEviction = cpu.NormalizedThreadCounts[0].ctr3;
                 results.unitMetrics[0] = new string[] { "Hitrate", FormatPercentage(l3read - l3miss, l3read) };
                 results.unitMetrics[1] = new string[] { "Hit BW", FormatLargeNumber(64 *(l3read - l3miss)) + "B/s" };
                 results.unitMetrics[2] = new string[] { "Fill BW", FormatLargeNumber(64 * l3fill) + "B/s" };
-                results.unitMetrics[3] = new string[] { "Writeback BW", FormatLargeNumber(64 * l3ModifiedEviction) + "B/s" };
+                results.unitMetrics[3] = new string[] { "Instructions", FormatLargeNumber(cpu.NormalizedTotalCounts.ctr3) };
+                results.unitMetrics[4] = new string[] { "MPKI", string.Format("{0:F2}", 1000 * l3miss / cpu.NormalizedTotalCounts.ctr3) };
 
-                results.overallMetrics = new string[] { "Total BW", FormatLargeNumber(64 * ((l3read - l3miss) + l3fill + l3ModifiedEviction)) + "B/s"};
+                results.overallMetrics = new string[] { "Total BW", FormatLargeNumber(64 * ((l3read - l3miss) + l3fill)) + "B/s"};
                 results.overallCounterValues = cpu.GetOverallCounterValues("L3 Read", "L3 Miss", "L3 Fill From L2", "L3 Modified Eviction");
                 return results;
             }
