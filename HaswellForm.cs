@@ -117,10 +117,20 @@ namespace PmcReader
                 }
                 else if (cpuFamily == 0x19)
                 {
-                    coreMonitoring.monitoringArea = new AMD.Zen3();
-                    l3Monitoring.monitoringArea = new AMD.Zen3L3Cache();
-                    dfMonitoring.monitoringArea = new AMD.Zen2DataFabric(AMD.Zen2DataFabric.DfType.Client);
-                    crazyThings = new AMD.Amd17hCpu();
+                    if (cpuModel == 0x61)
+                    {
+                        coreMonitoring.monitoringArea = new AMD.Zen4();
+                        l3Monitoring.monitoringArea = new AMD.Zen4L3Cache();
+                        dfMonitoring.monitoringArea = new AMD.Zen4DataFabric(AMD.Zen4DataFabric.DfType.Client);
+                        crazyThings = new AMD.Amd17hCpu();
+                    }
+                    else
+                    {
+                        coreMonitoring.monitoringArea = new AMD.Zen3();
+                        l3Monitoring.monitoringArea = new AMD.Zen3L3Cache();
+                        dfMonitoring.monitoringArea = new AMD.Zen2DataFabric(AMD.Zen2DataFabric.DfType.Client);
+                        crazyThings = new AMD.Amd17hCpu();
+                    }
                 }
                 else if (cpuFamily == 0x15)
                 {
