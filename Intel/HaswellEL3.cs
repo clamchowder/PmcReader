@@ -258,7 +258,7 @@ namespace PmcReader.Intel
         /// <returns></returns>
         public static ulong GetUncoreFilter1RegisterValue(short nid, byte opcode, byte nc, byte isoc)
         {
-            return (ulong)nid |
+            return (ulong)(byte)nid |
                 ((ulong)opcode << 20) |
                 (ulong)nc << 30 | 
                 (ulong)isoc << 31;

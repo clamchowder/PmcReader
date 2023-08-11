@@ -1,7 +1,7 @@
 ﻿using PmcReader.Interop;
 using System;
-using System.Diagnostics;
-using System.Management.Instrumentation;
+using System.Windows.Forms;
+using System.Drawing;
 
 namespace PmcReader.AMD
 {
@@ -31,6 +31,10 @@ namespace PmcReader.AMD
         public const uint MSR_NB_PERF_CTR_1 = 0xC0010243;
         public const uint MSR_NB_PERF_CTR_2 = 0xC0010245;
         public const uint MSR_NB_PERF_CTR_3 = 0xC0010247;
+
+        public const uint HWCR = 0xC0010015;
+        public const uint DC_CFG = 0xC0011022;
+        public const uint CU_CFG = 0xC0011023;
 
         public NormalizedCoreCounterData[] NormalizedThreadCounts;
         public NormalizedCoreCounterData NormalizedTotalCounts;
@@ -310,6 +314,173 @@ namespace PmcReader.AMD
             public float ctr5;
 
             public float NormalizationFactor;
+        }
+
+        private Label errorLabel; // ugly whatever
+        RadioButton L2DcPriorityRadioButton, L2FairnessRadioButton;
+
+        public override void InitializeCrazyControls(FlowLayoutPanel flowLayoutPanel, Label errLabel)
+        {
+            flowLayoutPanel.Controls.Clear();
+
+            CheckBox boostCheckbox = new CheckBox();
+            boostCheckbox.Text = "Core Performance Boost";
+            boostCheckbox.Checked = GetCpbEnabled();
+            boostCheckbox.CheckedChanged += HandleCorePerformanceBoostCheckbox;
+            boostCheckbox.Width = TextRenderer.MeasureText(boostCheckbox.Text, boostCheckbox.Font).Width + 20;
+            flowLayoutPanel.Controls.Add(boostCheckbox);
+
+            CheckBox disableDcPrefetcherCheckbox = new CheckBox();
+            disableDcPrefetcherCheckbox.Text = "DC Prefetcher";
+            disableDcPrefetcherCheckbox.Checked = GetDcPrefetcherState();
+            disableDcPrefetcherCheckbox.CheckedChanged += HandleDisableDcPrefetcherCheckbox;
+            disableDcPrefetcherCheckbox.Width = TextRenderer.MeasureText(disableDcPrefetcherCheckbox.Text, disableDcPrefetcherCheckbox.Font).Width + 20;
+            flowLayoutPanel.Controls.Add(disableDcPrefetcherCheckbox);
+            flowLayoutPanel.SetFlowBreak(disableDcPrefetcherCheckbox, true);
+
+            L2DcPriorityRadioButton = new RadioButton();
+            L2DcPriorityRadioButton.Text = "Aggressively prioritize data reqs";
+            L2DcPriorityRadioButton.Checked = GetL2PrioritizationState();
+            L2DcPriorityRadioButton.CheckedChanged += HandleL2PrioritzationStateChange;
+            L2DcPriorityRadioButton.Location = new Point(7, 20);
+            L2DcPriorityRadioButton.Width = TextRenderer.MeasureText(L2DcPriorityRadioButton.Text, L2DcPriorityRadioButton.Font).Width + 20;
+
+            L2FairnessRadioButton = new RadioButton();
+            L2FairnessRadioButton.Text = "Ensure instruction/data fairness";
+            L2FairnessRadioButton.Checked = !GetL2PrioritizationState();
+            L2FairnessRadioButton.Location = new Point(7, 44);
+            L2FairnessRadioButton.Width = TextRenderer.MeasureText(L2FairnessRadioButton.Text, L2FairnessRadioButton.Font).Width + 20;
+
+            GroupBox L2AccessPriorityGroupbox = new GroupBox();
+            L2AccessPriorityGroupbox.Text = "L2 Cache Access Prioritization";
+            L2AccessPriorityGroupbox.Width = 200;
+            L2AccessPriorityGroupbox.Height = 70;
+            L2AccessPriorityGroupbox.Controls.Add(L2DcPriorityRadioButton);
+            L2AccessPriorityGroupbox.Controls.Add(L2FairnessRadioButton);
+            flowLayoutPanel.Controls.Add(L2AccessPriorityGroupbox);
+
+            errorLabel = errLabel;
+        }
+
+        /// <summary>
+        /// Get DcacheAggressivePriority state
+        /// </summary>
+        /// <returns>false = fairness, true = prioritize DC</returns>
+        private bool GetL2PrioritizationState()
+        {
+            Ring0.ReadMsr(CU_CFG, out ulong cuCfg);
+            return (cuCfg & (1UL << 10)) > 1; // if set, DC is given priority
+        }
+
+        public void HandleL2PrioritzationStateChange(object sender, EventArgs e)
+        {
+            RadioButton radioButton = (RadioButton)sender;
+
+            // Both should send the event right?
+            if (radioButton.Checked && radioButton == L2DcPriorityRadioButton ||
+                (radioButton.Checked) && radioButton == L2FairnessRadioButton)
+            {
+                SetL2Prioritization(false);
+            }
+            
+            if (radioButton.Checked && radioButton == L2FairnessRadioButton ||
+                (!radioButton.Checked) && radioButton == L2DcPriorityRadioButton)
+            {
+                SetL2Prioritization(true);
+            }
+        }
+
+        public void SetL2Prioritization(bool fairness)
+        {
+            bool prioritizeDcSet = true;
+            for (int threadIdx = 0; threadIdx < GetThreadCount(); threadIdx++)
+            {
+                ThreadAffinity.Set(1UL << threadIdx);
+                Ring0.ReadMsr(CU_CFG, out ulong cuCfg);
+                if (fairness) cuCfg &= ~(1UL << 10);   // unset bit 10 = ic requests ensured fairness
+                else cuCfg |= (1UL << 10);             // set bit 10 to aggressively prioritize DC
+                Ring0.WriteMsr(CU_CFG, cuCfg);
+                prioritizeDcSet &= GetL2PrioritizationState();
+            }
+
+            if (prioritizeDcSet)
+            {
+                errorLabel.Text = "L2 will prioritize handling L1D misses over L1i misses";
+            }
+            else
+            {
+                errorLabel.Text = "L2 will ensure fairness when handling L1D and L1i misses";
+            }
+        }
+
+        public void HandleDisableDcPrefetcherCheckbox(object sender, EventArgs e)
+        {
+            CheckBox checkbox = (CheckBox)sender;
+            SetDcPrefetcher(checkbox.Checked);
+        }
+
+        private bool GetDcPrefetcherState()
+        {
+            Ring0.ReadMsr(DC_CFG, out ulong dcCfg);
+            return (dcCfg & (1UL << 13)) == 0; // if set, DC hardware prefetcher is disabled
+        }
+
+        public void SetDcPrefetcher(bool enable)
+        {
+            bool allDcPfEnabled = true;
+            for (int threadIdx = 0; threadIdx < GetThreadCount(); threadIdx++)
+            {
+                ThreadAffinity.Set(1UL << threadIdx);
+                Ring0.ReadMsr(DC_CFG, out ulong dcCfg);
+                if (enable) dcCfg &= ~(1UL << 13);
+                else dcCfg |= (1UL << 13);             // set bit 13 to disable hardware prefetcher
+                Ring0.WriteMsr(DC_CFG, dcCfg);
+                allDcPfEnabled &= GetDcPrefetcherState();
+            }
+
+            if (!allDcPfEnabled)
+            {
+                errorLabel.Text = "Data cache hardware prefetcher disabled";
+            }
+            else
+            {
+                errorLabel.Text = "Data cache hardware prefetcher enabled";
+            }
+        }
+
+        public void HandleCorePerformanceBoostCheckbox(object sender, EventArgs e)
+        {
+            CheckBox checkbox = (CheckBox)sender;
+            SetCorePerformanceBoost(checkbox.Checked);
+        }
+
+        private bool GetCpbEnabled()
+        {
+            Ring0.ReadMsr(HWCR, out ulong hwcr);
+            return (hwcr & (1UL << 25)) == 0;
+        }
+
+        public void SetCorePerformanceBoost(bool enable)
+        {
+            bool allCpbEnabled = true;
+            for (int threadIdx = 0; threadIdx < GetThreadCount(); threadIdx++)
+            {
+                ThreadAffinity.Set(1UL << threadIdx);
+                Ring0.ReadMsr(HWCR, out ulong hwcr);
+                if (enable) hwcr &= ~(1UL << 25);     // unset to not disable CPB
+                else hwcr |= (1UL << 25);             // set bit 25 to disable CPB
+                Ring0.WriteMsr(HWCR, hwcr);
+                allCpbEnabled &= GetCpbEnabled();
+            }
+
+            if (!allCpbEnabled)
+            {
+                errorLabel.Text = "Core Performance Boost disabled";
+            }
+            else
+            {
+                errorLabel.Text = "Core Performance Boost enabled";
+            }
         }
     }
 }

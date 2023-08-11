@@ -15,9 +15,10 @@ namespace PmcReader.AMD
             cfgs.Add(new MemBwConfig(this));
             cfgs.Add(new L3Config(this));
             cfgs.Add(new MemSubtimings(this));
-            cfgs.Add(new NbRequests(this));
+            cfgs.Add(new CrossbarRequests(this));
             cfgs.Add(new SriCommands(this));
             cfgs.Add(new L3Commands(this));
+            //cfgs.Add(new GartConfig(this));
             monitoringConfigs = cfgs.ToArray();
         }
 
@@ -234,18 +235,18 @@ namespace PmcReader.AMD
             }
         }
 
-        public class NbRequests : MonitoringConfig
+        public class CrossbarRequests : MonitoringConfig
         {
             private PiledriverNorthbridge dataFabric;
 
             public string[] columns = new string[] { "Item", "Count" };
             public string GetHelpText() { return ""; }
-            public NbRequests(PiledriverNorthbridge dataFabric)
+            public CrossbarRequests(PiledriverNorthbridge dataFabric)
             {
                 this.dataFabric = dataFabric;
             }
 
-            public string GetConfigName() { return "Northbridge Requests"; }
+            public string GetConfigName() { return "Crossbar Requests"; }
             public string[] GetColumns() { return columns; }
             public void Initialize()
             {
@@ -311,6 +312,48 @@ namespace PmcReader.AMD
                 results.overallMetrics = new string[] { "Overall", FormatLargeNumber(totalReqs) };
 
                 results.overallCounterValues = dataFabric.GetOverallCounterValues(counterData, "SzRd", "Posted SzWr", "Non-Posted SzWr", "Unused");
+                return results;
+            }
+        }
+
+        public class GartConfig : MonitoringConfig
+        {
+            private PiledriverNorthbridge dataFabric;
+
+            public string GetHelpText() { return ""; }
+            public GartConfig(PiledriverNorthbridge dataFabric)
+            {
+                this.dataFabric = dataFabric;
+            }
+
+            public string GetConfigName() { return "Graphics Addr Remap Table"; }
+            public string[] GetColumns() { return columns; }
+            public void Initialize()
+            {
+                dataFabric.ProgramPerfCounters(
+                    GetNBPerfCtlValue(0xEE, 0x1, true, 0), // Aperture hit from CPU access
+                    GetNBPerfCtlValue(0xEE, 0x2, true, 0), // Aperture hit from IO access
+                    GetNBPerfCtlValue(0xEE, 0x4, true, 0), // Aperture miss
+                    GetNBPerfCtlValue(0xEE, 0b10001000, true, 0)); // GART table walk in progress
+            }
+
+            public string[] columns = new string[] { "Item", "Value" };
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                NormalizedNbCounterData counterData = dataFabric.UpdateNbPerfCounterData();
+                List<string[]> unitMetricsList = new List<string[]>();
+                unitMetricsList.Add(new string[] { "CPU Req, Aperture Hit", FormatLargeNumber(counterData.ctr0)});
+                unitMetricsList.Add(new string[] { "IO Req, Aperture Hit", FormatLargeNumber(counterData.ctr1) });
+                unitMetricsList.Add(new string[] { "GART Table Walk In Progress", FormatLargeNumber(counterData.ctr3) });
+
+                results.unitMetrics = unitMetricsList.ToArray();
+                results.overallMetrics = new string[] { "Aperture Hitrate", 
+                    FormatPercentage(counterData.ctr0 + counterData.ctr1, counterData.ctr0 + counterData.ctr1 + counterData.ctr2) };
+
+
+                results.overallCounterValues = dataFabric.GetOverallCounterValues(counterData, "CPU access GART aperture hit", "IO access GART aperture hit", "GART miss", "GART table walk in progress");
                 return results;
             }
         }
