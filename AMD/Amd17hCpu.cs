@@ -165,6 +165,26 @@ namespace PmcReader.AMD
         }
 
         /// <summary>
+        /// Gets L3 perf ctl value for 19h CPUs.
+        /// About the only thing different for 19h (Zen 3) vs 17h (Zen 1/2)
+        /// </summary>
+        /// <param name="perfEvent">Event select</param>
+        /// <param name="umask">unit mask</param>
+        /// <param name="enable">enable perf counter</param>
+        /// <param name="coreId">Core select</param>
+        /// <param name="enableAllCores">Count for all cores</param>
+        /// <param name="enableAllSlices">Count for all slices</param>
+        /// <param name="sliceId">Slice select</param>
+        /// <param name="threadMask">Which SMT thread to count for</param>
+        /// <returns></returns>
+        public static ulong GetZen4L3PerfCtlValue(byte perfEvent,
+            byte umask, bool enable, byte coreId, bool enableAllCores, bool enableAllSlices, byte sliceId, byte threadMask)
+        {
+            return perfEvent |
+                (ulong)umask << 8 | (ulong)0xFFFFFFFFFFFF0000;
+        }
+
+        /// <summary>
         /// Get data fabric performance event select MSR value
         /// </summary>
         /// <param name="perfEventLow">Low 8 bits of performance event select</param>

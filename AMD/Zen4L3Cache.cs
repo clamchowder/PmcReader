@@ -32,8 +32,9 @@ namespace PmcReader.AMD
                 ccxThreads.Add(threadIdx);
             }
 
-            monitoringConfigs = new MonitoringConfig[1];
+            monitoringConfigs = new MonitoringConfig[2];
             monitoringConfigs[0] = new HitRateLatencyConfig(this);
+            monitoringConfigs[1] = new ExperimentalHitrateConfig(this);
 
             ccxCounterData = new L3CounterData[ccxSampleThreads.Count()];
             ccxTotals = new L3CounterData();
@@ -196,6 +197,116 @@ namespace PmcReader.AMD
                         FormatLargeNumber(counterData.ctr1 * 64) + "B/s",
                         string.Format("{0:F1} ns", ccxL3MissLatencyNs),
                         string.Format("{0:F1} ns", dramL3MissLatencyNs)};
+            }
+        }
+
+        public class ExperimentalHitrateConfig : MonitoringConfig
+        {
+            private Zen4L3Cache l3Cache;
+
+            public ExperimentalHitrateConfig(Zen4L3Cache l3Cache)
+            {
+                this.l3Cache = l3Cache;
+            }
+
+            public string GetConfigName() { return "Experimental Hitrate"; }
+            public string[] GetColumns() { return columns; }
+            public void Initialize()
+            {
+                // L3 tag lookup state, all coherent accesses to L3
+                ulong L3AccessPerfCtl = Get19hL3PerfCtlValue(0x4, 0xFF, true, 0, true, true, 0, 0b11);
+
+                // types for 0x4 L3 tag lookup state
+                // bit 0: miss (invalid)
+                // bit 1: related to shared? owned?
+                // bit 2: related to shared/instr?
+                // bit 3: ???
+                // bit 4: ???
+                // bit 5: modified?
+                // bit 6: exclusive?
+                // bit 7: shared?
+
+                // mask for 0x9A, 0x1F
+                // bit 0
+                ulong test1 = GetZen4L3PerfCtlValue(0x9A, 0x1, true, 0, true, true, 0, 0b11);
+                ulong test2 = GetZen4L3PerfCtlValue(0x9A, 0x2, true, 0, true, true, 0, 0b11);
+                ulong test3 = GetZen4L3PerfCtlValue(0x9A, 0x4, true, 0, true, true, 0, 0b11);
+                ulong test4 = GetZen4L3PerfCtlValue(0x9A, 0x8, true, 0, true, true, 0, 0b11);
+                ulong test5 = GetZen4L3PerfCtlValue(0x9A, 0x10, true, 0, true, true, 0, 0b11);
+
+                // bit 2,3 of unit mask = near,far ccx's cache
+
+                foreach (KeyValuePair<int, int> ccxThread in l3Cache.ccxSampleThreads)
+                {
+                    ThreadAffinity.Set(1UL << ccxThread.Value);
+                    Ring0.WriteMsr(MSR_L3_PERF_CTL_0, L3AccessPerfCtl);
+                    Ring0.WriteMsr(MSR_L3_PERF_CTL_1, test1);
+                    Ring0.WriteMsr(MSR_L3_PERF_CTL_2, test2);
+                    Ring0.WriteMsr(MSR_L3_PERF_CTL_3, test3);
+                    Ring0.WriteMsr(MSR_L3_PERF_CTL_4, test4);
+                    Ring0.WriteMsr(MSR_L3_PERF_CTL_5, test5);
+                }
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[l3Cache.ccxSampleThreads.Count()][];
+                float[] ccxClocks = new float[l3Cache.allCcxThreads.Count()];
+                l3Cache.ClearTotals();
+                ulong totalAperf = 0, totalMperf = 0, totalTsc = 0, totalIrPerfCount = 0;
+                foreach (KeyValuePair<int, int> ccxThread in l3Cache.ccxSampleThreads)
+                {
+                    // Try to determine frequency, by getting max frequency of cores in ccx
+                    foreach (int ccxThreadIdx in l3Cache.allCcxThreads[ccxThread.Key])
+                    {
+                        ThreadAffinity.Set(1UL << ccxThreadIdx);
+                        float normalizationFactor = l3Cache.GetNormalizationFactor(l3Cache.GetThreadCount() + ccxThreadIdx);
+                        ulong aperf, mperf, tsc, irperfcount;
+                        l3Cache.ReadFixedCounters(ccxThreadIdx, out aperf, out irperfcount, out tsc, out mperf);
+                        totalAperf += aperf;
+                        totalIrPerfCount += irperfcount;
+                        totalTsc += tsc;
+                        totalMperf += mperf;
+                        float clk = tsc * ((float)aperf / mperf) * normalizationFactor;
+                        if (clk > ccxClocks[ccxThread.Key]) ccxClocks[ccxThread.Key] = clk;
+                        if (ccxThreadIdx == ccxThread.Value)
+                        {
+                            l3Cache.UpdateCcxL3CounterData(ccxThread.Key, ccxThread.Value);
+                            results.unitMetrics[ccxThread.Key] = computeMetrics("CCX " + ccxThread.Key, l3Cache.ccxCounterData[ccxThread.Key], ccxClocks[ccxThread.Key]);
+                        }
+                    }
+                }
+
+                float avgClk = 0;
+                foreach (float ccxClock in ccxClocks) avgClk += ccxClock;
+                avgClk /= l3Cache.allCcxThreads.Count();
+                results.overallMetrics = computeMetrics("Overall", l3Cache.ccxTotals, avgClk);
+                results.overallCounterValues = l3Cache.GetOverallL3CounterValues(totalAperf, totalMperf, totalIrPerfCount, totalTsc,
+                    "Coherent L3 Access", "L3 Miss", "Other CCX Reqs", "Other CCX Pending Reqs Per Cycle", "DRAM Reqs", "DRAM Pending Reqs Per Cycle");
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Clk", "All", "1", "0x2", "0x4", "0x8", "0x10" };
+
+            public string GetHelpText() { return ""; }
+
+            private string[] computeMetrics(string label, L3CounterData counterData, float clk)
+            {
+                // average sampled latency is XiSampledLatency / XiSampledLatencyRequests * 10 ns
+                float ccxL3MissLatencyNs = (float)10 * counterData.ctr3 / counterData.ctr2;
+                float dramL3MissLatencyNs = (float)10 * counterData.ctr5 / counterData.ctr4;
+                float ccxL3Hitrate = (1 - (float)counterData.ctr1 / counterData.ctr0) * 100;
+                float ccxL3HitBw = ((float)counterData.ctr0 - counterData.ctr1) * 64;
+                return new string[] { label,
+                        FormatLargeNumber(clk),
+                        FormatLargeNumber(counterData.ctr0),
+                        FormatLargeNumber(64 * counterData.ctr1) + "B/s",
+                        FormatLargeNumber(64 * counterData.ctr2) + "B/s",
+                        FormatLargeNumber(64 * counterData.ctr3) + "B/s",
+                        FormatLargeNumber(64 * counterData.ctr4) + "B/s",
+                        FormatLargeNumber(64 * counterData.ctr5) + "B/s"
+                };
             }
         }
     }
