@@ -4,7 +4,7 @@ using PmcReader.Interop;
 
 namespace PmcReader.AMD
 {
-    public class Zen4 : Amd17hCpu
+    public class Zen4 : Amd19hCpu
     {
         public Zen4()
         {
@@ -27,8 +27,7 @@ namespace PmcReader.AMD
                 new LocksConfig(this),
                 new L2Config(this),
                 new MABOccupancyConfig(this),
-                new TlbConfig(this),
-                new PmcMonitoringConfig(this),
+                new TlbConfig(this)
             };
             monitoringConfigs = configList.ToArray();
             architectureName = "Zen 4";
@@ -411,8 +410,8 @@ namespace PmcReader.AMD
                     GetPerfCtlValue(8, 2, true, true, false, false, true, false, 0, 0, false, false),  // MMX
                     GetPerfCtlValue(8, 4, true, true, false, false, true, false, 0, 0, false, false), // scalar
                     GetPerfCtlValue(8, 8, true, true, false, false, true, false, 0, 0, false, false), // 128-bit
-                    GetPerfCtlValue(8, 0x1, true, true, false, false, true, false, 0, 0, false, false), // 256-bit
-                    GetPerfCtlValue(8, 0x2, true, true, false, false, true, false, 0, 0, false, false)); // 512-bit
+                    GetPerfCtlValue(8, 0x10, true, true, false, false, true, false, 0, 0, false, false), // 256-bit
+                    GetPerfCtlValue(8, 0x20, true, true, false, false, true, false, 0, 0, false, false)); // 512-bit
             }
 
             public MonitoringUpdateResults Update()

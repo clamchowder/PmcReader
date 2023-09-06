@@ -49,6 +49,7 @@
   <ItemGroup>
     <Compile Include="AMD\Amd10hCpu.cs" />
     <Compile Include="AMD\Amd15hCpu.cs" />
+    <Compile Include="AMD\Amd19hCpu.cs" />
     <Compile Include="AMD\Amd17hCpu.cs" />
     <Compile Include="AMD\K10.cs" />
     <Compile Include="AMD\Bulldozer.cs" />
