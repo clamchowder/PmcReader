@@ -106,7 +106,7 @@ namespace PmcReader.Intel
             }
 
             public string GetHelpText() { return ""; }
-            public string[] columns = new string[] { "Clk", "Requests", "Requests * 64B", "Q Occupancy", "Req Latency", "Req Latency" };
+            public string[] columns = new string[] { "Clk", "Requests", "Req BW", "Q Len", "Req Latency", "Req Latency" };
         }
 
         public ulong GetImcCounterDelta(ulong addressOffset, ref ulong lastValue)
