@@ -54,7 +54,7 @@ namespace PmcReader.AMD
         public const uint MSR_IC_CFG = 0xC0011021; // bit 5 = disable OC. 0x800 = disable IC sequential prefetch on Athlon
         public const uint MSR_DC_CFG = 0xC0011022; // data cache config? bit 16 = disable L1D stream prefetcher
         public const uint MSR_FP_CFG = 0xC0011028; // bit 4 = zen 1 FCMOV errata
-        public const uint MSR_DE_CFG = 0xC0011029; // bit 13 = zen 1 stale store forward errata
+        public const uint MSR_DE_CFG = 0xC0011029; // bit 13 = zen 1 stale store forward errata, bit 9 = vzeroupper errata
         public const uint MSR_L2_PF_CFG = 0xC001102B; // bit 0 = enable L2 stream prefetcher
         public const uint MSR_ProcNameStringBase = 0xC0010030;
         public const uint ProcNameStringMsrCount = 6;
