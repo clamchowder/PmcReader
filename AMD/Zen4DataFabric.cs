@@ -77,7 +77,7 @@ namespace PmcReader.AMD
                 results.unitMetrics = new string[4][];
                 results.unitMetrics[0] = new string[] { "DRAM Read?", FormatLargeNumber(ctr0 * normalizationFactor * 64) + "B/s", FormatLargeNumber(ctr0 * normalizationFactor), "N/A" };
                 results.unitMetrics[1] = new string[] { "Write 0?", FormatLargeNumber(ctr1 * normalizationFactor * 64) + "B/s", FormatLargeNumber(ctr1 * normalizationFactor), "N/A" };
-                results.unitMetrics[2] = new string[] { "Write 1?", FormatLargeNumber(ctr2 * normalizationFactor * 64) + "B/s", FormatLargeNumber(ctr2 * normalizationFactor), "N/A" };
+                results.unitMetrics[2] = new string[] { "iGPU Related?", FormatLargeNumber(ctr2 * normalizationFactor * 64) + "B/s", FormatLargeNumber(ctr2 * normalizationFactor), "N/A" };
                 results.unitMetrics[3] = new string[] { "Write 2?", FormatLargeNumber(ctr3 * normalizationFactor * 64) + "B/s", FormatLargeNumber(ctr3 * normalizationFactor), "N/A" };
 
                 ulong total = ctr0 + ctr1 + ctr2 + ctr3;

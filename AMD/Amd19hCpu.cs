@@ -1,12 +1,11 @@
 ﻿using PmcReader.Interop;
 using System;
 using System.Diagnostics;
-using System.Drawing;
 using System.Windows.Forms;
 
 namespace PmcReader.AMD
 {
-    public class Amd17hCpu : GenericMonitoringArea
+    public class Amd19hCpu : GenericMonitoringArea
     {
         public const uint HWCR = 0xC0010015;
         public const uint MSR_INSTR_RETIRED = 0xC00000E9;
@@ -54,8 +53,10 @@ namespace PmcReader.AMD
         public const uint MSR_IC_CFG = 0xC0011021; // bit 5 = disable OC. 0x800 = disable IC sequential prefetch on Athlon
         public const uint MSR_DC_CFG = 0xC0011022; // data cache config? bit 16 = disable L1D stream prefetcher
         public const uint MSR_FP_CFG = 0xC0011028; // bit 4 = zen 1 FCMOV errata
-        public const uint MSR_DE_CFG = 0xC0011029; // bit 13 = zen 1 stale store forward errata, bit 9 = vzeroupper errata
+        public const uint MSR_DE_CFG = 0xC0011029; // bit 13 = zen 1 stale store forward errata
         public const uint MSR_L2_PF_CFG = 0xC001102B; // bit 0 = enable L2 stream prefetcher
+        public const uint MSR_SPEC_CTRL = 0x48; // bit 7 = disable predictive store forwarding
+        public const uint MSR_PrefetchControl = 0xC0000108; 
         public const uint MSR_ProcNameStringBase = 0xC0010030;
         public const uint ProcNameStringMsrCount = 6;
 
@@ -72,9 +73,9 @@ namespace PmcReader.AMD
 
         private float energyStatusUnits;
 
-        public Amd17hCpu()
+        public Amd19hCpu()
         {
-            architectureName = "AMD 17h Family";
+            architectureName = "AMD 19h Family";
             lastThreadAperf = new ulong[GetThreadCount()];
             lastThreadRetiredInstructions = new ulong[GetThreadCount()];
             lastThreadMperf = new ulong[GetThreadCount()];
@@ -503,34 +504,55 @@ namespace PmcReader.AMD
             flowLayoutPanel.Controls.Add(boostCheckbox);
             //flowLayoutPanel.SetFlowBreak(boostCheckbox, true);
 
-            CheckBox stlfErrataCheckbox = new CheckBox();
-            stlfErrataCheckbox.Text = "Zen 1 STLF Errata Fix";
-            stlfErrataCheckbox.Checked = GetStlfErrataEnabled();
-            stlfErrataCheckbox.CheckedChanged += HandleStlfErrataCheckbox;
-            stlfErrataCheckbox.Width = TextRenderer.MeasureText(stlfErrataCheckbox.Text, stlfErrataCheckbox.Font).Width + 20;
-            flowLayoutPanel.Controls.Add(stlfErrataCheckbox);
-            flowLayoutPanel.SetFlowBreak(stlfErrataCheckbox, true);
+            CheckBox psfCheckbox = new CheckBox();
+            psfCheckbox.Text = "Predictive STLF";
+            psfCheckbox.Checked = GetPSFEnabled();
+            psfCheckbox.CheckedChanged += HandlePsfCheckbox;
+            psfCheckbox.Width = TextRenderer.MeasureText(psfCheckbox.Text, psfCheckbox.Font).Width + 20;
+            flowLayoutPanel.Controls.Add(psfCheckbox);
+            flowLayoutPanel.SetFlowBreak(psfCheckbox, true);
 
             CheckBox l1dStreamPrefetchCheckbox = new CheckBox();
-            l1dStreamPrefetchCheckbox.Text = "L1D Stream Prefetcher";
-            l1dStreamPrefetchCheckbox.Checked = GetL1DStreamPrefetchStatus();
+            l1dStreamPrefetchCheckbox.Text = "L1D Stream Pf";
+            l1dStreamPrefetchCheckbox.Checked = GetPrefetcherStatus(Zen4Prefetcher.L1Stream);
             l1dStreamPrefetchCheckbox.CheckedChanged += HandleL1dStreamCheckbox;
             l1dStreamPrefetchCheckbox.Width = TextRenderer.MeasureText(l1dStreamPrefetchCheckbox.Text, l1dStreamPrefetchCheckbox.Font).Width + 20;
             flowLayoutPanel.Controls.Add(l1dStreamPrefetchCheckbox);
 
+            CheckBox l1dStridePrefetchCheckbox = new CheckBox();
+            l1dStridePrefetchCheckbox.Text = "L1D Stride Pf";
+            l1dStridePrefetchCheckbox.Checked = GetPrefetcherStatus(Zen4Prefetcher.L1Stride);
+            l1dStridePrefetchCheckbox.CheckedChanged += HandleL1dStrideCheckbox;
+            l1dStridePrefetchCheckbox.Width = TextRenderer.MeasureText(l1dStridePrefetchCheckbox.Text, l1dStridePrefetchCheckbox.Font).Width + 20;
+            flowLayoutPanel.Controls.Add(l1dStridePrefetchCheckbox);
+
+            CheckBox l1dRegionPrefetchCheckbox = new CheckBox();
+            l1dRegionPrefetchCheckbox.Text = "L1D Region Pf";
+            l1dRegionPrefetchCheckbox.Checked = GetPrefetcherStatus(Zen4Prefetcher.L1Region);
+            l1dRegionPrefetchCheckbox.CheckedChanged += HandleL1dRegionCheckbox;
+            l1dRegionPrefetchCheckbox.Width = TextRenderer.MeasureText(l1dRegionPrefetchCheckbox.Text, l1dRegionPrefetchCheckbox.Font).Width + 20;
+            flowLayoutPanel.Controls.Add(l1dRegionPrefetchCheckbox);
+
             CheckBox l2StreamPrefetchCheckbox = new CheckBox();
             l2StreamPrefetchCheckbox.Text = "L2 Stream Prefetcher";
-            l2StreamPrefetchCheckbox.Checked = GetL2StreamPrefetchStatus();
+            l2StreamPrefetchCheckbox.Checked = GetPrefetcherStatus(Zen4Prefetcher.L2Stream);
             l2StreamPrefetchCheckbox.CheckedChanged += HandleL2StreamCheckbox;
             l2StreamPrefetchCheckbox.Width = TextRenderer.MeasureText(l2StreamPrefetchCheckbox.Text, l2StreamPrefetchCheckbox.Font).Width + 20;
             flowLayoutPanel.Controls.Add(l2StreamPrefetchCheckbox);
 
-            Button setProcNameButton = CreateButton("Set CPU Name String", SetCpuNameString);
+            CheckBox l2UpDownPrefetchCheckbox = new CheckBox();
+            l2UpDownPrefetchCheckbox.Text = "L2 Up/Down Pf";
+            l2UpDownPrefetchCheckbox.Checked = GetPrefetcherStatus(Zen4Prefetcher.L2UpDown);
+            l2UpDownPrefetchCheckbox.CheckedChanged += HandleL2UpDownCheckbox;
+            l2UpDownPrefetchCheckbox.Width = TextRenderer.MeasureText(l2UpDownPrefetchCheckbox.Text, l2UpDownPrefetchCheckbox.Font).Width + 20;
+            flowLayoutPanel.Controls.Add(l2UpDownPrefetchCheckbox);
+
+            /*Button setProcNameButton = CreateButton("Set CPU Name String", SetCpuNameString);
             procNameTextBox = new TextBox();
             procNameTextBox.Width = 325;
             procNameTextBox.MaxLength = 47;
             flowLayoutPanel.Controls.Add(procNameTextBox);
-            flowLayoutPanel.Controls.Add(setProcNameButton);
+            flowLayoutPanel.Controls.Add(setProcNameButton);*/
 
             errorLabel = errLabel;
         }
@@ -538,93 +560,127 @@ namespace PmcReader.AMD
         private void HandleL2StreamCheckbox(object sender, EventArgs e)
         {
             CheckBox checkbox = (CheckBox)sender;
-            bool L2PfStatus = checkbox.Checked;
-            for (int threadIdx = 0; threadIdx < GetThreadCount(); threadIdx++)
-            {
-                SetL2StreamPrefetchStatus(checkbox.Checked);
-                bool threadStatus = GetL2StreamPrefetchStatus();
-                if (checkbox.Checked) L2PfStatus &= threadStatus;
-                else L2PfStatus |= threadStatus;
-            }
-
+            bool L2PfStatus = HandlePrefetcherCheckbox(Zen4Prefetcher.L2Stream, checkbox.Checked);
             if (L2PfStatus) errorLabel.Text = "L2 Stream Prefetcher enabled";
             else errorLabel.Text = "L2 Stream Prefetcher disabled";
+        }
+
+        private void HandleL2UpDownCheckbox(object sender, EventArgs e)
+        {
+            CheckBox checkbox = (CheckBox)sender;
+            bool L2PfStatus = HandlePrefetcherCheckbox(Zen4Prefetcher.L2UpDown, checkbox.Checked);
+            if (L2PfStatus) errorLabel.Text = "L2 Up/Down Prefetcher enabled";
+            else errorLabel.Text = "L2 Up/Down Prefetcher disabled";
         }
 
         private void HandleL1dStreamCheckbox(object sender, EventArgs e)
         {
             CheckBox checkbox = (CheckBox)sender;
-            bool L1DPfStatus = checkbox.Checked;
-            for (int threadIdx = 0; threadIdx < GetThreadCount(); threadIdx++)
-            {
-                SetL1DStreamPrefetchStatus(checkbox.Checked);
-                bool threadStatus = GetL1DStreamPrefetchStatus();
-                if (checkbox.Checked) L1DPfStatus &= threadStatus;
-                else L1DPfStatus |= threadStatus;
-            }
-
+            bool L1DPfStatus = HandlePrefetcherCheckbox(Zen4Prefetcher.L1Stream, checkbox.Checked);
             if (L1DPfStatus) errorLabel.Text = "L1D Stream Prefetcher enabled";
             else errorLabel.Text = "L1D Stream Prefetcher disabled";
         }
 
-        private bool GetL2StreamPrefetchStatus()
-        {
-            Ring0.ReadMsr(MSR_L2_PF_CFG, out ulong l2PfCfg);
-            return (l2PfCfg & 1) == 1;
-        }
-
-        private void SetL2StreamPrefetchStatus(bool enabled)
-        {
-            Ring0.ReadMsr(MSR_L2_PF_CFG, out ulong l2PfCfg);
-            if (enabled) l2PfCfg |= 1;
-            else l2PfCfg &= ~(1UL);
-            Ring0.WriteMsr(MSR_L2_PF_CFG, l2PfCfg);
-        }
-
-        private bool GetL1DStreamPrefetchStatus()
-        {
-            Ring0.ReadMsr(MSR_DC_CFG, out ulong dcCfg);
-            return (dcCfg & (1UL << 16)) == 0;
-        }
-
-        private void SetL1DStreamPrefetchStatus(bool enabled)
-        {
-            // set bit 16 to *disable* the L1D stream prefetcher
-            Ring0.ReadMsr(MSR_DC_CFG, out ulong dcCfg);
-            if (enabled) dcCfg &= ~(1UL << 16);
-            else dcCfg |= (1UL << 16);
-            Ring0.WriteMsr(MSR_DC_CFG, dcCfg);
-        }
-
-        public bool GetStlfErrataEnabled()
-        {
-            Ring0.ReadMsr(MSR_DE_CFG, out ulong deCfg);
-            return (deCfg & (1UL << 13)) == 1;
-        }
-
-        public void SetStlfErrataStatus(bool enabled)
-        {
-            Ring0.ReadMsr(MSR_DE_CFG, out ulong deCfg);
-            if (enabled) deCfg |= (1UL << 13);
-            else deCfg &= ~(1UL << 13);
-            Ring0.WriteMsr(MSR_DE_CFG, deCfg);
-        }
-
-        public void HandleStlfErrataCheckbox(object sender, EventArgs e)
+        private void HandleL1dStrideCheckbox(object sender, EventArgs e)
         {
             CheckBox checkbox = (CheckBox)sender;
-            bool stlfErrataStatus = checkbox.Checked;
+            bool L1DPfStatus = HandlePrefetcherCheckbox(Zen4Prefetcher.L1Stride, checkbox.Checked);
+            if (L1DPfStatus) errorLabel.Text = "L1D Stride Prefetcher enabled";
+            else errorLabel.Text = "L1D Stride Prefetcher disabled";
+        }
+
+        private void HandleL1dRegionCheckbox(object sender, EventArgs e)
+        {
+            CheckBox checkbox = (CheckBox)sender;
+            bool L1DPfStatus = HandlePrefetcherCheckbox(Zen4Prefetcher.L1Region, checkbox.Checked);
+            if (L1DPfStatus) errorLabel.Text = "L1D Region Prefetcher enabled";
+            else errorLabel.Text = "L1D Region Prefetcher disabled";
+        }
+
+        private bool HandlePrefetcherCheckbox(Zen4Prefetcher pf, bool enabled)
+        {
+            bool prefetcherEnabled = enabled;
             for (int threadIdx = 0; threadIdx < GetThreadCount(); threadIdx++)
             {
-                SetStlfErrataStatus(checkbox.Checked);
-                bool threadStatus = GetStlfErrataEnabled();
-                if (checkbox.Checked) stlfErrataStatus &= threadStatus;
-                else stlfErrataStatus |= threadStatus;
+                SetPrefetcherStatus(Zen4Prefetcher.L1Stream, enabled);
+                bool threadStatus = GetPrefetcherStatus(Zen4Prefetcher.L1Stream);
+                if (enabled) prefetcherEnabled &= threadStatus;
+                else prefetcherEnabled |= threadStatus;
             }
 
-            if (stlfErrataStatus) errorLabel.Text = "Zen 1 STLF errata fix enabled";
-            else errorLabel.Text = "Zen 1 STLF errata fix disabled";
-            checkbox.Checked = stlfErrataStatus;
+            return prefetcherEnabled;
+        }
+
+        private enum Zen4Prefetcher
+        {
+            L1Stream,
+            L1Stride,
+            L1Region,
+            L2Stream,
+            L2UpDown
+        }
+
+        private void SetPrefetcherStatus(Zen4Prefetcher pf, bool enabled)
+        {
+            ulong controlBit = 0;
+            if (pf == Zen4Prefetcher.L1Stream) controlBit = 1;
+            else if (pf == Zen4Prefetcher.L1Stride) controlBit = 2;
+            else if (pf == Zen4Prefetcher.L1Region) controlBit = 4;
+            else if (pf == Zen4Prefetcher.L2Stream) controlBit = 8;
+            else if (pf == Zen4Prefetcher.L2UpDown) controlBit = (1UL << 5);
+
+            Ring0.ReadMsr(MSR_PrefetchControl, out ulong prefetchControl);
+
+            // set bit to disable prefetcher, clear it to enable
+            if (!enabled) prefetchControl |= controlBit;
+            else prefetchControl &= ~controlBit;
+            Ring0.WriteMsr(MSR_PrefetchControl, prefetchControl);
+        }
+
+        private bool GetPrefetcherStatus(Zen4Prefetcher pf)
+        {
+            ulong controlBit = 0;
+            if (pf == Zen4Prefetcher.L1Stream) controlBit = 1;
+            else if (pf == Zen4Prefetcher.L1Stride) controlBit = 2;
+            else if (pf == Zen4Prefetcher.L1Region) controlBit = 4;
+            else if (pf == Zen4Prefetcher.L2Stream) controlBit = 8;
+            else if (pf == Zen4Prefetcher.L2UpDown) controlBit = (1UL << 5);
+
+            Ring0.ReadMsr(MSR_PrefetchControl, out ulong prefetchControl);
+
+            // Setting the MSR bit disables the prefetcher
+            return !((prefetchControl & controlBit) > 0);
+        }
+
+        public bool GetPSFEnabled()
+        {
+            Ring0.ReadMsr(MSR_SPEC_CTRL, out ulong specCtrl);
+            return !((specCtrl & (1UL << 7)) > 0); // bit 7 = disable predictive store forwarding
+        }
+
+        public void SetPsf(bool enabled)
+        {
+            Ring0.ReadMsr(MSR_SPEC_CTRL, out ulong specCtrl);
+            if (!enabled) specCtrl |= (1UL << 7);
+            else specCtrl &= ~(1UL << 7);
+            Ring0.WriteMsr(MSR_SPEC_CTRL, specCtrl);
+        }
+
+        public void HandlePsfCheckbox(object sender, EventArgs e)
+        {
+            CheckBox checkbox = (CheckBox)sender;
+            bool psfEnabled = checkbox.Checked;
+            for (int threadIdx = 0; threadIdx < GetThreadCount(); threadIdx++)
+            {
+                SetPsf(checkbox.Checked);
+                bool threadStatus = GetPSFEnabled();
+                if (checkbox.Checked) psfEnabled &= threadStatus;
+                else psfEnabled |= threadStatus;
+            }
+
+            if (psfEnabled) errorLabel.Text = "Predictive store forwarding enabled";
+            else errorLabel.Text = "Predictive store forwarding disabled";
+            checkbox.Checked = psfEnabled;
         }
 
         private bool GetOpCacheEnabledStatus()
@@ -824,10 +880,10 @@ namespace PmcReader.AMD
 
         public class TopDown : MonitoringConfig
         {
-            private Amd17hCpu cpu;
+            private Amd19hCpu cpu;
             public string GetConfigName() { return "Top Down?"; }
 
-            public TopDown(Amd17hCpu amdCpu) { cpu = amdCpu; }
+            public TopDown(Amd19hCpu amdCpu) { cpu = amdCpu; }
 
             public string[] GetColumns() { return columns; }
 

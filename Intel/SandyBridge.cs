@@ -734,6 +734,7 @@ namespace PmcReader.Intel
                 }
 
                 results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                results.overallCounterValues = cpu.GetOverallCounterValues("loads", "L1/FB Hit", "L2 hit", "L3 hit");
                 return results;
             }
 
