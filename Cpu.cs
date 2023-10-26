@@ -21,7 +21,13 @@ namespace PmcReader
         /// <returns>Number of threads</returns>
         int GetThreadCount();
 
-        string StartLogToFile(string filePath);
+        /// <summary>
+        /// Start logging to file
+        /// </summary>
+        /// <param name="filePath">File path to log to</param>
+        /// <param name="targetCore">If >= 0, only log for a specific core</param>
+        /// <returns></returns>
+        string StartLogToFile(string filePath, int targetCore);
         void StopLoggingToFile();
     }
 

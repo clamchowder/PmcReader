@@ -240,13 +240,20 @@ namespace PmcReader
 
         private void logButton_Click(object sender, EventArgs e)
         {
+            int targetCoreIndex;
+            string targetCore = RestrictCoreLoggingTextBox.Text;
+            if (!int.TryParse(targetCore, out targetCoreIndex))
+            {
+                targetCoreIndex = -1;
+            }
+
             // Only log core events for now
             if (coreMonitoring.monitoringArea != null)
             {
                 coreMonitoring.monitoringArea.StopLoggingToFile();
-                string error = coreMonitoring.monitoringArea.StartLogToFile(logFilePathTextBox.Text);
+                string error = coreMonitoring.monitoringArea.StartLogToFile(logFilePathTextBox.Text, targetCoreIndex);
                 if (error != null) errorLabel.Text = error;
-                else errorLabel.Text = "Logging started";
+                else errorLabel.Text = "Logging started" + (targetCoreIndex >= 0 ? " for core " + targetCoreIndex : string.Empty);
             }
             else errorLabel.Text = "No core mon area selected";
         }
@@ -262,7 +269,7 @@ namespace PmcReader
             if (l3Monitoring.monitoringArea != null)
             {
                 l3Monitoring.monitoringArea.StopLoggingToFile();
-                string error = l3Monitoring.monitoringArea.StartLogToFile(L3LogToFileTextBox.Text);
+                string error = l3Monitoring.monitoringArea.StartLogToFile(L3LogToFileTextBox.Text, -1);
                 if (error != null) errorLabel.Text = error;
                 else errorLabel.Text = "L3 Logging Started";
             }
@@ -279,7 +286,7 @@ namespace PmcReader
         {
             if (dfMonitoring.monitoringArea != null)
             {
-                string error = dfMonitoring.monitoringArea.StartLogToFile(DfLogToFileTextBox.Text);
+                string error = dfMonitoring.monitoringArea.StartLogToFile(DfLogToFileTextBox.Text, -1);
                 if (error != null) errorLabel.Text = error;
                 else errorLabel.Text = "DF Logging Started";
             }
