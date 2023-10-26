@@ -499,7 +499,7 @@ namespace PmcReader.Intel
             retval[3] = new Tuple<string, float>("Package Power", dataToLog.packagePower);
             retval[4] = new Tuple<string, float>("PP0 Power", dataToLog.pp0Power);
             for (byte pmcIdx = 0; pmcIdx < pmc.Length; pmcIdx++)
-                retval[pmcIdx + 5] = new Tuple<string, float>(pmc[pmcIdx], NormalizedTotalCounts.pmc[pmcIdx]);
+                retval[pmcIdx + 5] = new Tuple<string, float>(pmc[pmcIdx], dataToLog.pmc[pmcIdx]);
 
             return retval;
         }
