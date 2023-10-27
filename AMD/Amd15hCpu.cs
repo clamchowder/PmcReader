@@ -180,16 +180,22 @@ namespace PmcReader.AMD
         /// <returns>Array to put in results object</returns>
         public Tuple<string, float>[] GetOverallCounterValues(string ctr0, string ctr1, string ctr2, string ctr3, string ctr4, string ctr5)
         {
+            NormalizedCoreCounterData dataToLog = this.NormalizedTotalCounts;
+            if (this.targetLogCoreIndex >= 0)
+            {
+                dataToLog = NormalizedThreadCounts[this.targetLogCoreIndex];
+            }
+
             Tuple<string, float>[] retval = new Tuple<string, float>[9];
-            retval[0] = new Tuple<string, float>("APERF", NormalizedTotalCounts.aperf);
-            retval[1] = new Tuple<string, float>("MPERF", NormalizedTotalCounts.mperf);
-            retval[2] = new Tuple<string, float>("TSC", NormalizedTotalCounts.tsc);
-            retval[3] = new Tuple<string, float>(ctr0, NormalizedTotalCounts.ctr0);
-            retval[4] = new Tuple<string, float>(ctr1, NormalizedTotalCounts.ctr1);
-            retval[5] = new Tuple<string, float>(ctr2, NormalizedTotalCounts.ctr2);
-            retval[6] = new Tuple<string, float>(ctr3, NormalizedTotalCounts.ctr3);
-            retval[7] = new Tuple<string, float>(ctr4, NormalizedTotalCounts.ctr4);
-            retval[8] = new Tuple<string, float>(ctr5, NormalizedTotalCounts.ctr5);
+            retval[0] = new Tuple<string, float>("APERF", dataToLog.aperf);
+            retval[1] = new Tuple<string, float>("MPERF", dataToLog.mperf);
+            retval[2] = new Tuple<string, float>("TSC", dataToLog.tsc);
+            retval[3] = new Tuple<string, float>(ctr0, dataToLog.ctr0);
+            retval[4] = new Tuple<string, float>(ctr1, dataToLog.ctr1);
+            retval[5] = new Tuple<string, float>(ctr2, dataToLog.ctr2);
+            retval[6] = new Tuple<string, float>(ctr3,  dataToLog.ctr3);
+            retval[7] = new Tuple<string, float>(ctr4, dataToLog.ctr4);
+            retval[8] = new Tuple<string, float>(ctr5, dataToLog.ctr5);
             return retval;
         }
 

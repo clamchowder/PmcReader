@@ -487,13 +487,19 @@ namespace PmcReader.Intel
         {
             int returnedPoints = 5 + pmc.Length;
             Tuple<string, float>[] retval = new Tuple<string, float>[returnedPoints];
-            retval[0] = new Tuple<string, float>("Active Cycles", NormalizedTotalCounts.activeCycles);
-            retval[1] = new Tuple<string, float>("REF_TSC", NormalizedTotalCounts.refTsc);
-            retval[2] = new Tuple<string, float>("Instructions", NormalizedTotalCounts.instr);
-            retval[3] = new Tuple<string, float>("Package Power", NormalizedTotalCounts.packagePower);
-            retval[4] = new Tuple<string, float>("PP0 Power", NormalizedTotalCounts.pp0Power);
+            NormalizedCoreCounterData dataToLog = this.NormalizedTotalCounts;
+            if (this.targetLogCoreIndex >= 0)
+            {
+                dataToLog = NormalizedThreadCounts[this.targetLogCoreIndex];
+            }
+
+            retval[0] = new Tuple<string, float>("Active Cycles", dataToLog.activeCycles);
+            retval[1] = new Tuple<string, float>("REF_TSC", dataToLog.refTsc);
+            retval[2] = new Tuple<string, float>("Instructions", dataToLog.instr);
+            retval[3] = new Tuple<string, float>("Package Power", dataToLog.packagePower);
+            retval[4] = new Tuple<string, float>("PP0 Power", dataToLog.pp0Power);
             for (byte pmcIdx = 0; pmcIdx < pmc.Length; pmcIdx++)
-                retval[pmcIdx + 5] = new Tuple<string, float>(pmc[pmcIdx], NormalizedTotalCounts.pmc[pmcIdx]);
+                retval[pmcIdx + 5] = new Tuple<string, float>(pmc[pmcIdx], dataToLog.pmc[pmcIdx]);
 
             return retval;
         }

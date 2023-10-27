@@ -57,6 +57,8 @@
             this.crazyThingsPanel = new System.Windows.Forms.FlowLayoutPanel();
             this.crazyThingsLabel = new System.Windows.Forms.Label();
             this.toolTip1 = new System.Windows.Forms.ToolTip(this.components);
+            this.RestrictCoreLoggingTextBox = new System.Windows.Forms.TextBox();
+            this.RestrictCoreLogLabel = new System.Windows.Forms.Label();
             this.SuspendLayout();
             // 
             // configSelect
@@ -223,7 +225,7 @@
             // 
             // logButton
             // 
-            this.logButton.Location = new System.Drawing.Point(527, 123);
+            this.logButton.Location = new System.Drawing.Point(402, 125);
             this.logButton.Name = "logButton";
             this.logButton.Size = new System.Drawing.Size(75, 23);
             this.logButton.TabIndex = 17;
@@ -233,14 +235,14 @@
             // 
             // logFilePathTextBox
             // 
-            this.logFilePathTextBox.Location = new System.Drawing.Point(303, 125);
+            this.logFilePathTextBox.Location = new System.Drawing.Point(178, 127);
             this.logFilePathTextBox.Name = "logFilePathTextBox";
             this.logFilePathTextBox.Size = new System.Drawing.Size(218, 20);
             this.logFilePathTextBox.TabIndex = 18;
             // 
             // stopLoggingButton
             // 
-            this.stopLoggingButton.Location = new System.Drawing.Point(608, 123);
+            this.stopLoggingButton.Location = new System.Drawing.Point(483, 125);
             this.stopLoggingButton.Name = "stopLoggingButton";
             this.stopLoggingButton.Size = new System.Drawing.Size(87, 23);
             this.stopLoggingButton.TabIndex = 19;
@@ -251,7 +253,7 @@
             // logFilePathLabel
             // 
             this.logFilePathLabel.AutoSize = true;
-            this.logFilePathLabel.Location = new System.Drawing.Point(228, 128);
+            this.logFilePathLabel.Location = new System.Drawing.Point(103, 130);
             this.logFilePathLabel.Name = "logFilePathLabel";
             this.logFilePathLabel.Size = new System.Drawing.Size(69, 13);
             this.logFilePathLabel.TabIndex = 20;
@@ -332,11 +334,29 @@
             this.crazyThingsLabel.Size = new System.Drawing.Size(0, 13);
             this.crazyThingsLabel.TabIndex = 28;
             // 
+            // RestrictCoreLoggingTextBox
+            // 
+            this.RestrictCoreLoggingTextBox.Location = new System.Drawing.Point(655, 127);
+            this.RestrictCoreLoggingTextBox.Name = "RestrictCoreLoggingTextBox";
+            this.RestrictCoreLoggingTextBox.Size = new System.Drawing.Size(39, 20);
+            this.RestrictCoreLoggingTextBox.TabIndex = 29;
+            // 
+            // RestrictCoreLogLabel
+            // 
+            this.RestrictCoreLogLabel.AutoSize = true;
+            this.RestrictCoreLogLabel.Location = new System.Drawing.Point(576, 130);
+            this.RestrictCoreLogLabel.Name = "RestrictCoreLogLabel";
+            this.RestrictCoreLogLabel.Size = new System.Drawing.Size(72, 13);
+            this.RestrictCoreLogLabel.TabIndex = 30;
+            this.RestrictCoreLogLabel.Text = "Only log core:";
+            // 
             // HaswellForm
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.ClientSize = new System.Drawing.Size(1197, 687);
+            this.Controls.Add(this.RestrictCoreLogLabel);
+            this.Controls.Add(this.RestrictCoreLoggingTextBox);
             this.Controls.Add(this.crazyThingsLabel);
             this.Controls.Add(this.crazyThingsPanel);
             this.Controls.Add(this.DfLogToFileTextBox);
@@ -402,6 +422,8 @@
         private System.Windows.Forms.FlowLayoutPanel crazyThingsPanel;
         private System.Windows.Forms.Label crazyThingsLabel;
         private System.Windows.Forms.ToolTip toolTip1;
+        private System.Windows.Forms.TextBox RestrictCoreLoggingTextBox;
+        private System.Windows.Forms.Label RestrictCoreLogLabel;
     }
 }
 

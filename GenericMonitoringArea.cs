@@ -15,7 +15,7 @@ namespace PmcReader
         private delegate void SafeSetMonitoringListViewColumns(string[] columns, ListView monitoringListView);
 
         public MonitoringConfig[] monitoringConfigs;
-        protected int threadCount = 0, coreCount = 0;
+        protected int threadCount = 0, coreCount = 0, targetLogCoreIndex = -1;
         protected string architectureName = "Generic";
         private Dictionary<int, Stopwatch> lastUpdateTimers;
         private string logFilePath = null;
@@ -51,7 +51,7 @@ namespace PmcReader
         /// </summary>
         /// <param name="filePath">File to log to</param>
         /// <returns>null if successful, error string if something went wrong</returns>
-        public string StartLogToFile(string filePath)
+        public string StartLogToFile(string filePath, int targetCoreIndex)
         {
             if (string.IsNullOrEmpty(filePath))
             {
@@ -80,6 +80,16 @@ namespace PmcReader
                 {
                     return e.Message;
                 }
+            }
+
+            if (targetCoreIndex >= coreCount)
+            {
+                // Ignore parameter if a nonexistent core index is specified
+                targetCoreIndex = -1;
+            }
+            else
+            {
+                this.targetLogCoreIndex = targetCoreIndex;
             }
 
             logFileHeadersWritten = false;
