@@ -13,7 +13,7 @@ namespace PmcReader.Intel
             configs.Add(new OpCacheMissStarvation(this));
             configs.Add(new ALUPortUtilization(this));
             configs.Add(new LSPortUtilization(this));
-            configs.Add(new OpDelivery(this));
+            configs.Add(new SklOpDelivery(this));
             configs.Add(new DecoderHistogram(this));
             configs.Add(new L2Cache(this));
             configs.Add(new L2Split(this));
@@ -1273,6 +1273,84 @@ namespace PmcReader.Intel
                         FormatLargeNumber(counterData.pmc[2]),
                         FormatLargeNumber(counterData.pmc[3]),
                         string.Format("{0:F2}", 1000 * counterData.pmc[3] / counterData.instr),
+                };
+            }
+        }
+
+        public class SklOpDelivery : MonitoringConfig
+        {
+            private ModernIntelCpu cpu;
+            public string GetConfigName() { return "Skl Op Delivery"; }
+
+            public SklOpDelivery(ModernIntelCpu intelCpu)
+            {
+                cpu = intelCpu;
+            }
+
+            public string[] GetColumns()
+            {
+                return columns;
+            }
+
+            public void Initialize()
+            {
+                cpu.EnablePerformanceCounters();
+
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    ThreadAffinity.Set(1UL << threadIdx);
+                    // Set PMC0 to count retired ops
+                    Ring0.WriteMsr(IA32_PERFEVTSEL0, GetPerfEvtSelRegisterValue(0xC2, 0x2, true, true, false, false, false, false, true, false, 0));
+
+                    // Set PMC1 to count DSB uops
+                    Ring0.WriteMsr(IA32_PERFEVTSEL1, GetPerfEvtSelRegisterValue(0x79, 0x8, true, true, false, false, false, false, true, false, 0));
+
+                    // Set PMC2 to count MITE uops
+                    Ring0.WriteMsr(IA32_PERFEVTSEL2, GetPerfEvtSelRegisterValue(0x79, 0x4, true, true, false, false, false, false, true, false, 0));
+
+                    // Set PMC3 to count MS uops
+                    Ring0.WriteMsr(IA32_PERFEVTSEL3, GetPerfEvtSelRegisterValue(0x79, 0x30, true, true, false, false, false, false, true, false, 0));
+                }
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[cpu.GetThreadCount()][];
+                cpu.InitializeCoreTotals();
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    cpu.UpdateThreadCoreCounterData(threadIdx);
+                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
+                }
+
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                results.overallCounterValues = cpu.GetOverallCounterValues("Retired Ops", "DSB Ops", "MITE Ops", "MS Ops");
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "Ops/C", "Bad Spec", "Op$ Ops", "Op$ %", "Decoder Ops", "Decoder %", "MS Ops", "MS %" };
+
+            public string GetHelpText()
+            {
+                return "";
+            }
+
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
+            {
+                float totalOps = counterData.pmc[1] + counterData.pmc[2] + counterData.pmc[3];
+                return new string[] { label,
+                        FormatLargeNumber(counterData.activeCycles),
+                        FormatLargeNumber(counterData.instr),
+                        string.Format("{0:F2}", counterData.instr / counterData.activeCycles),
+                        string.Format("{0:F2}", counterData.pmc[0] / counterData.activeCycles),
+                        FormatPercentage(totalOps - counterData.pmc[0], totalOps),
+                        FormatLargeNumber(counterData.pmc[1]),
+                        FormatPercentage(counterData.pmc[1], totalOps),
+                        FormatLargeNumber(counterData.pmc[2]),
+                        FormatPercentage(counterData.pmc[2], totalOps),
+                        FormatLargeNumber(counterData.pmc[3]),
+                        FormatPercentage(counterData.pmc[3], totalOps)
                 };
             }
         }
