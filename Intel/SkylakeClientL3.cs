@@ -51,8 +51,6 @@ namespace PmcReader.Intel
 
             cboTotals.ctr0 = 0;
             cboTotals.ctr1 = 0;
-            cboTotals.ctr0Total = 0;
-            cboTotals.ctr1Total = 0;
         }
 
         public void UpdateCboCounterData(uint cboIdx)
