@@ -64,6 +64,7 @@ namespace PmcReader.Intel
 
         public NormalizedCoreCounterData[] NormalizedThreadCounts;
         public NormalizedCoreCounterData NormalizedTotalCounts;
+        public RawTotalCoreCounterData RawTotalCounts;
 
         private float energyStatusUnits = 0;
         private Stopwatch lastPkgPwrTime;
@@ -249,8 +250,28 @@ namespace PmcReader.Intel
                         ThreadAffinity.Set(1UL << threadIdx);
                         Ring0.WriteMsr(IA32_PERF_GLOBAL_CTRL, enablePMCsValue);
                         Ring0.WriteMsr(IA32_FIXED_CTR_CTRL, fixedCounterConfigurationValue);
+
+                        // Zero counters to ensure we don't pollute totals
+                        Ring0.WriteMsr(IA32_FIXED_CTR0, 0);
+                        Ring0.WriteMsr(IA32_FIXED_CTR1, 0);
+                        Ring0.WriteMsr(IA32_FIXED_CTR2, 0);
+
+                        for (byte fixedIdx = 0; fixedIdx < 16; fixedIdx++)
+                        {
+                            if (((coreType.FixedCounterMask >> fixedIdx) & 0x1) == 0x1)
+                            {
+                                Ring0.WriteMsr(IA32_A_PMC[fixedIdx], 0);
+                            }
+                        }
                     }
                 }
+            }
+
+            if (RawTotalCounts != null)
+            {
+                // Reset totals when enabling counters
+                for (byte pmcIdx = 0; pmcIdx < RawTotalCounts.pmc.Length; pmcIdx++)
+                    RawTotalCounts.pmc[pmcIdx] = 0;
             }
         }
 
@@ -347,6 +368,13 @@ namespace PmcReader.Intel
             NormalizedTotalCounts.packagePower = 0;
             for (byte pmcIdx = 0; pmcIdx < NormalizedTotalCounts.pmc.Length; pmcIdx++)
                 NormalizedTotalCounts.pmc[pmcIdx] = 0;
+
+            if (RawTotalCounts == null)
+            {
+                RawTotalCounts = new RawTotalCoreCounterData();
+            }
+
+            // don't reset totals
         }
 
         /// <summary>
@@ -367,7 +395,7 @@ namespace PmcReader.Intel
                 retiredInstructions = ReadAndClearMsr(IA32_FIXED_CTR0);
                 activeCycles = ReadAndClearMsr(IA32_FIXED_CTR1);
                 refTsc = ReadAndClearMsr(IA32_FIXED_CTR2);
-                float[] pmc = new float[coreType.PmcCounters];
+                ulong[] pmc = new ulong[coreType.PmcCounters];
                 for (byte pmcIdx = 0; pmcIdx < pmc.Length; pmcIdx++)
                     pmc[pmcIdx] = ReadAndClearMsr(IA32_A_PMC[pmcIdx]);
 
@@ -392,6 +420,13 @@ namespace PmcReader.Intel
                 NormalizedTotalCounts.refTsc += NormalizedThreadCounts[threadIdx].refTsc;
                 for (byte pmcIdx = 0; pmcIdx < pmc.Length; pmcIdx++)
                     NormalizedTotalCounts.pmc[pmcIdx] += NormalizedThreadCounts[threadIdx].pmc[pmcIdx];
+
+                RawTotalCounts.activeCycles += activeCycles;
+                RawTotalCounts.instr += retiredInstructions;
+                RawTotalCounts.refTsc += refTsc;
+                for (byte pmcIdx = 0; pmcIdx < pmc.Length; pmcIdx++)
+                    RawTotalCounts.pmc[pmcIdx] += pmc[pmcIdx];
+                    
                 break;
             }
         }
@@ -409,6 +444,15 @@ namespace PmcReader.Intel
             public float pp0Power;
             public float[] pmc = new float[16];
             public float NormalizationFactor;
+        }
+
+        public class RawTotalCoreCounterData
+        {
+            public ulong activeCycles;
+            public ulong instr;
+            public ulong refTsc;
+            public float packagePower;
+            public ulong[] pmc = new ulong[16];
         }
 
         /// <summary>
