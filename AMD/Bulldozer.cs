@@ -12,6 +12,10 @@ namespace PmcReader.AMD
             configs.Add(new ICMonitoringConfig(this));
             configs.Add(new DCMonitoringConfig(this));
             configs.Add(new L2Cache(this));
+            configs.Add(new FPU(this));
+            configs.Add(new DispatchStallFP(this));
+            configs.Add(new DispatchStall(this));
+            configs.Add(new DispatchStall1(this));
             monitoringConfigs = configs.ToArray();
             architectureName = "Bulldozer";
         }
@@ -141,6 +145,191 @@ namespace PmcReader.AMD
                         string.Format("{0:F2}", counterData.ctr1 / instr * 1000),     // IC MPKI
                         string.Format("{0:F2}", counterData.ctr5 / instr * 1000),     // SMC Pipeline Restart/Ki
                 };
+            }
+        }
+
+        public class DispatchStall : MonitoringConfig
+        {
+            private Bulldozer cpu;
+            public string GetConfigName() { return "Dispatch Stall"; }
+
+            public DispatchStall(Bulldozer amdCpu)
+            {
+                cpu = amdCpu;
+            }
+
+            public string[] GetColumns() { return columns; }
+
+            public void Initialize()
+            {
+                cpu.ProgramPerfCounters(
+                    GetPerfCtlValue(0xD5, 0, false, 0, 0), // ROB full
+                    GetPerfCtlValue(0xD6, 0, false, 0, 0), // Integer scheduler full
+                    GetPerfCtlValue(0x76, 0, false, 0, 0), // Cycles
+                    GetPerfCtlValue(0xD8, 0, false, 0, 1), // STQ Full
+                    GetPerfCtlValue(0xC0, 0, false, 0, 0), // Instr
+                    GetPerfCtlValue(0x5, 0b1111, false, 0, 0));  // Serializing FP ops
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[cpu.GetThreadCount()][];
+                cpu.InitializeCoreTotals();
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    cpu.UpdateThreadCoreCounterData(threadIdx);
+                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
+                }
+
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                results.overallCounterValues = cpu.GetOverallCounterValues("ROB Full", "Integer Scheduler Full", "Cycles", "STQ Full", "Instructions", "Serializing FP Ops");
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC",
+                "ROB Full", "INT Sch Full", "STQ Full" };
+
+            public string GetHelpText()
+            {
+                return "aaaaaa";
+            }
+
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
+            {
+                float instr = counterData.ctr4;
+                return new string[] { label,
+                        FormatLargeNumber(counterData.ctr2),
+                        FormatLargeNumber(instr),
+                        string.Format("{0:F2}", instr / counterData.ctr2),
+                        FormatPercentage(counterData.ctr0, counterData.ctr2),
+                        FormatPercentage(counterData.ctr1, counterData.ctr2),
+                        FormatPercentage(counterData.ctr3, counterData.ctr2)
+                        };
+            }
+        }
+
+        public class DispatchStall1 : MonitoringConfig
+        {
+            private Bulldozer cpu;
+            public string GetConfigName() { return "Dispatch Stall 1"; }
+
+            public DispatchStall1(Bulldozer amdCpu)
+            {
+                cpu = amdCpu;
+            }
+
+            public string[] GetColumns() { return columns; }
+
+            public void Initialize()
+            {
+                cpu.ProgramPerfCounters(
+                    GetPerfCtlValue(0xD8, 0, false, 0, 1), // STQ Full stall
+                    GetPerfCtlValue(0xD8, 0, false, 0, 0), // LDQ Full stall 
+                    GetPerfCtlValue(0x76, 0, false, 0, 0), // Cycles
+                    GetPerfCtlValue(0xD8, 0, false, 0, 1), // STQ Full
+                    GetPerfCtlValue(0xC0, 0, false, 0, 0), // Instr
+                    GetPerfCtlValue(0x5, 0b1111, false, 0, 0));  // Serializing FP ops
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[cpu.GetThreadCount()][];
+                cpu.InitializeCoreTotals();
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    cpu.UpdateThreadCoreCounterData(threadIdx);
+                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
+                }
+
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                results.overallCounterValues = cpu.GetOverallCounterValues("STQ Full", "LDQ Full", "Cycles", "STQ Full", "Instructions", "Serializing FP Ops");
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC",
+                "STQ Full", "LDQ Full", "STQ Full (4)" };
+
+            public string GetHelpText()
+            {
+                return "aaaaaa";
+            }
+
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
+            {
+                float instr = counterData.ctr4;
+                return new string[] { label,
+                        FormatLargeNumber(counterData.ctr2),
+                        FormatLargeNumber(instr),
+                        string.Format("{0:F2}", instr / counterData.ctr2),
+                        FormatPercentage(counterData.ctr0, counterData.ctr2),
+                        FormatPercentage(counterData.ctr1, counterData.ctr2),
+                        FormatPercentage(counterData.ctr3, counterData.ctr2)
+                        };
+            }
+        }
+
+        public class DispatchStallFP : MonitoringConfig
+        {
+            private Bulldozer cpu;
+            public string GetConfigName() { return "Dispatch Stall FP"; }
+
+            public DispatchStallFP(Bulldozer amdCpu)
+            {
+                cpu = amdCpu;
+            }
+
+            public string[] GetColumns() { return columns; }
+
+            public void Initialize()
+            {
+                cpu.ProgramPerfCounters(
+                    GetPerfCtlValue(0xD7, 0, false, 0, 0), // FP Scheduler Full
+                    GetPerfCtlValue(0xD1, 0, false, 0, 0), // Dispatch Stalls
+                    GetPerfCtlValue(0x76, 0, false, 0, 0), // Cycles
+                    GetPerfCtlValue(0x3, 0xFF, false, 0, 0), // Flops retired
+                    GetPerfCtlValue(0xC0, 0, false, 0, 0), // Instr
+                    GetPerfCtlValue(0x5, 0b1111, false, 0, 0));  // Serializing FP ops
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[cpu.GetThreadCount()][];
+                cpu.InitializeCoreTotals();
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    cpu.UpdateThreadCoreCounterData(threadIdx);
+                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
+                }
+
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                results.overallCounterValues = cpu.GetOverallCounterValues("FP Scheduler Full", "Dispatch Stall", "Cycles", "FLOPs", "Instructions", "Serializing FP Ops");
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC",
+                "FP Scheduler Full", "Dispatch Stall", "Decoder Empty", "FLOPs", "FLOPs/C", "Serializing FP Ops" };
+
+            public string GetHelpText()
+            {
+                return "aaaaaa";
+            }
+
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
+            {
+                float instr = counterData.ctr4;
+                return new string[] { label,
+                        FormatLargeNumber(counterData.ctr2),
+                        FormatLargeNumber(instr),
+                        string.Format("{0:F2}", instr / counterData.ctr2),
+                        FormatPercentage(counterData.ctr0, counterData.ctr2),
+                        FormatPercentage(counterData.ctr1, counterData.ctr2),
+                        FormatLargeNumber(counterData.ctr3),
+                        string.Format("{0:F2}", counterData.ctr3 / counterData.ctr2),
+                        FormatLargeNumber(counterData.ctr5)
+                        };
             }
         }
 
