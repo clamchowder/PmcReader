@@ -522,10 +522,10 @@ namespace PmcReader.AMD
 
             public void Initialize()
             {
-                cpu.ProgramPerfCounters(GetPerfCtlValue(0x8E, 0x1F, true, true, false, false, true, false, 0, 0x1, false, false), // IC access
-                    GetPerfCtlValue(0x8E, 0x18, true, true, false, false, true, false, 0, 0x1, false, false),  // IC Miss
-                    GetPerfCtlValue(0x8F, 0x7, true, true, false, false, true, false, 0, 0x2, false, false),  // OC Access
+                cpu.ProgramPerfCounters(GetPerfCtlValue(0x8F, 0x7, true, true, false, false, true, false, 0, 0x2, false, false),  // OC Access
                     GetPerfCtlValue(0x8F, 0x4, true, true, false, false, true, false, 0, 0x2, false, false),  // OC Miss
+                    GetPerfCtlValue(0x8E, 0x1F, true, true, false, false, true, false, 0, 0x1, false, false), // IC access
+                    GetPerfCtlValue(0x8E, 0x18, true, true, false, false, true, false, 0, 0x1, false, false),  // IC Miss
                     GetPerfCtlValue(0x84, 0, true, true, false, false, true, false, 0, 0, false, false),  // iTLB miss, L2 iTLB hit
                     GetPerfCtlValue(0x85, 0xF, true, true, false, false, true, false, 0, 0, false, false)); // L2 iTLB miss (page walk)
             }
