@@ -44,6 +44,9 @@ namespace PmcReader.AMD
         public const uint MSR_DF_PERF_CTR_1 = 0xC0010243;
         public const uint MSR_DF_PERF_CTR_2 = 0xC0010245;
         public const uint MSR_DF_PERF_CTR_3 = 0xC0010247;
+        public const uint MSR_UMC_PERF_CTL_base = 0x10800;
+        public const uint MSR_UMC_PERF_increment = 2;
+        public const uint MSR_UMC_PERF_CTR_base = 0x10801;
 
         public const uint MSR_RAPL_PWR_UNIT = 0xC0010299;
         public const uint MSR_CORE_ENERGY_STAT = 0xC001029A;
@@ -189,18 +192,33 @@ namespace PmcReader.AMD
         /// Get data fabric performance event select MSR value
         /// </summary>
         /// <param name="perfEventLow">Low 8 bits of performance event select</param>
-        /// <param name="umask">unit mask</param>
+        /// <param name="perfEventHi">Bits 8-13 of performance event (high 6 bits)</param>
+        /// <param name="umaskLow">Low 8 bits of unit mask</param>
+        /// <param name="umaskHi">Bits 8-11 of unit mask (high 4 bits)</param>
         /// <param name="enable">enable perf counter</param>
-        /// <param name="perfEventHi">bits 8-11 of performance event select</param>
-        /// <param name="perfEventHi1">high 2 bits (12-13) of performance event select</param>
         /// <returns>value to put in DF_PERF_CTL</returns>
-        public static ulong GetDFPerfCtlValue(byte perfEventLow, byte umask, bool enable, byte perfEventHi, byte perfEventHi1)
+        public static ulong GetDFPerfCtlValue(byte perfEventLow, byte perfEventHi, byte umaskLow, byte umaskHi, bool enable)
         {
             return perfEventLow |
-                (ulong)umask << 8 |
+                (ulong)umaskLow << 8 |
                 (enable ? 1UL : 0UL) << 22 |
-                (ulong)perfEventHi << 32 |
-                (ulong)perfEventHi1 << 59;
+                (ulong)umaskHi << 24 |
+                (ulong)perfEventHi << 32;
+        }
+
+        /// <summary>
+        /// Get UMC perf counter control value
+        /// </summary>
+        /// <param name="perfEvent">Event select</param>
+        /// <param name="maskReads">Don't count reads</param>
+        /// <param name="maskWrites">Don't count writes</param>
+        /// <returns>Value to put in UMC_PERF_CTL</returns>
+        public static ulong GetUmcPerfCtlValue(byte perfEvent, bool maskReads, bool maskWrites)
+        {
+            return perfEvent |
+                (maskReads ? 2UL << 8 : 0) |
+                (maskWrites ? 1UL << 8 : 0) |
+                1UL << 31;
         }
 
         /// <summary>
@@ -232,7 +250,8 @@ namespace PmcReader.AMD
                 ThreadAffinity.Set(1UL << threadIdx);
                 ulong hwcrValue;
                 Ring0.ReadMsr(HWCR, out hwcrValue);
-                hwcrValue |= 1UL << 30;
+                hwcrValue |= 1UL << 30; // instructions retired counter
+                hwcrValue |= 1UL << 31; // enable UMC counters
                 Ring0.WriteMsr(HWCR, hwcrValue);
 
                 // Initialize fixed counter values
@@ -277,6 +296,21 @@ namespace PmcReader.AMD
             // placeholder until I figure this out. Again just how windows assigns thread IDs
             if (coreCount * 2 == threadCount) return threadId / 16;
             else return threadId / 8;
+        }
+
+        public void GetUmcPerfmonInfo(out uint umcCount, out uint umcPerfcounterCount)
+        {
+            OpCode.CpuidTx(0x80000022, 0, out uint eax, out uint ebx, out uint ecx, out uint edx, 1);
+            umcPerfcounterCount = (ebx >> 16) & 0x3F;
+
+            umcCount = 0;
+            for (int i = 0; i < 31; i++)
+            {
+                if ((ecx & (1UL << i)) > 0)
+                {
+                    umcCount++;
+                }
+            }
         }
 
         /// <summary>
@@ -422,6 +456,22 @@ namespace PmcReader.AMD
             if (NormalizedThreadCounts[threadIdx] == null)
             {
                 NormalizedThreadCounts[threadIdx] = new NormalizedCoreCounterData();
+            }
+
+            if (NormalizedThreadCounts[threadIdx].NormalizationFactor != 0.0f)
+            {
+                NormalizedThreadCounts[threadIdx].totalctr0 += ctr0;
+                NormalizedThreadCounts[threadIdx].totalctr1 += ctr1;
+                NormalizedThreadCounts[threadIdx].totalctr2 += ctr2;
+                NormalizedThreadCounts[threadIdx].totalctr3 += ctr3;
+                NormalizedThreadCounts[threadIdx].totalctr4 += ctr4;
+                NormalizedThreadCounts[threadIdx].totalctr5 += ctr5;
+                NormalizedTotalCounts.totalctr0 += ctr0;
+                NormalizedTotalCounts.totalctr1 += ctr1;
+                NormalizedTotalCounts.totalctr2 += ctr2;
+                NormalizedTotalCounts.totalctr3 += ctr3;
+                NormalizedTotalCounts.totalctr4 += ctr4;
+                NormalizedTotalCounts.totalctr5 += ctr5;
             }
 
             NormalizedThreadCounts[threadIdx].aperf = aperf * normalizationFactor;
@@ -871,6 +921,16 @@ namespace PmcReader.AMD
             public float ctr3;
             public float ctr4;
             public float ctr5;
+
+            /// <summary>
+            /// Total raw counts
+            /// </summary>
+            public ulong totalctr0;
+            public ulong totalctr1;
+            public ulong totalctr2;
+            public ulong totalctr3;
+            public ulong totalctr4;
+            public ulong totalctr5;
 
             /// <summary>
             /// Power consumed. Can be per-core, or whole package (for total)

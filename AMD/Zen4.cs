@@ -19,6 +19,7 @@ namespace PmcReader.AMD
                 new DispatchStallConfig(this),
                 new DispatchStallConfig1(this),
                 new DCFillConfig(this),
+                new DemandDCFillConfig(this),
                 new SwPrefetchConfig(this),
                 new FlopsConfig(this),
                 new VecIntConfig(this),
@@ -26,6 +27,7 @@ namespace PmcReader.AMD
                 new FpPipes(this),
                 new LocksConfig(this),
                 new L2Config(this),
+                new L1DBw(this),
                 new MABOccupancyConfig(this),
                 new TlbConfig(this)
             };
@@ -324,7 +326,7 @@ namespace PmcReader.AMD
                 return results;
             }
 
-            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC",  "FMA Flops", "Mul/Add/Div Flops", "Bfloat Flops"};
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC",  "Flops", "FMA Flops", "Mul/Add/Div Flops", "Bfloat Flops", "Total FLOPs"};
 
             public string GetHelpText()
             {
@@ -337,9 +339,12 @@ namespace PmcReader.AMD
                         FormatLargeNumber(counterData.aperf),
                         FormatLargeNumber(counterData.instr),
                         string.Format("{0:F2}", counterData.instr / counterData.aperf),
+                        FormatLargeNumber(counterData.ctr0 + counterData.ctr2 + counterData.ctr3),
                         FormatLargeNumber(counterData.ctr0),
                         FormatLargeNumber(counterData.ctr2),
-                        FormatLargeNumber(counterData.ctr3)};    
+                        FormatLargeNumber(counterData.ctr3),
+                        FormatLargeNumber(counterData.totalctr0 + counterData.totalctr2 + counterData.totalctr3),
+                };    
             }
         }
 
@@ -880,6 +885,66 @@ namespace PmcReader.AMD
                         };
             }
         }
+
+        public class DemandDCFillConfig : MonitoringConfig
+        {
+            private Zen4 cpu;
+            public string GetConfigName() { return "Demand L1D Fills"; }
+
+            public DemandDCFillConfig(Zen4 amdCpu) { cpu = amdCpu; }
+
+            public string[] GetColumns() { return columns; }
+
+            public void Initialize()
+            {
+                cpu.ProgramPerfCounters(
+                    GetPerfCtlValue(0x43, 1, true, true, false, false, true, false, 0, 0, false, false), // fill from local L2
+                    GetPerfCtlValue(0x43, 0b10, true, true, false, false, true, false, 0, 0, false, false), // local ccx
+                    GetPerfCtlValue(0x43, 0b10100, true, true, false, false, true, false, 0, 0, false, false),  // external cache
+                    GetPerfCtlValue(0x43, 0b1000, true, true, false, false, true, false, 0, 0, false, false),  // local mem
+                    GetPerfCtlValue(0x43, 0x40, true, true, false, false, true, false, 0, 0, false, false),  // remote mem
+                    GetPerfCtlValue(0x29, 0b111, true, true, false, false, true, false, 0, 0, false, false)); // LS Dispatch
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[cpu.GetThreadCount()][];
+                cpu.InitializeCoreTotals();
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    cpu.UpdateThreadCoreCounterData(threadIdx);
+                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
+                }
+
+                cpu.ReadPackagePowerCounter();
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                results.overallCounterValues = cpu.GetOverallCounterValues("LclL2", "LocalCCX", "OtherCCX", "DRAM", "FarDram", "LS Dispatch");
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "L2", "Intra-CCX", "Cross-CCX", "Memory", "Other NUMA Node", "LS Dispatch" };
+
+            public string GetHelpText()
+            {
+                return "";
+            }
+
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
+            {
+                return new string[] { label,
+                        FormatLargeNumber(counterData.aperf),
+                        FormatLargeNumber(counterData.instr),
+                        string.Format("{0:F2}", counterData.instr / counterData.aperf),
+                        FormatLargeNumber(64 * counterData.ctr0) + "B/s",
+                        FormatLargeNumber(64 * counterData.ctr1) + "B/s",
+                        FormatLargeNumber(64 * counterData.ctr2) + "B/s",
+                        FormatLargeNumber(64 * counterData.ctr3) + "B/s",
+                        FormatLargeNumber(64 * counterData.ctr4) + "B/s",
+                        FormatLargeNumber(counterData.ctr5)
+                        };
+            }
+        }
         public class DispatchStallConfig : MonitoringConfig
         {
             private Zen4 cpu;
@@ -1116,6 +1181,69 @@ namespace PmcReader.AMD
                         FormatPercentage(counterData.ctr3, counterData.aperf),
                         FormatPercentage(counterData.ctr4, counterData.aperf),
                         FormatPercentage(counterData.ctr5, counterData.aperf)
+                        };
+            }
+        }
+
+        public class L1DBw : MonitoringConfig
+        {
+            private Zen4 cpu;
+            public string GetConfigName() { return "L1D BW"; }
+
+            public L1DBw(Zen4 amdCpu) { cpu = amdCpu; }
+
+            public string[] GetColumns() { return columns; }
+
+            public void Initialize()
+            {
+                cpu.ProgramPerfCounters(
+                    GetPerfCtlValue(0x40, 0, true, true, false, false, true, false, cmask: 1, 0, false, false), // dc access cmask 1
+                    GetPerfCtlValue(0x40, 0, true, true, false, false, true, false, cmask: 2, 0, false, false), // dc access cmask 2
+                    GetPerfCtlValue(0x40, 0, true, true, false, false, true, false, cmask: 3, 0, false, false), // dc access cmask 3
+                    GetPerfCtlValue(0x41, 0x3F, true, true, false, false, true, false, 0, 0, false, false),        // lsmaballoc, load/store
+                    GetPerfCtlValue(0x41, 0x40, true, true, false, false, true, false, 0, 0, false, false),        // lsmaballoc, hwpf
+                    GetPerfCtlValue(0x29, 0b111, true, true, false, false, true, false, 0, 0, false, false)); // ls dispatch
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[cpu.GetThreadCount()][];
+                cpu.InitializeCoreTotals();
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    cpu.UpdateThreadCoreCounterData(threadIdx);
+                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
+                }
+
+                cpu.ReadPackagePowerCounter();
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                results.overallCounterValues = cpu.GetOverallCounterValues("DC Access cmask 1", "DC Access cmask 2" ,"DC Access cmask 3", "LsMabAlloc ld/st", "LsMabAlloc hwpf", "LS Dispatch");
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "L1D Active", "2 Accesses", "3 Accesses", "L1D Accesses/C", 
+                "L1D Hitrate", "L1D MPKI", "L1D Accesses/LS Dispatch" };
+
+            public string GetHelpText()
+            {
+                return "";
+            }
+
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
+            {
+                float l1daccess = (counterData.ctr0 - counterData.ctr1) + (counterData.ctr1 - counterData.ctr2) * 2 + counterData.ctr2 * 3;
+                return new string[] { label,
+                        FormatLargeNumber(counterData.aperf),
+                        FormatLargeNumber(counterData.instr),
+                        string.Format("{0:F2}", counterData.instr / counterData.aperf),
+                        FormatPercentage(counterData.ctr0, counterData.aperf),
+                        FormatPercentage(counterData.ctr1, counterData.aperf),
+                        FormatPercentage(counterData.ctr2, counterData.aperf),
+                        string.Format("{0:F2}", l1daccess / counterData.aperf),
+                        FormatPercentage(l1daccess - (counterData.ctr3 + counterData.ctr4), l1daccess),
+                        string.Format("{0:F2}", 1000 * (counterData.ctr3 + counterData.ctr4) / counterData.instr),
+                        string.Format("{0:F2}", l1daccess / counterData.ctr5)
                         };
             }
         }
