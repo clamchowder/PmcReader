@@ -671,15 +671,23 @@ namespace PmcReader.AMD
                 float dct1PageMiss = cpu.NormalizedThreadCounts[0].ctr3;
                 float dct0Bw = 64 * (dct0PageHit + dct0PageMiss);
                 float dct1Bw = 64 * (dct1PageHit + dct1PageMiss);
-                results.unitMetrics[0] = new string[] { "DCT0", FormatLargeNumber(dct0Bw) + "B/s", FormatPercentage(dct0PageHit, dct0PageHit + dct0PageMiss) };
-                results.unitMetrics[1] = new string[] { "DCT1", FormatLargeNumber(dct1Bw) + "B/s", FormatPercentage(dct1PageHit, dct1PageHit + dct1PageMiss) };
+                ulong dct0Accesses = 64*(cpu.NormalizedThreadCounts[0].totalctr0 + cpu.NormalizedThreadCounts[0].totalctr1);
+                ulong dct1Accesses = 64*(cpu.NormalizedThreadCounts[0].totalctr2 + cpu.NormalizedThreadCounts[0].totalctr3);
+                results.unitMetrics[0] = new string[] { 
+                    "DCT0", FormatLargeNumber(dct0Bw) + "B/s", FormatPercentage(dct0PageHit, dct0PageHit + dct0PageMiss), FormatLargeNumber(dct0Accesses) };
+                results.unitMetrics[1] = new string[] { 
+                    "DCT1", FormatLargeNumber(dct1Bw) + "B/s", FormatPercentage(dct1PageHit, dct1PageHit + dct1PageMiss), FormatLargeNumber(dct1Accesses) };
 
-                results.overallMetrics = new string[] { "Total", FormatLargeNumber(dct0Bw + dct1Bw) + "B/s", FormatPercentage(dct0PageHit + dct1PageHit, dct0PageHit + dct1PageHit + dct0PageMiss + dct1PageMiss) };
+                results.overallMetrics = new string[] { "Total", 
+                    FormatLargeNumber(dct0Bw + dct1Bw) + "B/s", 
+                    FormatPercentage(dct0PageHit + dct1PageHit, dct0PageHit + dct1PageHit + dct0PageMiss + dct1PageMiss),
+                    FormatLargeNumber(dct0Accesses + dct1Accesses) + "B"
+                };
                 results.overallCounterValues = cpu.GetOverallCounterValues("DCT0 Page Hit", "DCT0 Page Miss", "DCT1 Page Hit", "DCT1 Page Miss");
                 return results;
             }
 
-            public string[] columns = new string[] { "Item", "Bandwidth", "Page Hit %" };
+            public string[] columns = new string[] { "Item", "Bandwidth", "Page Hit %", "Total Data" };
 
             public string GetHelpText()
             {

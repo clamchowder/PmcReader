@@ -158,6 +158,10 @@ namespace PmcReader
                     dfLabelOverride = "Unused";
                     l3LabelOverride = "Unused";
                 }
+                else if (cpuFamily == 0x12)
+                {
+                    coreMonitoring.monitoringArea = new AMD.K10();
+                }
             }
 
             InitializeComponent();

@@ -11,6 +11,7 @@ namespace PmcReader.Intel
             configs.Add(new ArchitecturalCounters(this));
             configs.Add(new BAClears(this));
             configs.Add(new IFetch(this));
+            configs.Add(new Decode(this));
             configs.Add(new InstrPageWalk(this));
             configs.Add(new IssueHistogram(this));
             configs.Add(new BackendStall(this));
@@ -91,6 +92,79 @@ namespace PmcReader.Intel
             }
 
             public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "Pkg Pwr", "Instr/Watt", 
+                "% Branches", "BAClears/Ki", "BAClears.Cond/Ki", "BAClears.Return/Ki", "BAClears/Branch" };
+
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
+            {
+                return new string[] { label,
+                        FormatLargeNumber(counterData.activeCycles),
+                        FormatLargeNumber(counterData.instr),
+                        string.Format("{0:F2}", counterData.instr / counterData.activeCycles),
+                        string.Format("{0:F2} W", counterData.packagePower),
+                        FormatLargeNumber(counterData.instr / counterData.packagePower),
+                        FormatPercentage(counterData.pmc[1], counterData.pmc[0]),
+                        string.Format("{0:F2}", 1000 * counterData.pmc[1] / counterData.instr),
+                        string.Format("{0:F2}", 1000 * counterData.pmc[2] / counterData.instr),
+                        string.Format("{0:F2}", 1000 * counterData.pmc[3] / counterData.instr),
+                        string.Format("{0:F2}", counterData.pmc[1] / counterData.pmc[0])
+                };
+            }
+        }
+
+        public class BadSpec : MonitoringConfig
+        {
+            private GoldmontPlus cpu;
+            public string GetConfigName() { return "Bad Speculation"; }
+            public string GetHelpText() { return ""; }
+
+            public BadSpec(GoldmontPlus intelCpu)
+            {
+                cpu = intelCpu;
+            }
+
+            public string[] GetColumns()
+            {
+                return columns;
+            }
+
+            public void Initialize()
+            {
+                cpu.EnablePerformanceCounters();
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    ThreadAffinity.Set(1UL << threadIdx);
+                    ulong uopsIssued = GetPerfEvtSelRegisterValue(0xE, 0, usr: true, os: true, edge: false, pc: false, interrupt: false, anyThread: false, enable: true, invert: false, cmask: 0);
+                    Ring0.WriteMsr(IA32_PERFEVTSEL0, uopsIssued);
+
+                    ulong uopsRetired = GetPerfEvtSelRegisterValue(0xC2, 0, true, true, false, false, false, false, true, false, 0);
+                    Ring0.WriteMsr(IA32_PERFEVTSEL1, uopsRetired);
+
+                    ulong uopsNotDelivered = GetPerfEvtSelRegisterValue(0x9C, 0, true, true, false, false, false, false, true, false, 0);
+                    Ring0.WriteMsr(IA32_PERFEVTSEL2, uopsNotDelivered);
+
+                    ulong baClearsReturn = GetPerfEvtSelRegisterValue(0xE6, 0x8, true, true, false, false, false, false, true, false, 0);
+                    Ring0.WriteMsr(IA32_PERFEVTSEL3, baClearsReturn);
+                }
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[cpu.GetThreadCount()][];
+                cpu.InitializeCoreTotals();
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    cpu.UpdateThreadCoreCounterData(threadIdx);
+                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
+                }
+
+                cpu.ReadPackagePowerCounter();
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                results.overallCounterValues = cpu.GetOverallCounterValues("Branches", "BAClears", "BAClears.Cond", "BAClears.Return");
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "Pkg Pwr", "Instr/Watt",
                 "% Branches", "BAClears/Ki", "BAClears.Cond/Ki", "BAClears.Return/Ki", "BAClears/Branch" };
 
             private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
@@ -676,19 +750,19 @@ namespace PmcReader.Intel
                 for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
                 {
                     cpu.UpdateThreadCoreCounterData(threadIdx);
-                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
+                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx], null);
                 }
 
                 cpu.ReadPackagePowerCounter();
-                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts, cpu.RawTotalCounts);
                 results.overallCounterValues = cpu.GetOverallCounterValues("L2 Hit", "L2 Request", "L2Q Reject", "XQ Reject");
                 return results;
             }
 
             public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "Pkg Pwr", "Instr/Watt",
-                "L2 Hitrate", "L2 Hit BW", "L2 MPKI", "L2Q Reject/Cycles", "XQ Reject/Cycles" };
+                "L2 Hitrate", "L2 Hit BW", "L2 MPKI", "L2Q Reject/Cycles", "XQ Reject/Cycles", "Total Instructions", "Total L2 Hit Data", "Total L2 Miss Data" };
 
-            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData, RawTotalCoreCounterData totals)
             {
 
                 return new string[] { label,
@@ -701,7 +775,10 @@ namespace PmcReader.Intel
                         FormatLargeNumber(64 * counterData.pmc[0]) + "B/s",
                         string.Format("{0:F2}", 1000 * (counterData.pmc[1] - counterData.pmc[0]) / counterData.instr),
                         FormatPercentage(counterData.pmc[2], counterData.activeCycles),
-                        FormatPercentage(counterData.pmc[3], counterData.activeCycles)
+                        FormatPercentage(counterData.pmc[3], counterData.activeCycles),
+                        totals == null ? "-" : FormatLargeNumber(totals.instr),
+                        totals == null ? "-" : FormatLargeNumber(64 * totals.pmc[0]) + "B",
+                        totals == null ? "-" : FormatLargeNumber(64 * (totals.pmc[1] - totals.pmc[0])) + "B"
                 };
             }
         }
@@ -737,8 +814,8 @@ namespace PmcReader.Intel
                     ulong allStallSlots = GetPerfEvtSelRegisterValue(0xCA, 0, true, true, false, false, false, false, true, false, 0);
                     Ring0.WriteMsr(IA32_PERFEVTSEL2, allStallSlots);
 
-                    ulong mecStall = GetPerfEvtSelRegisterValue(0x9C, 0, true, true, false, false, false, false, true, false, 0);
-                    Ring0.WriteMsr(IA32_PERFEVTSEL3, mecStall);
+                    ulong uopsNotDelivered = GetPerfEvtSelRegisterValue(0x9C, 0, true, true, false, false, false, false, true, false, 0);
+                    Ring0.WriteMsr(IA32_PERFEVTSEL3, uopsNotDelivered);
                 }
             }
 
@@ -755,7 +832,7 @@ namespace PmcReader.Intel
 
                 cpu.ReadPackagePowerCounter();
                 results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
-                results.overallCounterValues = cpu.GetOverallCounterValues("Resource Full", "Recovery", "All Slots Not Consumed", "Test");
+                results.overallCounterValues = cpu.GetOverallCounterValues("Resource Full", "Recovery", "All Slots Not Consumed", "Uops Not Delivered");
                 return results;
             }
 
@@ -775,6 +852,79 @@ namespace PmcReader.Intel
                         FormatPercentage(counterData.pmc[1], totalSlots),
                         FormatPercentage(counterData.pmc[2], totalSlots),
                         FormatPercentage(counterData.pmc[3], totalSlots)
+                };
+            }
+        }
+
+        public class Decode : MonitoringConfig
+        {
+            private GoldmontPlus cpu;
+            public string GetConfigName() { return "Decode/Uops"; }
+            public string GetHelpText() { return ""; }
+
+            public Decode(GoldmontPlus intelCpu)
+            {
+                cpu = intelCpu;
+            }
+
+            public string[] GetColumns()
+            {
+                return columns;
+            }
+
+            public void Initialize()
+            {
+                cpu.EnablePerformanceCounters();
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    ThreadAffinity.Set(1UL << threadIdx);
+                    ulong predecodeWrong = GetPerfEvtSelRegisterValue(0xE9, 0x1, usr: true, os: true, edge: false, pc: false, interrupt: false, anyThread: false, enable: true, invert: false, cmask: 0);
+                    Ring0.WriteMsr(IA32_PERFEVTSEL0, predecodeWrong);
+
+                    ulong microcodeEntry = GetPerfEvtSelRegisterValue(0xE7, 0x1, true, true, false, false, false, false, true, false, 0);
+                    Ring0.WriteMsr(IA32_PERFEVTSEL1, microcodeEntry);
+
+                    ulong uopsRetired = GetPerfEvtSelRegisterValue(0xC2, 0, true, true, false, false, false, false, true, false, 0);
+                    Ring0.WriteMsr(IA32_PERFEVTSEL2, uopsRetired);
+
+                    ulong uopsIssued = GetPerfEvtSelRegisterValue(0xE, 0, true, true, false, false, false, false, true, false, 0);
+                    Ring0.WriteMsr(IA32_PERFEVTSEL3, uopsIssued);
+                }
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[cpu.GetThreadCount()][];
+                cpu.InitializeCoreTotals();
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    cpu.UpdateThreadCoreCounterData(threadIdx);
+                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
+                }
+
+                cpu.ReadPackagePowerCounter();
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                results.overallCounterValues = cpu.GetOverallCounterValues("Predecode Wrong", "MS Entry", "Uops Retired", "Uops Renamed");
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "Pkg Pwr", "Instr/Watt",
+                "Predecode Wrong", "Microcode Entry", "Bad Speculation", "Uops/Instr" };
+
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
+            {
+                float totalSlots = counterData.activeCycles * 4;
+                return new string[] { label,
+                        FormatLargeNumber(counterData.activeCycles),
+                        FormatLargeNumber(counterData.instr),
+                        string.Format("{0:F2}", counterData.instr / counterData.activeCycles),
+                        string.Format("{0:F2} W", counterData.packagePower),
+                        FormatLargeNumber(counterData.instr / counterData.packagePower),
+                        string.Format("{0:F2}", 1000 * counterData.pmc[0] / counterData.instr),
+                        string.Format("{0:F2}", 1000 * counterData.pmc[1] / counterData.instr),
+                        FormatPercentage(counterData.pmc[3] - counterData.pmc[2], counterData.pmc[3]),
+                        string.Format("{0:F2}", counterData.pmc[2] / counterData.instr)
                 };
             }
         }
