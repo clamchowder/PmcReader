@@ -15,7 +15,7 @@ namespace PmcReader.AMD
                 new Zen4TDBackend(this),
                 new BpuMonitoringConfig(this),
                 new FetchConfig(this),
-                new LoopBufferConfig(this),
+                new FrontendOpsConfig(this),
                 new DispatchStallConfig(this),
                 new DispatchStallConfig1(this),
                 new DCFillConfig(this),
@@ -576,12 +576,12 @@ namespace PmcReader.AMD
             }
         }
 
-        public class LoopBufferConfig : MonitoringConfig
+        public class FrontendOpsConfig : MonitoringConfig
         {
             private Zen4 cpu;
-            public string GetConfigName() { return "Loop Buffer"; }
+            public string GetConfigName() { return "Ops from Frontend"; }
 
-            public LoopBufferConfig(Zen4 amdCpu) { cpu = amdCpu; }
+            public FrontendOpsConfig(Zen4 amdCpu) { cpu = amdCpu; }
 
             public string[] GetColumns() { return columns; }
 
