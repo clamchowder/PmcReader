@@ -189,6 +189,22 @@ namespace PmcReader.AMD
                 Ring0.WriteMsr(MSR_PERF_CTL_3, ctr3);
                 Ring0.WriteMsr(MSR_PERF_CTL_4, ctr4);
                 Ring0.WriteMsr(MSR_PERF_CTL_5, ctr5);
+                Ring0.WriteMsr(MSR_PERF_CTR_0, 0);
+                Ring0.WriteMsr(MSR_PERF_CTR_1, 0);
+                Ring0.WriteMsr(MSR_PERF_CTR_2, 0);
+                Ring0.WriteMsr(MSR_PERF_CTR_3, 0);
+                Ring0.WriteMsr(MSR_PERF_CTR_4, 0);
+                Ring0.WriteMsr(MSR_PERF_CTR_5, 0);
+                if (this.NormalizedTotalCounts != null)
+                {
+                    // Clear totals
+                    this.NormalizedTotalCounts.ctr0total = 0;
+                    this.NormalizedTotalCounts.ctr1total = 0;
+                    this.NormalizedTotalCounts.ctr2total = 0;
+                    this.NormalizedTotalCounts.ctr3total = 0;
+                    this.NormalizedTotalCounts.ctr4total = 0;
+                    this.NormalizedTotalCounts.ctr5total = 0;
+                }
             }
         }
 
@@ -276,6 +292,13 @@ namespace PmcReader.AMD
             NormalizedThreadCounts[threadIdx].ctr4 = ctr4 * normalizationFactor;
             NormalizedThreadCounts[threadIdx].ctr5 = ctr5 * normalizationFactor;
             NormalizedThreadCounts[threadIdx].NormalizationFactor = normalizationFactor;
+            NormalizedThreadCounts[threadIdx].ctr0total += ctr0;
+            NormalizedThreadCounts[threadIdx].ctr1total += ctr1;
+            NormalizedThreadCounts[threadIdx].ctr2total += ctr2;
+            NormalizedThreadCounts[threadIdx].ctr3total += ctr3;
+            NormalizedThreadCounts[threadIdx].ctr4total += ctr4;
+            NormalizedThreadCounts[threadIdx].ctr5total += ctr5;
+
             NormalizedTotalCounts.aperf += NormalizedThreadCounts[threadIdx].aperf;
             NormalizedTotalCounts.mperf += NormalizedThreadCounts[threadIdx].mperf;
             NormalizedTotalCounts.tsc += NormalizedThreadCounts[threadIdx].tsc;
@@ -285,6 +308,12 @@ namespace PmcReader.AMD
             NormalizedTotalCounts.ctr3 += NormalizedThreadCounts[threadIdx].ctr3;
             NormalizedTotalCounts.ctr4 += NormalizedThreadCounts[threadIdx].ctr4;
             NormalizedTotalCounts.ctr5 += NormalizedThreadCounts[threadIdx].ctr5;
+            NormalizedTotalCounts.ctr0total += ctr0;
+            NormalizedTotalCounts.ctr1total += ctr1;
+            NormalizedTotalCounts.ctr2total += ctr2;
+            NormalizedTotalCounts.ctr3total += ctr3;
+            NormalizedTotalCounts.ctr4total += ctr4;
+            NormalizedTotalCounts.ctr5total += ctr5;
         }
 
         /// <summary>
@@ -437,6 +466,13 @@ namespace PmcReader.AMD
             public float ctr3;
             public float ctr4;
             public float ctr5;
+
+            public ulong ctr0total;
+            public ulong ctr1total;
+            public ulong ctr2total;
+            public ulong ctr3total;
+            public ulong ctr4total;
+            public ulong ctr5total;
 
             public float NormalizationFactor;
         }

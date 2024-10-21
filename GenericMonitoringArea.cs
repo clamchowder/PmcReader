@@ -307,7 +307,11 @@ namespace PmcReader
 
         public static string FormatLargeNumber(float n)
         {
-            if (n > 1000000000)
+            if (n > 2000000000000)
+            {
+                return string.Format("{0:F2} T", (float)n / 1000000000000);
+            }
+            else if (n > 1000000000)
             {
                 return string.Format("{0:F2} G", n / 1000000000);
             }
