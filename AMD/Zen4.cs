@@ -326,7 +326,7 @@ namespace PmcReader.AMD
                 return results;
             }
 
-            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC",  "Flops", "FMA Flops", "Mul/Add/Div Flops", "Bfloat Flops", "Total FLOPs"};
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC",  "Flops", "FMA Flops", "Mul/Add/Div Flops", "Bfloat Flops", "Total Instructions", "Total FLOPs"};
 
             public string GetHelpText()
             {
@@ -343,6 +343,7 @@ namespace PmcReader.AMD
                         FormatLargeNumber(counterData.ctr0),
                         FormatLargeNumber(counterData.ctr2),
                         FormatLargeNumber(counterData.ctr3),
+                        FormatLargeNumber(counterData.totalInstructions),
                         FormatLargeNumber(counterData.totalctr0 + counterData.totalctr2 + counterData.totalctr3),
                 };    
             }
@@ -1100,7 +1101,10 @@ namespace PmcReader.AMD
                 return results;
             }
 
-            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "Total L2 BW", "L2 Code Hitrate", "L2 Code Hit BW", "L2 Data Hitrate", "L2 Data Hit BW", "DC Prefetcher Hit BW", "L2 Prefetcher Hits" };
+            public string[] columns = new string[] { 
+                "Item", "Active Cycles", "Instructions", "IPC", 
+                "Total L2 BW", "L2 Code Hitrate", "L2 Code Hit BW", "L2 Data Hitrate", "L2 Data Hit BW", "DC PF Hit BW", "L2 PF Hit BW",
+                "Total L2 Data", "Total Instructions"};
 
             public string GetHelpText()
             {
@@ -1110,6 +1114,7 @@ namespace PmcReader.AMD
             private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
             {
                 float totalHits = counterData.ctr5 + (counterData.ctr0 - counterData.ctr1) + (counterData.ctr2 - counterData.ctr3);
+                ulong totalHitData = 64 * ((counterData.totalctr0 - counterData.totalctr1) + (counterData.totalctr2 - counterData.totalctr3));
                 return new string[] { label,
                         FormatLargeNumber(counterData.aperf),
                         FormatLargeNumber(counterData.instr),
@@ -1120,7 +1125,9 @@ namespace PmcReader.AMD
                         string.Format("{0:F2}%", 100 * (1 - counterData.ctr3 / counterData.ctr2)),
                         FormatLargeNumber(64 * (counterData.ctr2 - counterData.ctr3)) + "B/s",
                         FormatLargeNumber(counterData.ctr5 * 64) + "B/s",
-                        FormatLargeNumber(counterData.ctr4)
+                        FormatLargeNumber(counterData.ctr4 * 64) + "B/s",
+                        FormatLargeNumber(totalHitData) + "B",
+                        FormatLargeNumber(counterData.totalInstructions)
                         };
             }
         }

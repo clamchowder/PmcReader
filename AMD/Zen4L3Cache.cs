@@ -148,6 +148,8 @@ namespace PmcReader.AMD
                 float[] ccxClocks = new float[l3Cache.allCcxThreads.Count()];
                 l3Cache.ClearTotals();
                 ulong totalAperf = 0, totalMperf = 0, totalTsc = 0, totalIrPerfCount = 0;
+                List<Tuple<string, float>> overallCounterValues = new List<Tuple<string, float>>();
+
                 foreach (KeyValuePair<int, int> ccxThread in l3Cache.ccxSampleThreads)
                 {
                     // Try to determine frequency, by getting max frequency of cores in ccx
@@ -167,16 +169,28 @@ namespace PmcReader.AMD
                         {
                             l3Cache.UpdateCcxL3CounterData(ccxThread.Key, ccxThread.Value);
                             results.unitMetrics[ccxThread.Key] = computeMetrics("CCX " + ccxThread.Key, l3Cache.ccxCounterData[ccxThread.Key], ccxClocks[ccxThread.Key]);
+                            overallCounterValues.Add(new Tuple<string, float>("CCX" + ccxThread.Key + " L3 Access", l3Cache.ccxCounterData[ccxThread.Key].ctr0));
+                            overallCounterValues.Add(new Tuple<string, float>("CCX" + ccxThread.Key + " L3 Miss", l3Cache.ccxCounterData[ccxThread.Key].ctr1));
+                            overallCounterValues.Add(new Tuple<string, float>("CCX" + ccxThread.Key + " Other CCX Sampled Reqs", l3Cache.ccxCounterData[ccxThread.Key].ctr2));
+                            overallCounterValues.Add(new Tuple<string, float>("CCX" + ccxThread.Key + " Other CCX Sampled Latency", l3Cache.ccxCounterData[ccxThread.Key].ctr3));
+                            overallCounterValues.Add(new Tuple<string, float>("CCX" + ccxThread.Key + " DRAM Sampled Reqs", l3Cache.ccxCounterData[ccxThread.Key].ctr4));
+                            overallCounterValues.Add(new Tuple<string, float>("CCX" + ccxThread.Key + " DRAM Sampled Latency", l3Cache.ccxCounterData[ccxThread.Key].ctr5));
                         }
                     }
                 }
+
+                overallCounterValues.Add(new Tuple<string, float>("APERF", totalAperf));
+                overallCounterValues.Add(new Tuple<string, float>("MPERF", totalMperf));
+                overallCounterValues.Add(new Tuple<string, float>("REF_TSC", totalTsc));
+                overallCounterValues.Add(new Tuple<string, float>("IrPerfCount", totalIrPerfCount));
 
                 float avgClk = 0;
                 foreach (float ccxClock in ccxClocks) avgClk += ccxClock;
                 avgClk /= l3Cache.allCcxThreads.Count();
                 results.overallMetrics = computeMetrics("Overall", l3Cache.ccxTotals, avgClk);
-                results.overallCounterValues = l3Cache.GetOverallL3CounterValues(totalAperf, totalMperf, totalIrPerfCount, totalTsc, 
-                    "Coherent L3 Access", "L3 Miss", "Other CCX Reqs", "Other CCX Pending Reqs Per Cycle", "DRAM Reqs", "DRAM Pending Reqs Per Cycle");
+                /*results.overallCounterValues = l3Cache.GetOverallL3CounterValues(totalAperf, totalMperf, totalIrPerfCount, totalTsc, 
+                    "Coherent L3 Access", "L3 Miss", "Other CCX Reqs", "Other CCX Pending Reqs Per Cycle", "DRAM Reqs", "DRAM Pending Reqs Per Cycle");*/
+                results.overallCounterValues = overallCounterValues.ToArray();
                 return results;
             }
 

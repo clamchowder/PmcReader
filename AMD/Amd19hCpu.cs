@@ -460,12 +460,14 @@ namespace PmcReader.AMD
 
             if (NormalizedThreadCounts[threadIdx].NormalizationFactor != 0.0f)
             {
+                NormalizedThreadCounts[threadIdx].totalInstructions += instr;
                 NormalizedThreadCounts[threadIdx].totalctr0 += ctr0;
                 NormalizedThreadCounts[threadIdx].totalctr1 += ctr1;
                 NormalizedThreadCounts[threadIdx].totalctr2 += ctr2;
                 NormalizedThreadCounts[threadIdx].totalctr3 += ctr3;
                 NormalizedThreadCounts[threadIdx].totalctr4 += ctr4;
                 NormalizedThreadCounts[threadIdx].totalctr5 += ctr5;
+                NormalizedTotalCounts.totalInstructions += instr;
                 NormalizedTotalCounts.totalctr0 += ctr0;
                 NormalizedTotalCounts.totalctr1 += ctr1;
                 NormalizedTotalCounts.totalctr2 += ctr2;
@@ -925,6 +927,7 @@ namespace PmcReader.AMD
             /// <summary>
             /// Total raw counts
             /// </summary>
+            public ulong totalInstructions;
             public ulong totalctr0;
             public ulong totalctr1;
             public ulong totalctr2;
