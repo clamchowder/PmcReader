@@ -80,6 +80,12 @@ namespace PmcReader
                         l3Monitoring.monitoringArea = new Intel.AlderLakeL3();
                         dfLabelOverride = "Unused";
                     }
+                    // Meteor Lake
+                    else if (cpuModel == 0xAA)
+                    {
+                        coreMonitoring.monitoringArea = new Intel.MeteorLake();
+                        l3Monitoring.monitoringArea = new Intel.AlderLakeL3();
+                    }
                     else
                     {
                         coreMonitoring.monitoringArea = new Intel.ModernIntelCpu();
@@ -132,6 +138,12 @@ namespace PmcReader
                         dfMonitoring.monitoringArea = new AMD.Zen2DataFabric(AMD.Zen2DataFabric.DfType.Client);
                         crazyThings = new AMD.Amd17hCpu();
                     }
+                }
+                else if (cpuFamily == 0x1A)
+                {
+                    // zen 5 not handled so far, but pretend it's zen 4
+                    coreMonitoring.monitoringArea = new AMD.Zen4();
+                    l3Monitoring.monitoringArea = new AMD.Zen5L3Cache();
                 }
                 else if (cpuFamily == 0x15)
                 {
