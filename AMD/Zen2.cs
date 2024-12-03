@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics.PerformanceData;
 using PmcReader.Interop;
 
 namespace PmcReader.AMD
@@ -290,9 +291,6 @@ namespace PmcReader.AMD
             private Zen2 cpu;
             public string GetConfigName() { return "Floppy Flops"; }
             public string[] columns = new string[] { "Item", "Instructions", "IPC", "FLOPs", "FMA FLOPs", "Non-FMA FLOPs", "FLOPs/c", "FMA FLOPS/c", "Non-FMA FLOPS/c", "FP Sch Full Stall", "FP Regs Full Stall" };
-            private ulong[] lastThreadAperf;
-            private ulong[] lastThreadRetiredInstructions;
-            private long lastUpdateTime;
 
             public FlopsMonitoringConfig(Zen2 amdCpu)
             {
@@ -315,8 +313,7 @@ namespace PmcReader.AMD
             public void Initialize()
             {
                 cpu.EnablePerformanceCounters();
-                lastThreadAperf = new ulong[cpu.GetThreadCount()];
-                lastThreadRetiredInstructions = new ulong[cpu.GetThreadCount()];
+                cpu.InitializeCoreTotals();
                 for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
                 {
                     ThreadAffinity.Set(1UL << threadIdx);
@@ -346,100 +343,38 @@ namespace PmcReader.AMD
                     // PERF_CTR5 = dispatch stall because FP register file is full
                     ulong fpRegsFullStall = GetPerfCtlValue(0xAE, 0x20, true, true, false, false, true, false, 0, 0, false, false);
                     Ring0.WriteMsr(MSR_PERF_CTL_5, fpRegsFullStall);
-
-                    // Initialize last read values
-                    Ring0.ReadMsr(MSR_APERF_READONLY, out lastThreadAperf[threadIdx]);
-                    Ring0.ReadMsr(MSR_INSTR_RETIRED, out lastThreadRetiredInstructions[threadIdx]);
                 }
-
-                lastUpdateTime = DateTimeOffset.Now.ToUnixTimeMilliseconds();
             }
 
             public MonitoringUpdateResults Update()
             {
-                float normalizationFactor = cpu.GetNormalizationFactor(ref lastUpdateTime);
                 MonitoringUpdateResults results = new MonitoringUpdateResults();
                 results.unitMetrics = new string[cpu.GetThreadCount()][];
-                ulong totalMacFlops = 0;
-                ulong totalOtherFlops = 0;
-                ulong totalFpSchedulerStalls = 0;
-                ulong totalFpRegFullStalls = 0;
-                ulong totalRetiredInstructions = 0;
-                ulong totalActiveCycles = 0;
+                cpu.InitializeCoreTotals();
                 for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
                 {
-                    ulong retiredInstructions, activeCycles, elapsedRetiredInstr, elapsedActiveCycles;
-
-                    ThreadAffinity.Set(1UL << threadIdx);
-                    Ring0.ReadMsr(MSR_INSTR_RETIRED, out retiredInstructions);
-                    Ring0.ReadMsr(MSR_APERF_READONLY, out activeCycles);
-                    // "MacFLOPs count as 2 FLOPS" <-- from GB4 SGEMM, this gave counts > 32 flops/clk, so I think it already counts 2/mac op
-                    ulong retiredMacFlops = ReadAndClearMsr(MSR_PERF_CTR_0);
-                    Ring0.WriteMsr(MSR_PERF_CTR_1, 0);
-                    ulong retiredOtherFlops = ReadAndClearMsr(MSR_PERF_CTR_2);
-                    Ring0.WriteMsr(MSR_PERF_CTR_3, 0);
-                    ulong fpSchedulerFullStall = ReadAndClearMsr(MSR_PERF_CTR_4);
-                    ulong fpRegsFullStall = ReadAndClearMsr(MSR_PERF_CTR_5);
-
-                    elapsedRetiredInstr = retiredInstructions;
-                    elapsedActiveCycles = activeCycles;
-                    if (retiredInstructions > lastThreadRetiredInstructions[threadIdx])
-                        elapsedRetiredInstr = retiredInstructions - lastThreadRetiredInstructions[threadIdx];
-                    if (activeCycles > lastThreadAperf[threadIdx])
-                        elapsedActiveCycles = activeCycles - lastThreadAperf[threadIdx];
-
-                    lastThreadRetiredInstructions[threadIdx] = retiredInstructions;
-                    lastThreadAperf[threadIdx] = activeCycles;
-
-                    totalMacFlops += retiredMacFlops;
-                    totalOtherFlops += retiredOtherFlops;
-                    totalFpSchedulerStalls += fpSchedulerFullStall;
-                    totalFpRegFullStalls += fpRegsFullStall;
-                    totalRetiredInstructions += elapsedRetiredInstr;
-                    totalActiveCycles += elapsedActiveCycles;
-
-                    float threadIpc = (float)elapsedRetiredInstr / elapsedActiveCycles;
-                    float flopsPerClk = (float)(retiredMacFlops + retiredOtherFlops) / elapsedActiveCycles;
-                    float fpSchStallPct = (float)fpSchedulerFullStall / elapsedActiveCycles * 100;
-                    float fpRegsStallPct = (float)fpRegsFullStall / elapsedActiveCycles * 100;
-                    results.unitMetrics[threadIdx] = new string[] { "Thread " + threadIdx,
-                        FormatLargeNumber(elapsedRetiredInstr * normalizationFactor) + "/s",
-                        string.Format("{0:F2}", threadIpc),
-                        FormatLargeNumber(normalizationFactor * (retiredMacFlops + retiredOtherFlops)) + "/s",
-                        FormatLargeNumber(retiredMacFlops * normalizationFactor) + "/s",
-                        FormatLargeNumber(retiredOtherFlops * normalizationFactor) + "/s",
-                        string.Format("{0:F1}", flopsPerClk),
-                        string.Format("{0:F1}", (float)retiredMacFlops / elapsedActiveCycles),
-                        string.Format("{0:F1}", (float)retiredOtherFlops / elapsedActiveCycles),
-                        string.Format("{0:F2}%", fpSchStallPct),
-                        string.Format("{0:F2}%", fpRegsStallPct) };
+                    cpu.UpdateThreadCoreCounterData(threadIdx);
+                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
                 }
 
-                float overallIpc = (float)totalRetiredInstructions / totalActiveCycles;
-                float overallFlopsPerClk = (float)(totalMacFlops + totalOtherFlops) / totalActiveCycles;
-                float totalFpSchStallPct = (float)totalFpSchedulerStalls / totalActiveCycles * 100;
-                float totalFpRegsStallPct = (float)totalFpRegFullStalls / totalActiveCycles * 100;
-                results.overallMetrics = new string[] { "Overall",
-                        FormatLargeNumber(totalRetiredInstructions * normalizationFactor) + "/s",
-                        string.Format("{0:F2}", overallIpc),
-                        FormatLargeNumber(normalizationFactor * (totalMacFlops + totalOtherFlops)) + "/s",
-                        FormatLargeNumber(totalMacFlops * normalizationFactor) + "/s",
-                        FormatLargeNumber(totalOtherFlops * normalizationFactor) + "/s",
-                        string.Format("{0:F1}", overallFlopsPerClk),
-                        string.Format("{0:F1}", (float)totalMacFlops / totalActiveCycles),
-                        string.Format("{0:F1}", (float)totalOtherFlops / totalActiveCycles),
-                        string.Format("{0:F2}%", totalFpSchStallPct),
-                        string.Format("{0:F2}%", totalFpRegsStallPct) };
-
-                Tuple<string, float>[] overallCounterValues = new Tuple<string, float>[6];
-                overallCounterValues[0] = new Tuple<string, float>("APERF", totalActiveCycles);
-                overallCounterValues[1] = new Tuple<string, float>("IRPerfCount", totalRetiredInstructions);
-                overallCounterValues[2] = new Tuple<string, float>("FMA FLOPS", totalMacFlops);
-                overallCounterValues[3] = new Tuple<string, float>("Non-FMA FLOPS", totalOtherFlops);
-                overallCounterValues[4] = new Tuple<string, float>("FP Scheduler Full", totalFpSchedulerStalls);
-                overallCounterValues[5] = new Tuple<string, float>("FP Regs Full", totalFpRegFullStalls);
-                results.overallCounterValues = overallCounterValues;
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                results.overallCounterValues = cpu.GetOverallCounterValues("MAC FLOPs", "(merge)", "Non-MAC FLOPs", "(merge)", "FP Scheduler Full", "FP Registers Full");
                 return results;
+            }
+
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
+            {
+                return new string[] { "Overall",
+                        FormatLargeNumber(counterData.aperf) + "/s",
+                        string.Format("{0:F2}", counterData.instr / counterData.aperf),
+                        FormatLargeNumber(counterData.ctr0 + counterData.ctr2) + "/s",
+                        FormatLargeNumber(counterData.ctr0) + "/s",
+                        FormatLargeNumber(counterData.ctr2) + "/s",
+                        string.Format("{0:F1}", (counterData.ctr0 + counterData.ctr2) / counterData.aperf),
+                        string.Format("{0:F1}", counterData.ctr0 / counterData.aperf),
+                        string.Format("{0:F1}", (float)counterData.ctr2 / counterData.aperf),
+                        string.Format("{0:F2}%", counterData.ctr4 / counterData.aperf),
+                        string.Format("{0:F2}%", counterData.ctr5 / counterData.aperf) };
             }
         }
 

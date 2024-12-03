@@ -441,7 +441,7 @@ namespace PmcReader.AMD
             }
 
             public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC",
-                "L2 Hitrate", "L2 Hit BW", "L2 MPKI" };
+                "L2 Hitrate", "L2 Hit BW", "L2 MPKI", "Total L2 Hit Data" };
 
             public string GetHelpText()
             {
@@ -453,13 +453,16 @@ namespace PmcReader.AMD
                 float instr = counterData.ctr3;
                 float cycles = counterData.ctr2;
                 float L2Hits = counterData.ctr0 - counterData.ctr1;
+                float totalL2Hits = counterData.ctr0total - counterData.ctr1total;
                 return new string[] { label,
                         FormatLargeNumber(cycles),
                         FormatLargeNumber(instr),
                         string.Format("{0:F2}", instr / cycles),
                         FormatPercentage(L2Hits, counterData.ctr0),
                         FormatLargeNumber(64 * L2Hits) + "B/s",
-                        string.Format("{0:F2}", 1000 * counterData.ctr1 / instr)};
+                        string.Format("{0:F2}", 1000 * counterData.ctr1 / instr),
+                        FormatLargeNumber(64 * totalL2Hits) + "B",
+                };
             }
         }
 

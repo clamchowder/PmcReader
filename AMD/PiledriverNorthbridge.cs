@@ -29,7 +29,14 @@ namespace PmcReader.AMD
             Ring0.WriteMsr(MSR_NB_PERF_CTL_1, ctr1);
             Ring0.WriteMsr(MSR_NB_PERF_CTL_2, ctr2);
             Ring0.WriteMsr(MSR_NB_PERF_CTL_3, ctr3);
+            Ring0.WriteMsr(MSR_NB_PERF_CTR_0, 0);
+            Ring0.WriteMsr(MSR_NB_PERF_CTR_1, 0);
+            Ring0.WriteMsr(MSR_NB_PERF_CTR_2, 0);
+            Ring0.WriteMsr(MSR_NB_PERF_CTR_3, 0);
+            this.nbCounterData = new NormalizedNbCounterData();
         }
+
+        private NormalizedNbCounterData nbCounterData = null;
 
         private NormalizedNbCounterData UpdateNbPerfCounterData()
         {
@@ -39,11 +46,16 @@ namespace PmcReader.AMD
             ulong ctr2 = ReadAndClearMsr(MSR_NB_PERF_CTR_2);
             ulong ctr3 = ReadAndClearMsr(MSR_NB_PERF_CTR_3);
 
-            NormalizedNbCounterData counterData = new NormalizedNbCounterData();
+            if (nbCounterData == null) nbCounterData = new NormalizedNbCounterData();
+            NormalizedNbCounterData counterData = nbCounterData;
             counterData.ctr0 = ctr0 * normalizationFactor;
             counterData.ctr1 = ctr1 * normalizationFactor;
             counterData.ctr2 = ctr2 * normalizationFactor;
             counterData.ctr3 = ctr3 * normalizationFactor;
+            counterData.ctr0total += ctr0;
+            counterData.ctr1total += ctr1;
+            counterData.ctr2total += ctr2;
+            counterData.ctr3total += ctr3;
             return counterData;
         }
 
@@ -67,6 +79,11 @@ namespace PmcReader.AMD
             public float ctr2;
             public float ctr3;
 
+            public ulong ctr0total;
+            public ulong ctr1total;
+            public ulong ctr2total;
+            public ulong ctr3total;
+
             public float NormalizationFactor;
         }
 
@@ -74,7 +91,7 @@ namespace PmcReader.AMD
         {
             private PiledriverNorthbridge dataFabric;
 
-            public string[] columns = new string[] { "Item", "Count * 64B", "Count" };
+            public string[] columns = new string[] { "Item", "Count * 64B", "Count", "Total Data" };
             public string GetHelpText() { return ""; }
             public MemBwConfig(PiledriverNorthbridge dataFabric)
             {
@@ -98,13 +115,30 @@ namespace PmcReader.AMD
                 NormalizedNbCounterData counterData = dataFabric.UpdateNbPerfCounterData();
 
                 results.unitMetrics = new string[4][];
-                results.unitMetrics[0] = new string[] { "DCT0 Page Hit", FormatLargeNumber(counterData.ctr0 * 64) + "B/s", FormatLargeNumber(counterData.ctr0) };
-                results.unitMetrics[1] = new string[] { "DCT0 Page Miss", FormatLargeNumber(counterData.ctr1 * 64) + "B/s", FormatLargeNumber(counterData.ctr1) };
-                results.unitMetrics[2] = new string[] { "DCT1 Page Hit", FormatLargeNumber(counterData.ctr2 * 64) + "B/s", FormatLargeNumber(counterData.ctr2) };
-                results.unitMetrics[3] = new string[] { "DCT1 Page Miss", FormatLargeNumber(counterData.ctr3 * 64) + "B/s", FormatLargeNumber(counterData.ctr3) };
+                results.unitMetrics[0] = new string[] { "DCT0 Page Hit", 
+                    FormatLargeNumber(counterData.ctr0 * 64) + "B/s",
+                    FormatLargeNumber(counterData.ctr0),
+                    FormatLargeNumber(counterData.ctr0total * 64) + "B",
+                };
+                results.unitMetrics[1] = new string[] { "DCT0 Page Miss", 
+                    FormatLargeNumber(counterData.ctr1 * 64) + "B/s", 
+                    FormatLargeNumber(counterData.ctr1),
+                    FormatLargeNumber(counterData.ctr1total * 64) + "B",
+                };
+                results.unitMetrics[2] = new string[] { "DCT1 Page Hit", 
+                    FormatLargeNumber(counterData.ctr2 * 64) + "B/s", 
+                    FormatLargeNumber(counterData.ctr2),
+                    FormatLargeNumber(counterData.ctr2total * 64) + "B",
+                };
+                results.unitMetrics[3] = new string[] { "DCT1 Page Miss", 
+                    FormatLargeNumber(counterData.ctr3 * 64) + "B/s", 
+                    FormatLargeNumber(counterData.ctr3),
+                    FormatLargeNumber(counterData.ctr3total * 64) + "B",
+                };
 
                 float totalReqs = counterData.ctr0 + counterData.ctr1 + counterData.ctr2 + counterData.ctr3;
-                results.overallMetrics = new string[] { "Overall", FormatLargeNumber(totalReqs * 64) + "B/s", FormatLargeNumber(totalReqs) };
+                float totalCumulativeReqs = counterData.ctr0total + counterData.ctr1total + counterData.ctr2total + counterData.ctr3total;
+                results.overallMetrics = new string[] { "Overall", FormatLargeNumber(totalReqs * 64) + "B/s", FormatLargeNumber(totalReqs), FormatLargeNumber(64 * totalCumulativeReqs) + "B" };
 
                 results.overallCounterValues = dataFabric.GetOverallCounterValues(counterData, "DCT0 Page Hit", "DCT0 Page Miss", "DCT1 Page Hit", "DCT1 Page Miss");
                 return results;
@@ -155,7 +189,7 @@ namespace PmcReader.AMD
         {
             private PiledriverNorthbridge dataFabric;
 
-            public string[] columns = new string[] { "Item", "Hitrate", "Hit BW", "L3 Fill BW", "L3 Evictions, Writeback", "Total L3 BW" };
+            public string[] columns = new string[] { "Item", "Hitrate", "Hit BW", "L3 Fill BW", "L3 Evictions, Writeback", "Total L3 BW", "Total L3 Data" };
             public string GetHelpText() { return ""; }
             public L3Config(PiledriverNorthbridge dataFabric)
             {
@@ -181,12 +215,14 @@ namespace PmcReader.AMD
                 results.unitMetrics = null;
 
                 float l3Hits = counterData.ctr0 - counterData.ctr1;
+                float totalL3Hits = counterData.ctr0total - counterData.ctr1total;
                 results.overallMetrics = new string[] { "Overall", 
                     FormatPercentage(l3Hits, counterData.ctr0), 
                     FormatLargeNumber(64 * l3Hits) + "B/s",
                     FormatLargeNumber(64 * counterData.ctr2) + "B/s",
                     FormatLargeNumber(64 * counterData.ctr3) + "B/s",
-                    FormatLargeNumber(64 * (l3Hits + counterData.ctr2 + counterData.ctr3)) + "B/s"
+                    FormatLargeNumber(64 * (l3Hits + counterData.ctr2 + counterData.ctr3)) + "B/s",
+                    FormatLargeNumber(64 * (l3Hits + counterData.ctr2total + counterData.ctr3total)) + "B",
                 };
 
                 results.overallCounterValues = dataFabric.GetOverallCounterValues(counterData, "L3 Read Request", "L3 Miss", "L3 Fill", "L3 Eviction, Modified");

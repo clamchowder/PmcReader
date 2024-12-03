@@ -120,6 +120,7 @@ namespace PmcReader
                     if (cpuModel == 0x61)
                     {
                         coreMonitoring.monitoringArea = new AMD.Zen4();
+                        //coreMonitoring.monitoringArea = new AMD.Zen2();
                         l3Monitoring.monitoringArea = new AMD.Zen4L3Cache();
                         dfMonitoring.monitoringArea = new AMD.Zen4DataFabric(AMD.Zen4DataFabric.DfType.Client);
                         crazyThings = new AMD.Amd19hCpu();
