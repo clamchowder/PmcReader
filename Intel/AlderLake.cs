@@ -13,20 +13,20 @@ namespace PmcReader.Intel
         {
             List<MonitoringConfig> configs = new List<MonitoringConfig>();
             architectureName = "Alder Lake";
-            if (cores.Length > 1)
+            if (coreTypes.Length > 1)
                 architectureName += " (Hybrid)";
 
             // Fix enumeration vs HW support
-            for (byte coreIdx = 0; coreIdx < cores.Length; coreIdx++)
+            for (byte coreIdx = 0; coreIdx < coreTypes.Length; coreIdx++)
             {
-                if (cores[coreIdx].Type == ADL_P_CORE_TYPE)
+                if (coreTypes[coreIdx].Type == ADL_P_CORE_TYPE)
                 {
-                    cores[coreIdx].Name = "P-Core";
+                    coreTypes[coreIdx].Name = "P-Core";
                 }
-                if (cores[coreIdx].Type == ADL_E_CORE_TYPE)
+                if (coreTypes[coreIdx].Type == ADL_E_CORE_TYPE)
                 {
-                    cores[coreIdx].AllocWidth = 5;
-                    cores[coreIdx].Name = "E-Core";
+                    coreTypes[coreIdx].AllocWidth = 5;
+                    coreTypes[coreIdx].Name = "E-Core";
                 }
             }
 
@@ -34,15 +34,15 @@ namespace PmcReader.Intel
             configs.Add(new ArchitecturalCounters(this));
             configs.Add(new RetireHistogram(this));
             configs.Add(new LoadDataSources(this));
-            for (byte coreIdx = 0; coreIdx < cores.Length; coreIdx++)
+            for (byte coreIdx = 0; coreIdx < coreTypes.Length; coreIdx++)
             {
-                if (cores[coreIdx].Type == ADL_P_CORE_TYPE)
+                if (coreTypes[coreIdx].Type == ADL_P_CORE_TYPE)
                 {
-                    cores[coreIdx].Name = "P-Core";
+                    coreTypes[coreIdx].Name = "P-Core";
                     configs.Add(new PCoreVector(this));
                     configs.Add(new PCorePowerLicense(this));
                 }
-                if (cores[coreIdx].Type == ADL_E_CORE_TYPE)
+                if (coreTypes[coreIdx].Type == ADL_E_CORE_TYPE)
                 {
                     configs.Add(new ECoresTopDown(this));
                     configs.Add(new ECoresMemExec(this));
@@ -64,7 +64,7 @@ namespace PmcReader.Intel
             public PCoreVector(AlderLake intelCpu)
             {
                 cpu = intelCpu;
-                foreach (CoreType type in cpu.cores)
+                foreach (CoreType type in cpu.coreTypes)
                 {
                     if (type.Type == ADL_P_CORE_TYPE)
                     {
@@ -154,7 +154,7 @@ namespace PmcReader.Intel
             public PCorePowerLicense(AlderLake intelCpu)
             {
                 cpu = intelCpu;
-                foreach (CoreType type in cpu.cores)
+                foreach (CoreType type in cpu.coreTypes)
                 {
                     if (type.Type == ADL_P_CORE_TYPE)
                     {
@@ -241,7 +241,7 @@ namespace PmcReader.Intel
             public ECoresMemExec(AlderLake intelCpu)
             {
                 cpu = intelCpu;
-                foreach (CoreType type in cpu.cores)
+                foreach (CoreType type in cpu.coreTypes)
                 {
                     if (type.Type == ADL_E_CORE_TYPE)
                     {
@@ -329,7 +329,7 @@ namespace PmcReader.Intel
             public ECoresBackendBound(AlderLake intelCpu)
             {
                 cpu = intelCpu;
-                foreach (CoreType type in cpu.cores)
+                foreach (CoreType type in cpu.coreTypes)
                 {
                     if (type.Type == ADL_E_CORE_TYPE)
                     {
@@ -438,7 +438,7 @@ namespace PmcReader.Intel
                 pmc[2] = GetPerfEvtSelRegisterValue(0xD1, 0x04); // l3Hit
                 pmc[3] = GetPerfEvtSelRegisterValue(0xD1, 0x20); // l3Miss
 
-                foreach (CoreType coreType in cpu.cores)
+                foreach (CoreType coreType in cpu.coreTypes)
                 {
                     if (coreType.Type == ADL_P_CORE_TYPE)
                     {
@@ -510,7 +510,7 @@ namespace PmcReader.Intel
             public ECoresTopDown(AlderLake intelCpu)
             {
                 cpu = intelCpu;
-                foreach (CoreType type in cpu.cores)
+                foreach (CoreType type in cpu.coreTypes)
                 {
                     if (type.Type == ADL_E_CORE_TYPE)
                     {
@@ -601,7 +601,7 @@ namespace PmcReader.Intel
             public ECoresFEBound(AlderLake intelCpu)
             {
                 cpu = intelCpu;
-                foreach (CoreType type in cpu.cores)
+                foreach (CoreType type in cpu.coreTypes)
                 {
                     if (type.Type == ADL_E_CORE_TYPE)
                     {
@@ -689,7 +689,7 @@ namespace PmcReader.Intel
             public ECoresBadSpec(AlderLake intelCpu)
             {
                 cpu = intelCpu;
-                foreach (CoreType type in cpu.cores)
+                foreach (CoreType type in cpu.coreTypes)
                 {
                     if (type.Type == ADL_E_CORE_TYPE)
                     {
@@ -776,7 +776,7 @@ namespace PmcReader.Intel
             public ECoresLdHead(AlderLake intelCpu)
             {
                 cpu = intelCpu;
-                foreach (CoreType type in cpu.cores)
+                foreach (CoreType type in cpu.coreTypes)
                 {
                     if (type.Type == ADL_E_CORE_TYPE)
                     {

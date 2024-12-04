@@ -97,7 +97,7 @@ namespace PmcReader.Interop
 
         public bool Open()
         {
-            _device = new SafeFileHandle(Kernel32.CreateFile(@"\\.\" + _id, 0xC0000000, FileShare.None, IntPtr.Zero, FileMode.Open, FileAttributes.Normal, IntPtr.Zero), true);
+            _device = new SafeFileHandle(Kernel32.CreateFile(@"\\.\" + _id, 0xC0000000, FileShare.ReadWrite, IntPtr.Zero, FileMode.Open, FileAttributes.Normal, IntPtr.Zero), true);
             if (_device.IsInvalid)
             {
                 _device.Close();

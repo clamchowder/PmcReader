@@ -294,7 +294,7 @@ namespace PmcReader.AMD
                 return results;
             }
 
-            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "L2 Hitrate", "L2 MPKI", "L2 Hit BW" };
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "L2 Hitrate", "L2 MPKI", "L2 Hit BW", "Total Instructions", "Total L2 Hit Data" };
 
             public string GetHelpText()
             {
@@ -311,7 +311,10 @@ namespace PmcReader.AMD
                         string.Format("{0:F2}", instr / cycles),
                         string.Format("{0:F2}%", 100 * (1 - counterData.ctr3 / counterData.ctr2)),
                         string.Format("{0:F2}", counterData.ctr3 / instr * 1000),
-                        FormatLargeNumber(64 * (counterData.ctr2 - counterData.ctr3)) + "B/s"};
+                        FormatLargeNumber(64 * (counterData.ctr2 - counterData.ctr3)) + "B/s",
+                        FormatLargeNumber(counterData.totalctr1),
+                        FormatLargeNumber(64 * (counterData.totalctr2 - counterData.totalctr3)) + "B"
+                };
             }
         }
 

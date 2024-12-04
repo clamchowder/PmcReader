@@ -65,7 +65,10 @@
     <Compile Include="AMD\Zen2.cs" />
     <Compile Include="AMD\Zen1.cs" />
     <Compile Include="AMD\Zen2DataFabric.cs" />
+    <Compile Include="AMD\Zen5L3Cache.cs" />
     <Compile Include="AMD\Zen4L3Cache.cs" />
+    <Compile Include="AMD\Zen5.cs" />
+    <Compile Include="AMD\Zen5L3Cache.cs" />
     <Compile Include="AMD\ZenL3Cache.cs" />
     <Compile Include="AMD\Zen2L3Cache.cs" />
     <Compile Include="Cpu.cs" />
@@ -76,6 +79,8 @@
     <Compile Include="HaswellForm.Designer.cs">
       <DependentUpon>HaswellForm.cs</DependentUpon>
     </Compile>
+    <Compile Include="Intel\MeteorLakeArb.cs" />
+    <Compile Include="Intel\MeteorLake.cs" />
     <Compile Include="Intel\HaswellEL3.cs" />
     <Compile Include="Intel\GoldmontPlus.cs" />
     <Compile Include="Intel\AlderLake.cs" />
