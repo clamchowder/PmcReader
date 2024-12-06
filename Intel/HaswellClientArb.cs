@@ -23,13 +23,13 @@ namespace PmcReader.Intel
             public float ctr1;
         }
 
-        public NormalizedArbCounterData UpdateArbCounterData()
+        public NormalizedArbCounterData UpdateArbCounterData(out ulong ctr0, out ulong ctr1)
         {
             NormalizedArbCounterData rc = new NormalizedArbCounterData();
             float normalizationFactor = GetNormalizationFactor(0);
             ulong uncoreClock, elapsedUncoreClocks;
-            ulong ctr0 = ReadAndClearMsr(MSR_UNC_ARB_PERFCTR0);
-            ulong ctr1 = ReadAndClearMsr(MSR_UNC_ARB_PERFCTR1);
+            ctr0 = ReadAndClearMsr(MSR_UNC_ARB_PERFCTR0);
+            ctr1 = ReadAndClearMsr(MSR_UNC_ARB_PERFCTR1);
             Ring0.ReadMsr(MSR_UNC_PERF_FIXED_CTR, out uncoreClock);
 
             // MSR_UNC_PERF_FIXED_CTR is 48 bits wide, upper bits are reserved
@@ -57,11 +57,13 @@ namespace PmcReader.Intel
         public class MCRequests : MonitoringConfig
         {
             private HaswellClientArb cpu;
+            private ulong totalReqs;
             public string GetConfigName() { return "All MC Requests"; }
 
             public MCRequests(HaswellClientArb intelCpu)
             {
                 cpu = intelCpu;
+                this.totalReqs = 0;
             }
 
             public string[] GetColumns()
@@ -81,27 +83,32 @@ namespace PmcReader.Intel
                 // 0x81 = number of requests
                 Ring0.WriteMsr(MSR_UNC_ARB_PERFEVTSEL1,
                     GetUncorePerfEvtSelRegisterValue(0x81, 1, false, false, true, false, 0));
+
+                Ring0.WriteMsr(MSR_UNC_ARB_PERFCTR0, 0);
+                Ring0.WriteMsr(MSR_UNC_ARB_PERFCTR1, 0);
             }
 
             public MonitoringUpdateResults Update()
             {
                 MonitoringUpdateResults results = new MonitoringUpdateResults();
                 results.unitMetrics = null;
-                NormalizedArbCounterData counterData = cpu.UpdateArbCounterData();
+                NormalizedArbCounterData counterData = cpu.UpdateArbCounterData(out ulong _, out ulong reqs);
+                this.totalReqs += reqs;
 
                 results.overallMetrics = new string[] { FormatLargeNumber(counterData.uncoreClock),
                     FormatLargeNumber(counterData.ctr1),
                     FormatLargeNumber(counterData.ctr1 * 64) + "B/s",
                     string.Format("{0:F2}", counterData.ctr0 / counterData.uncoreClock),
                     string.Format("{0:F2} clk", counterData.ctr0 / counterData.ctr1),
-                    string.Format("{0:F2} ns", (1000000000 / counterData.uncoreClock) * (counterData.ctr0 / counterData.ctr1))
+                    string.Format("{0:F2} ns", (1000000000 / counterData.uncoreClock) * (counterData.ctr0 / counterData.ctr1)),
+                    FormatLargeNumber(totalReqs * 64) + "B"
                 };
                 results.overallCounterValues = cpu.GetOverallCounterValues(counterData, "Pending Requests Per Cycle", "Requests");
                 return results;
             }
 
             public string GetHelpText() { return ""; }
-            public string[] columns = new string[] { "Clk", "Requests", "Req*64B", "Q Occupancy", "Req Latency", "Req Latency" };
+            public string[] columns = new string[] { "Clk", "Requests", "Req*64B", "Q Occupancy", "Req Latency", "Req Latency", "Total Req Data" };
         }
 
         public class CoherencyRequests : MonitoringConfig
@@ -135,7 +142,7 @@ namespace PmcReader.Intel
             {
                 MonitoringUpdateResults results = new MonitoringUpdateResults();
                 results.unitMetrics = null;
-                NormalizedArbCounterData counterData = cpu.UpdateArbCounterData();
+                NormalizedArbCounterData counterData = cpu.UpdateArbCounterData(out _, out _);
 
                 results.overallMetrics = new string[] { FormatLargeNumber(counterData.uncoreClock),
                     FormatLargeNumber(counterData.ctr1),

@@ -35,10 +35,11 @@ namespace PmcReader
             {
                 if (cpuFamily == 0x6)
                 {
-                    if (cpuModel == 0x46 || cpuModel == 0x45 || cpuModel == 0x3C || cpuModel == 0x3F)
+                    // 0x3D is broadwell but eh, close enough. Most of the events are the same
+                    if (cpuModel == 0x46 || cpuModel == 0x45 || cpuModel == 0x3C || cpuModel == 0x3F || cpuModel == 0x3D)
                     {
                         coreMonitoring.monitoringArea = new Intel.Haswell();
-                        if (cpuModel == 0x46 || cpuModel == 0x45 || cpuModel == 0x3C)
+                        if (cpuModel == 0x46 || cpuModel == 0x45 || cpuModel == 0x3C || cpuModel == 0x3D)
                         {
                             l3Monitoring.monitoringArea = new Intel.HaswellClientL3();
                             dfMonitoring.monitoringArea = new Intel.HaswellClientArb();
