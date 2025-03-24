@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Diagnostics.Eventing.Reader;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -86,6 +87,10 @@ namespace PmcReader
                     {
                         coreMonitoring.monitoringArea = new Intel.MeteorLake();
                         l3Monitoring.monitoringArea = new Intel.AlderLakeL3();
+                    }
+                    else if (cpuModel == 0xC6)
+                    {
+                        coreMonitoring.monitoringArea = new Intel.ArrowLake();
                     }
                     else
                     {
