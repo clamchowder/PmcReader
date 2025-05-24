@@ -148,9 +148,14 @@ namespace PmcReader
                         crazyThings = new AMD.Amd19hCpu();
                     }
                 }
+                else if (cpuFamily == 0x16)
+                {
+                    // Jaguar/Beema/Mullins/Puma
+                    coreMonitoring.monitoringArea = new AMD.Jaguar();
+                }
                 else if (cpuFamily == 0x15)
                 {
-                    if (cpuModel == 0x2)
+                    if (cpuModel == 0x2 || cpuModel == 0x10)
                     {
                         coreMonitoring.monitoringArea = new AMD.Piledriver();
                         l3Monitoring.monitoringArea = new AMD.PiledriverNorthbridge();
