@@ -145,6 +145,7 @@ namespace PmcReader
                     {
                         coreMonitoring.monitoringArea = new AMD.Zen5();
                         l3Monitoring.monitoringArea = new AMD.Zen5L3Cache();
+                        dfMonitoring.monitoringArea = new AMD.Zen5DataFabric(AMD.Zen5DataFabric.DfType.Client);
                         crazyThings = new AMD.Amd19hCpu();
                     }
                 }

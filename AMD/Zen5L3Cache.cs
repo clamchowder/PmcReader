@@ -106,6 +106,16 @@ namespace PmcReader.AMD
             public string[] GetColumns() { return columns; }
             public void Initialize()
             {
+
+                foreach (KeyValuePair<int, int> ccxThread in l3Cache.ccxSampleThreads)
+                {
+                    ThreadAffinity.Set(1UL << ccxThread.Value);
+                    InitializeThread();
+                }
+            }
+
+            private void InitializeThread()
+            {
                 // L3 tag lookup state, all coherent accesses to L3
                 ulong L3AccessPerfCtl = Get1AhL3PerfCtlValue(0x4, 0xFF, true, 0, true, true, 0, threadMask: 3);
                 ulong L3MissPerfCtl = Get1AhL3PerfCtlValue(0x4, 1, true, 0, true, true, 0, threadMask: 3);
@@ -118,16 +128,13 @@ namespace PmcReader.AMD
                 ulong L3MissLatencyDramReqs = Get19hL3PerfCtlValue(0xAD, 0b11, true, 0, true, enableAllSlices: true, sliceId: 0x3, 0b11);
                 ulong L3MissLatencyDram = Get19hL3PerfCtlValue(0xAC, 0b11, true, 0, true, enableAllSlices: true, sliceId: 0x3, 0b11);
 
-                foreach (KeyValuePair<int, int> ccxThread in l3Cache.ccxSampleThreads)
-                {
-                    ThreadAffinity.Set(1UL << ccxThread.Value);
-                    Ring0.WriteMsr(MSR_L3_PERF_CTL_0, L3AccessPerfCtl);
-                    Ring0.WriteMsr(MSR_L3_PERF_CTL_1, L3MissPerfCtl);
-                    Ring0.WriteMsr(MSR_L3_PERF_CTL_2, L3MissLatencyOtherCacheReqs);
-                    Ring0.WriteMsr(MSR_L3_PERF_CTL_3, L3MissLatencyOtherCache);
-                    Ring0.WriteMsr(MSR_L3_PERF_CTL_4, L3MissLatencyDramReqs);
-                    Ring0.WriteMsr(MSR_L3_PERF_CTL_5, L3MissLatencyDram);
-                }
+                Ring0.WriteMsr(MSR_L3_PERF_CTL_0, L3AccessPerfCtl);
+                Ring0.WriteMsr(MSR_L3_PERF_CTL_1, L3MissPerfCtl);
+                Ring0.WriteMsr(MSR_L3_PERF_CTL_2, L3MissLatencyOtherCacheReqs);
+                Ring0.WriteMsr(MSR_L3_PERF_CTL_3, L3MissLatencyOtherCache);
+                Ring0.WriteMsr(MSR_L3_PERF_CTL_4, L3MissLatencyDramReqs);
+                Ring0.WriteMsr(MSR_L3_PERF_CTL_5, L3MissLatencyDram);
+
             }
 
             public MonitoringUpdateResults Update()
@@ -157,6 +164,7 @@ namespace PmcReader.AMD
                         if (ccxThreadIdx == ccxThread.Value)
                         {
                             l3Cache.UpdateCcxL3CounterData(ccxThread.Key, ccxThread.Value);
+                            InitializeThread(); // somehow these get cleared every once in a while?
                             results.unitMetrics[ccxThread.Key] = computeMetrics("CCX " + ccxThread.Key, l3Cache.ccxCounterData[ccxThread.Key], ccxClocks[ccxThread.Key]);
                             overallCounterValues.Add(new Tuple<string, float>("CCX" + ccxThread.Key + " L3 Access", l3Cache.ccxCounterData[ccxThread.Key].ctr0));
                             overallCounterValues.Add(new Tuple<string, float>("CCX" + ccxThread.Key + " L3 Miss", l3Cache.ccxCounterData[ccxThread.Key].ctr1));

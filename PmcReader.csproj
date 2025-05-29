@@ -60,6 +60,7 @@
     <Compile Include="AMD\Bulldozer.cs" />
     <Compile Include="AMD\Piledriver.cs" />
     <Compile Include="AMD\PiledriverNorthbridge.cs" />
+    <Compile Include="AMD\Zen5DataFabric.cs" />
     <Compile Include="AMD\Zen4DataFabric.cs" />
     <Compile Include="AMD\Zen4.cs" />
     <Compile Include="AMD\Zen3L3Cache.cs" />
