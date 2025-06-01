@@ -401,23 +401,24 @@ namespace PmcReader.Intel
                 for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
                 {
                     cpu.UpdateThreadCoreCounterData(threadIdx);
-                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
+                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx], null);
                 }
 
                 cpu.ReadPackagePowerCounter();
-                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts, cpu.RawTotalCounts);
                 results.overallCounterValues = cpu.GetOverallCounterValues("L2 References", "L2 Misses", "L2 Lines In", "L2 Dirty Lines Evicted");
                 return results;
             }
 
-            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "Pkg Pwr", "Instr/Watt", "IPC", "L2 Hitrate", "L2 Hit BW", "L2 Fill BW", "L2 Writeback BW" };
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "Pkg Pwr", "Instr/Watt", "IPC", 
+                "L2 Hitrate", "L2 Hit BW", "L2 Fill BW", "L2 Writeback BW", "Total Instructions", "L2 Hit Data", "L2 Fill/WB Data" };
 
             public string GetHelpText()
             {
                 return "";
             }
 
-            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData, RawTotalCoreCounterData totals)
             {
                 return new string[] { label,
                         FormatLargeNumber(counterData.activeCycles),
@@ -429,6 +430,9 @@ namespace PmcReader.Intel
                         FormatLargeNumber((counterData.pmc[0] - counterData.pmc[1]) * 64) + "B",
                         FormatLargeNumber(counterData.pmc[2] * 64) + "B",
                         FormatLargeNumber(counterData.pmc[3] * 64) + "B",
+                        totals == null ? string.Empty : FormatLargeNumber(totals.instr),
+                        totals == null ? string.Empty : FormatLargeNumber((totals.pmc[0] - totals.pmc[1]) * 64) + "B",
+                        totals == null ? string.Empty : FormatLargeNumber((totals.pmc[2] +  totals.pmc[3]) * 64) + "B"
                 };
             }
         }

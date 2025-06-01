@@ -22,7 +22,8 @@ namespace PmcReader.Intel
             // intel developer manual table 2-30 says bits 0-3 encode number of C-Box
             // "subtract one to determine number of CBo units"
             Ring0.ReadMsr(MSR_UNC_CBO_CONFIG, out cboConfig);
-            CboCount = (int)((cboConfig & 0xF) - 1);
+            if ((cboConfig & 0xF) == 10) CboCount = 10;
+            else CboCount = (int)((cboConfig & 0xF) - 1); // but not for the 109000k?
             cboData = new NormalizedCboCounterData[CboCount];
 
             List<MonitoringConfig> monitoringConfigList = new List<MonitoringConfig>();

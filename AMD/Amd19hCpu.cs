@@ -44,9 +44,9 @@ namespace PmcReader.AMD
         public const uint MSR_DF_PERF_CTR_1 = 0xC0010243;
         public const uint MSR_DF_PERF_CTR_2 = 0xC0010245;
         public const uint MSR_DF_PERF_CTR_3 = 0xC0010247;
-        public const uint MSR_UMC_PERF_CTL_base = 0x10800;
+        public const uint MSR_UMC_PERF_CTL_base = 0xC0010800;
         public const uint MSR_UMC_PERF_increment = 2;
-        public const uint MSR_UMC_PERF_CTR_base = 0x10801;
+        public const uint MSR_UMC_PERF_CTR_base = 0xC0010801;
 
         public const uint MSR_RAPL_PWR_UNIT = 0xC0010299;
         public const uint MSR_CORE_ENERGY_STAT = 0xC001029A;
@@ -211,6 +211,35 @@ namespace PmcReader.AMD
                 (enable ? 1UL : 0UL) << 22 |
                 (ulong)umaskHi << 24 |
                 (ulong)perfEventHi << 32;
+        }
+
+        /// <summary>
+        /// Get DF bandwidth event select MSR value
+        /// </summary>
+        /// <param name="instanceId">0-11: CS (UMC), 12-15: CS (CXL), 0x10-0x17: CCM0-7, 0x35-0x3A: LINK</param>
+        /// <param name="read">true = count read, false = count write</param>
+        /// <returns>perf ctl value</returns>
+        public static ulong GetDFBandwidthPerfCtlValue(byte instanceId, bool read)
+        {
+            // event is split 0:7, 32:38, for 14 bits total
+            // bits 0:5 = event encoding, only DATA_BW (0x1F) is documented
+            ulong ctlValue = 0x1F;
+
+            // 6:13 = instance id. first two bits fit in 0:7 low section
+            ulong instanceIdLo = (ulong)instanceId & 3;
+            ulong instanceIdHi = (ulong)(instanceId >> 2);
+            ctlValue |= instanceIdLo << 6;
+            ctlValue |= instanceIdHi << 32;
+
+            // unit mask is split 8:15, 24:27
+            ulong umask = read ? 0UL : 1; // read request = 0, write request = 1
+            umask |= 0x1FF << 1; // 9 reserved bits
+            umask |= 1 << 10; // 1 = same node, 2 = remote node, 3 = count all (src = same or remote die)
+            ctlValue |= (umask & 0xFF) << 8; // low bits
+            ctlValue |= (umask >> 8) << 24; // high 4 bits
+
+            ctlValue |= 1UL << 22; // enable
+            return ctlValue;
         }
 
         /// <summary>
@@ -555,7 +584,7 @@ namespace PmcReader.AMD
             return retval;
         }
 
-        private Label errorLabel; // ugly whatever
+        public Label errorLabel; // ugly whatever
         private TextBox procNameTextBox;
 
         public override void InitializeCrazyControls(FlowLayoutPanel flowLayoutPanel, Label errLabel)
