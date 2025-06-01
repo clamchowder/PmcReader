@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Diagnostics.PerformanceData;
 using PmcReader.Interop;
 
 namespace PmcReader.Intel
@@ -348,7 +347,7 @@ namespace PmcReader.Intel
                 {
                     int threadIdx = PCores[i];
                     cpu.UpdateThreadCoreCounterData(threadIdx);
-                    results.unitMetrics[metricsIdx] = computeMetrics("P: Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
+                    results.unitMetrics[metricsIdx] = computeMetrics("P: Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx], null);
                     metricsIdx++;
                 }
 
@@ -356,20 +355,20 @@ namespace PmcReader.Intel
                 {
                     int threadIdx = ECores[i];
                     cpu.UpdateThreadCoreCounterData(threadIdx);
-                    results.unitMetrics[metricsIdx] = computeMetrics("E: Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
+                    results.unitMetrics[metricsIdx] = computeMetrics("E: Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx], null);
                     metricsIdx++;
                 }
 
-                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts, cpu.RawTotalCounts);
 
                 results.overallCounterValues = cpu.GetOverallCounterValues("L2 Hits", "L2 References", "unused", "unused");
                 return results;
             }
 
             public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "PkgPower", "Instr/Watt",
-                "L2 Hitrate", "L2 Hit BW", "L2 MPKI", "L2 Req/Ki", "L2 Hit/Ki"};
+                "L2 Hitrate", "L2 Hit BW", "L2 MPKI", "L2 Req/Ki", "L2 Hit/Ki", "Total Instructions"};
 
-            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData, RawTotalCoreCounterData rawTotals)
             {
                 float l2Hits = counterData.pmc[1] - counterData.pmc[0];
                 return new string[] { label,
@@ -383,6 +382,7 @@ namespace PmcReader.Intel
                         string.Format("{0:F2}", 1000 * counterData.pmc[0] / counterData.instr),
                         string.Format("{0:F2}", 1000 * counterData.pmc[1] / counterData.instr),
                         string.Format("{0:F2}", 1000 * l2Hits / counterData.instr),
+                        rawTotals == null ? "-" : FormatLargeNumber(rawTotals.instr)
                 };
             }
 
