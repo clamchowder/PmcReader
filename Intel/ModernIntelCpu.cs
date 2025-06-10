@@ -94,6 +94,10 @@ namespace PmcReader.Intel
             public byte Type;
             public byte CoreCount;
             public ulong CoreMask;
+
+            /// <summary>
+            /// Number of programmable performance monitoring counters
+            /// </summary>
             public byte PmcCounters;
             public uint FixedCounterMask;
             public byte AllocWidth;
