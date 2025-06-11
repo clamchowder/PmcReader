@@ -28,7 +28,7 @@ namespace PmcReader.AMD
         public const uint MSR_L2I_PERF_CTL_2 = 0xC0010234;
         public const uint MSR_L2I_PERF_CTR_2 = 0xC0010235;
         public const uint MSR_L2I_PERF_CTL_3 = 0xC0010236;
-        public const uint MSR_L2I_PERF_CTR_3 = 0xC0010236;
+        public const uint MSR_L2I_PERF_CTR_3 = 0xC0010237;
 
         public const uint MSR_NB_PERF_CTL_0 = 0xC0010240;
         public const uint MSR_NB_PERF_CTL_1 = 0xC0010242;
@@ -41,8 +41,8 @@ namespace PmcReader.AMD
 
         public const uint HWCR = 0xC0010015;
 
-        public NormalizedCoreCounterData[] NormalizedThreadCounts;
-        public NormalizedCoreCounterData NormalizedTotalCounts;
+        public NormalizedCounterData[] NormalizedThreadCounts;
+        public NormalizedCounterData NormalizedTotalCounts;
         private ulong[] lastThreadAperf;
         private ulong[] lastThreadMperf;
         private ulong[] lastThreadTsc;
@@ -86,6 +86,59 @@ namespace PmcReader.AMD
             }
         }
 
+        public void ProgramL2IPerfCounters(ulong ctr0, ulong ctr1, ulong ctr2, ulong ctr3)
+        {
+            Ring0.WriteMsr(MSR_L2I_PERF_CTL_0, ctr0);
+            Ring0.WriteMsr(MSR_L2I_PERF_CTL_1, ctr1);
+            Ring0.WriteMsr(MSR_L2I_PERF_CTL_2, ctr2);
+            Ring0.WriteMsr(MSR_L2I_PERF_CTL_3, ctr3);
+            Ring0.WriteMsr(MSR_L2I_PERF_CTR_0, 0);
+            Ring0.WriteMsr(MSR_L2I_PERF_CTR_1, 0);
+            Ring0.WriteMsr(MSR_L2I_PERF_CTR_2, 0);
+            Ring0.WriteMsr(MSR_L2I_PERF_CTR_3, 0);
+
+            // L2 will only use the total counts as a shortcut
+            // Because there's only one Jaguar core cluster
+            if (this.NormalizedTotalCounts != null)
+            {
+                // Clear totals
+                this.NormalizedTotalCounts.ctr0total = 0;
+                this.NormalizedTotalCounts.ctr1total = 0;
+                this.NormalizedTotalCounts.ctr2total = 0;
+                this.NormalizedTotalCounts.ctr3total = 0;
+            }
+            else
+            {
+                this.NormalizedTotalCounts = new NormalizedCounterData();
+            }
+        }
+
+        public void ProgramNbPerfCounters(ulong ctr0, ulong ctr1, ulong ctr2, ulong ctr3)
+        {
+            Ring0.WriteMsr(MSR_NB_PERF_CTL_0, ctr0);
+            Ring0.WriteMsr(MSR_NB_PERF_CTL_1, ctr1);
+            Ring0.WriteMsr(MSR_NB_PERF_CTL_2, ctr2);
+            Ring0.WriteMsr(MSR_NB_PERF_CTL_3, ctr3);
+
+            Ring0.WriteMsr(MSR_NB_PERF_CTR_0, 0);
+            Ring0.WriteMsr(MSR_NB_PERF_CTR_1, 0);
+            Ring0.WriteMsr(MSR_NB_PERF_CTR_2, 0);
+            Ring0.WriteMsr(MSR_NB_PERF_CTR_3, 0);
+
+            if (this.NormalizedTotalCounts != null)
+            {
+                // Clear totals
+                this.NormalizedTotalCounts.ctr0total = 0;
+                this.NormalizedTotalCounts.ctr1total = 0;
+                this.NormalizedTotalCounts.ctr2total = 0;
+                this.NormalizedTotalCounts.ctr3total = 0;
+            }
+            else
+            {
+                this.NormalizedTotalCounts = new NormalizedCounterData();
+            }
+        }
+
         /// <summary>
         /// Update fixed counters for thread, affinity must be set going in
         /// </summary>
@@ -125,7 +178,7 @@ namespace PmcReader.AMD
         {
             if (NormalizedTotalCounts == null)
             {
-                NormalizedTotalCounts = new NormalizedCoreCounterData();
+                NormalizedTotalCounts = new NormalizedCounterData();
             }
 
             NormalizedTotalCounts.aperf = 0;
@@ -153,8 +206,8 @@ namespace PmcReader.AMD
             ctr2 = ReadAndClearMsr(MSR_PERF_CTR_2);
             ctr3 = ReadAndClearMsr(MSR_PERF_CTR_3);
 
-            if (NormalizedThreadCounts == null) NormalizedThreadCounts = new NormalizedCoreCounterData[threadCount];
-            if (NormalizedThreadCounts[threadIdx] == null) NormalizedThreadCounts[threadIdx] = new NormalizedCoreCounterData();
+            if (NormalizedThreadCounts == null) NormalizedThreadCounts = new NormalizedCounterData[threadCount];
+            if (NormalizedThreadCounts[threadIdx] == null) NormalizedThreadCounts[threadIdx] = new NormalizedCounterData();
 
             NormalizedThreadCounts[threadIdx].aperf = aperf * normalizationFactor;
             NormalizedThreadCounts[threadIdx].mperf = mperf * normalizationFactor;
@@ -182,6 +235,46 @@ namespace PmcReader.AMD
             NormalizedTotalCounts.ctr3total += ctr3;
         }
 
+        public void UpdateL2ICounterData()
+        {
+            const int JaguarL2Index = 99;
+            float normalizationFactor = GetNormalizationFactor(JaguarL2Index);
+            ulong ctr0, ctr1, ctr2, ctr3;
+            ctr0 = ReadAndClearMsr(MSR_L2I_PERF_CTR_0);
+            ctr1 = ReadAndClearMsr(MSR_L2I_PERF_CTR_1);
+            ctr2 = ReadAndClearMsr(MSR_L2I_PERF_CTR_2);
+            ctr3 = ReadAndClearMsr(MSR_L2I_PERF_CTR_3);
+
+            NormalizedTotalCounts.ctr0 = ctr0 * normalizationFactor;
+            NormalizedTotalCounts.ctr1 = ctr1 * normalizationFactor;
+            NormalizedTotalCounts.ctr2 = ctr2 * normalizationFactor;
+            NormalizedTotalCounts.ctr3 = ctr3 * normalizationFactor;
+            NormalizedTotalCounts.ctr0total += ctr0;
+            NormalizedTotalCounts.ctr1total += ctr1;
+            NormalizedTotalCounts.ctr2total += ctr2;
+            NormalizedTotalCounts.ctr3total += ctr3;
+        }
+
+        public void UpdateNBCounterData()
+        {
+            const int JaguarNbIndex = 100;
+            float normalizationFactor = GetNormalizationFactor(JaguarNbIndex);
+            ulong ctr0, ctr1, ctr2, ctr3;
+            ctr0 = ReadAndClearMsr(MSR_NB_PERF_CTR_0);
+            ctr1 = ReadAndClearMsr(MSR_NB_PERF_CTR_1);
+            ctr2 = ReadAndClearMsr(MSR_NB_PERF_CTR_2);
+            ctr3 = ReadAndClearMsr(MSR_NB_PERF_CTR_3);
+
+            NormalizedTotalCounts.ctr0 = ctr0 * normalizationFactor;
+            NormalizedTotalCounts.ctr1 = ctr1 * normalizationFactor;
+            NormalizedTotalCounts.ctr2 = ctr2 * normalizationFactor;
+            NormalizedTotalCounts.ctr3 = ctr3 * normalizationFactor;
+            NormalizedTotalCounts.ctr0total += ctr0;
+            NormalizedTotalCounts.ctr1total += ctr1;
+            NormalizedTotalCounts.ctr2total += ctr2;
+            NormalizedTotalCounts.ctr3total += ctr3;
+        }
+
         /// <summary>
         /// Assemble overall counter values into a Tuple of string, float array.
         /// </summary>
@@ -192,7 +285,7 @@ namespace PmcReader.AMD
         /// <returns>Array to put in results object</returns>
         public Tuple<string, float>[] GetOverallCounterValues(string ctr0, string ctr1, string ctr2, string ctr3)
         {
-            NormalizedCoreCounterData dataToLog = this.NormalizedTotalCounts;
+            NormalizedCounterData dataToLog = this.NormalizedTotalCounts;
             if (this.targetLogCoreIndex >= 0)
             {
                 dataToLog = NormalizedThreadCounts[this.targetLogCoreIndex];
@@ -260,6 +353,18 @@ namespace PmcReader.AMD
                 ((ulong)hostGuestOnly) << 40;
         }
 
+        public static ulong GetL2iPerfCtlValue(byte perfEvent, byte umask, bool invert, byte cmask, byte perfEventHi, byte bankMask, byte threadMask)
+        {
+            return perfEvent |
+                (ulong)umask << 8 |
+                1UL << 22 |
+                (invert ? 1UL : 0UL) << 23 |
+                (ulong)cmask << 24 |
+                (ulong)(perfEventHi & 0xF) << 32 |
+                (ulong)bankMask << 48 |
+                (ulong)threadMask << 56;
+        }
+
         /// <summary>
         /// Selects what ring(s) events are counted for
         /// </summary>
@@ -299,7 +404,7 @@ namespace PmcReader.AMD
                 (ulong)perfEventHi << 32;
         }
 
-        public class NormalizedCoreCounterData
+        public class NormalizedCounterData
         {
             /// <summary>
             /// Actual performance frequency clock count
