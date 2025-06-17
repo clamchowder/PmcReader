@@ -34,6 +34,15 @@ namespace PmcReader.Intel
             public float hacArbCtr1;
             public float hacCboCtr0;
             public float hacCboCtr1;
+
+            public ulong rawCncu;
+            public ulong rawSncu;
+            public ulong rawArbCtr0;
+            public ulong rawArbCtr1;
+            public ulong rawHacArbCtr0;
+            public ulong rawHacArbCtr1;
+            public ulong rawHacCboCtr0;
+            public ulong rawHacCboCtr1;
         }
 
         public class ArbCounterTotals
@@ -114,13 +123,17 @@ namespace PmcReader.Intel
             return rc;
         }
 
-        public Tuple<string, float>[] GetOverallCounterValues(NormalizedArbCounterData data, string ctr0, string ctr1)
+        public Tuple<string, float>[] GetOverallCounterValues(NormalizedArbCounterData data, string arbCtr0, string arbCtr1, string hacArbCtr0, string hacArbCtr1, string hacCboCtr0, string hacCboCtr1)
         {
-            Tuple<string, float>[] retval = new Tuple<string, float>[3];
+            Tuple<string, float>[] retval = new Tuple<string, float>[8];
             retval[0] = new Tuple<string, float>("sNCU Clk", data.sncuUncoreClk);
             retval[1] = new Tuple<string, float>("cNCU Clk", data.cncuUncoreClk);
-            retval[2] = new Tuple<string, float>(ctr0, data.arbCtr0);
-            retval[3] = new Tuple<string, float>(ctr1, data.arbCtr1);
+            retval[2] = new Tuple<string, float>(arbCtr0, data.arbCtr0);
+            retval[3] = new Tuple<string, float>(arbCtr1, data.arbCtr1);
+            retval[4] = new Tuple<string, float>(hacArbCtr0, data.hacArbCtr0);
+            retval[5] = new Tuple<string, float>(hacArbCtr1, data.hacArbCtr1);
+            retval[6] = new Tuple<string, float>(hacCboCtr0, data.hacCboCtr0);
+            retval[7] = new Tuple<string, float>(hacCboCtr1, data.hacCboCtr1);
             return retval;
         }
 
@@ -218,6 +231,7 @@ namespace PmcReader.Intel
                 };
 
                 results.overallMetrics = new string[] { "N/A", "N/A", "N/A" };
+                results.overallCounterValues = arb.GetOverallCounterValues(normalizedArbCounterData, "ARB Occ over 20 Cycles", "Unused", "HAC ARB Reqs", "HAC ARB CMI Transactions", "HAC CBo Alloc", "Unused");
                 return results;
             }
         }
