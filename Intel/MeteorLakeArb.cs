@@ -7,6 +7,7 @@ namespace PmcReader.Intel
     public class MeteorLakeArb : MeteorLakeUncore
     {
         private ulong lastSncuClk, lastCncuClk;
+        public ArbCounterTotals arbCounterTotals;
 
         public MeteorLakeArb()
         {
@@ -16,6 +17,7 @@ namespace PmcReader.Intel
             arbMonitoringConfigs.Add(new FixedCounters(this));
             arbMonitoringConfigs.Add(new ArbCounters(this));
             monitoringConfigs = arbMonitoringConfigs.ToArray();
+            arbCounterTotals = new ArbCounterTotals();
         }
 
         public class NormalizedArbCounterData
@@ -32,6 +34,18 @@ namespace PmcReader.Intel
             public float hacArbCtr1;
             public float hacCboCtr0;
             public float hacCboCtr1;
+        }
+
+        public class ArbCounterTotals
+        {
+            public ulong totalSncuUncoreClk;
+            public ulong totalCncuUnocreClk;
+            public ulong totalArbCtr0;
+            public ulong totalArbCtr1;
+            public ulong totalHacArbCtr0;
+            public ulong totalHacArbCtr1;
+            public ulong totalHacCboCtr0;
+            public ulong totalHacCboCtr1;
         }
 
         public void InitializeFixedCounters()
@@ -88,6 +102,15 @@ namespace PmcReader.Intel
             rc.hacCboCtr1 = hacCboCtr1 * normalizationFactor;
             rc.sncuUncoreClk = elapsedSncuClk * normalizationFactor;
             rc.cncuUncoreClk = elapsedCncuClk * normalizationFactor;
+
+            this.arbCounterTotals.totalCncuUnocreClk += elapsedSncuClk;
+            this.arbCounterTotals.totalSncuUncoreClk += elapsedSncuClk;
+            this.arbCounterTotals.totalArbCtr0 += arbCtr0;
+            this.arbCounterTotals.totalArbCtr1 += arbCtr1;
+            this.arbCounterTotals.totalHacCboCtr0 += hacCboCtr0;
+            this.arbCounterTotals.totalHacCboCtr1 += hacCboCtr1;
+            this.arbCounterTotals.totalHacArbCtr0 += hacArbCtr0;
+            this.arbCounterTotals.totalHacArbCtr1 += hacArbCtr1;
             return rc;
         }
 
@@ -143,7 +166,7 @@ namespace PmcReader.Intel
                 this.arb = arb;
             }
 
-            public string[] columns = new string[] { "Item", "Metric", "Occupancy", "Latency" };
+            public string[] columns = new string[] { "Item", "Metric", "Total" };
             public string[] GetColumns() { return columns; }
             public string GetConfigName() { return "Arb"; }
             public string GetHelpText() { return ""; }
@@ -173,6 +196,8 @@ namespace PmcReader.Intel
                 Ring0.WriteMsr(MTL_UNC_ARB_CTRL, GetUncorePerfEvtSelRegisterValue(0x85, 0, false, false, true, false, 20));
                 Ring0.WriteMsr(MTL_UNC_ARB_CTR, 0);
                 //Ring0.WriteMsr(MTL_UNC_ARB_CTR + 1, 0);
+
+                arb.arbCounterTotals = new ArbCounterTotals();
             }
 
             public MonitoringUpdateResults Update()
@@ -182,17 +207,17 @@ namespace PmcReader.Intel
                 float arbReqs = normalizedArbCounterData.arbCtr0;
                 // float arbOcc = normalizedArbCounterData.arbCtr0;
                 results.unitMetrics = new string[][] {
-                    new string[] { "HAC CBo", FormatLargeNumber(normalizedArbCounterData.hacCboCtr0 * 64) + "B/s", "-", "-"},
-                    new string[] { "HAC ARB (All Reqs)", FormatLargeNumber(normalizedArbCounterData.hacArbCtr0 * 64) + "B/s", "-", "-"},
-                    new string[] { "HAC ARB (CMI Transactions)", FormatLargeNumber(normalizedArbCounterData.hacArbCtr1 * 64) + "B/s", "-", "-"},
+                    new string[] { "HAC CBo", FormatLargeNumber(normalizedArbCounterData.hacCboCtr0 * 64) + "B/s", FormatLargeNumber(arb.arbCounterTotals.totalHacCboCtr0 * 64) + "B" },
+                    new string[] { "HAC ARB (All Reqs)", FormatLargeNumber(normalizedArbCounterData.hacArbCtr0 * 64) + "B/s", FormatLargeNumber(arb.arbCounterTotals.totalHacArbCtr0 * 64) + "B" },
+                    new string[] { "HAC ARB (CMI Transactions)", FormatLargeNumber(normalizedArbCounterData.hacArbCtr1 * 64) + "B/s", FormatLargeNumber(arb.arbCounterTotals.totalHacArbCtr1 * 64) + "B" },
 
                     // which clock?
-                    new string[] { "ARB", FormatLargeNumber(arbReqs) + ">20", "-", "-"},
-                    new string[] { "sNCU", FormatLargeNumber(normalizedArbCounterData.sncuUncoreClk) + "Hz", "-", "-" },
-                    new string[] { "cNCU", FormatLargeNumber(normalizedArbCounterData.cncuUncoreClk) + "Hz", "-", "-" },
+                    new string[] { "ARB", FormatLargeNumber(arbReqs) + ">20", FormatPercentage(arb.arbCounterTotals.totalArbCtr0, arb.arbCounterTotals.totalCncuUnocreClk) },
+                    new string[] { "sNCU", FormatLargeNumber(normalizedArbCounterData.sncuUncoreClk) + "Hz", "-" },
+                    new string[] { "cNCU", FormatLargeNumber(normalizedArbCounterData.cncuUncoreClk) + "Hz", "-" },
                 };
 
-                results.overallMetrics = new string[] { "N/A", "N/A" };
+                results.overallMetrics = new string[] { "N/A", "N/A", "N/A" };
                 return results;
             }
         }
