@@ -161,6 +161,10 @@ namespace PmcReader
                 {
                     // Jaguar/Beema/Mullins/Puma
                     coreMonitoring.monitoringArea = new AMD.Jaguar();
+                    l3Monitoring.monitoringArea = new AMD.JaguarL2();
+                    dfMonitoring.monitoringArea = new AMD.JaguarNorthbridge();
+                    l3LabelOverride = "L2 Interface PMC Configurations";
+                    dfLabelOverride = "Northbridge PMC Configurations";
                 }
                 else if (cpuFamily == 0x15)
                 {

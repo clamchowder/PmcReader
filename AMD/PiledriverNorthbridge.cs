@@ -18,6 +18,9 @@ namespace PmcReader.AMD
             cfgs.Add(new CrossbarRequests(this));
             cfgs.Add(new SriCommands(this));
             cfgs.Add(new L3Commands(this));
+            cfgs.Add(new Probe(this));
+            cfgs.Add(new UpstreamRequests(this));
+            cfgs.Add(new MemSource(this));
             //cfgs.Add(new GartConfig(this));
             monitoringConfigs = cfgs.ToArray();
         }
@@ -185,6 +188,50 @@ namespace PmcReader.AMD
             }
         }
 
+        public class MemSource : MonitoringConfig
+        {
+            private PiledriverNorthbridge dataFabric;
+
+            public string[] columns = new string[] { "Item", "Count * 64B", "Count", "Total Data" };
+            public string GetHelpText() { return ""; }
+            public MemSource(PiledriverNorthbridge dataFabric)
+            {
+                this.dataFabric = dataFabric;
+            }
+
+            public string GetConfigName() { return "Crossbar/DRAM"; }
+            public string[] GetColumns() { return columns; }
+            public void Initialize()
+            {
+                dataFabric.ProgramPerfCounters(
+                    GetNBPerfCtlValue(0xE0, 0x3F, true, 0), // DRAM access
+                    GetNBPerfCtlValue(0xE9, 0xA8, true, 0), // CPU to Mem
+                    GetNBPerfCtlValue(0xE9, 0xA4, true, 0), // CPU to IO
+                    GetNBPerfCtlValue(0xE9, 0xA2, true, 0)); // IO to Mem
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                NormalizedNbCounterData counterData = dataFabric.UpdateNbPerfCounterData();
+
+                results.unitMetrics = new string[4][];
+                results.unitMetrics[0] = new string[] { 
+                    "DRAM Access", FormatLargeNumber(counterData.ctr0 * 64) + "B/s", 
+                    FormatLargeNumber(counterData.ctr0),
+                    FormatLargeNumber(counterData.ctr0total * 64) + "B" };
+                results.unitMetrics[1] = new string[] { "CPU to Mem", FormatLargeNumber(counterData.ctr1 * 64) + "B/s", FormatLargeNumber(counterData.ctr1), "<" + FormatLargeNumber(counterData.ctr1total * 64) + "B" };
+                results.unitMetrics[2] = new string[] { "CPU to IO", FormatLargeNumber(counterData.ctr2 * 64) + "B/s", FormatLargeNumber(counterData.ctr2), "<" + FormatLargeNumber(counterData.ctr2total * 64) + "B" };
+                results.unitMetrics[3] = new string[] { "IO to Mem", FormatLargeNumber(counterData.ctr3 * 64) + "B/s", FormatLargeNumber(counterData.ctr3), "<" + FormatLargeNumber(counterData.ctr3total * 64) + "B" };
+
+                float totalReqs = counterData.ctr0 + counterData.ctr1 + counterData.ctr2;
+                results.overallMetrics = new string[] { "Overall", FormatLargeNumber(totalReqs * 64) + "B/s", FormatLargeNumber(totalReqs) };
+
+                results.overallCounterValues = dataFabric.GetOverallCounterValues(counterData, "DRAM Access", "CPU to Mem", "CPU to IO", "IO to Mem");
+                return results;
+            }
+        }
+
         public class L3Config : MonitoringConfig
         {
             private PiledriverNorthbridge dataFabric;
@@ -348,6 +395,88 @@ namespace PmcReader.AMD
                 results.overallMetrics = new string[] { "Overall", FormatLargeNumber(totalReqs) };
 
                 results.overallCounterValues = dataFabric.GetOverallCounterValues(counterData, "SzRd", "Posted SzWr", "Non-Posted SzWr", "Unused");
+                return results;
+            }
+        }
+
+        public class Probe : MonitoringConfig
+        {
+            private PiledriverNorthbridge dataFabric;
+
+            public string[] columns = new string[] { "Item", "Count * 64B", "Count" };
+            public string GetHelpText() { return ""; }
+            public Probe(PiledriverNorthbridge dataFabric)
+            {
+                this.dataFabric = dataFabric;
+            }
+
+            public string GetConfigName() { return "Probe Response"; }
+            public string[] GetColumns() { return columns; }
+            public void Initialize()
+            {
+                dataFabric.ProgramPerfCounters(
+                    GetNBPerfCtlValue(0xEC, 1, true, 0), // probe miss
+                    GetNBPerfCtlValue(0xEC, 2, true, 0), // probe hit clean
+                    GetNBPerfCtlValue(0xEC, 4, true, 0), // probe hit dirty without mem cancel
+                    GetNBPerfCtlValue(0xEC, 8, true, 0)); // probe hit dirty with mem cancel
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                NormalizedNbCounterData counterData = dataFabric.UpdateNbPerfCounterData();
+
+                results.unitMetrics = new string[4][];
+                results.unitMetrics[0] = new string[] { "Probe Miss", FormatLargeNumber(counterData.ctr0 * 64) + "B/s", FormatLargeNumber(counterData.ctr0) };
+                results.unitMetrics[1] = new string[] { "Probe Hit Clean", FormatLargeNumber(counterData.ctr1 * 64) + "B/s", FormatLargeNumber(counterData.ctr1) };
+                results.unitMetrics[2] = new string[] { "Probe Hit Dirty w/o Mem Cancel", FormatLargeNumber(counterData.ctr2 * 64) + "B/s", FormatLargeNumber(counterData.ctr2) };
+                results.unitMetrics[3] = new string[] { "Probe Hit Dirty w/Mem Cancel", FormatLargeNumber(counterData.ctr3 * 64) + "B/s", FormatLargeNumber(counterData.ctr3) };
+
+                float totalReqs = counterData.ctr0 + counterData.ctr1 + counterData.ctr2 + counterData.ctr3;
+                results.overallMetrics = new string[] { "Total", FormatLargeNumber(totalReqs * 64) + "B/s", FormatLargeNumber(totalReqs) };
+
+                results.overallCounterValues = dataFabric.GetOverallCounterValues(counterData, "Probe Miss", "Probe Hit Clean", "Probe Hit Dirty w/o Mem Cancel", "Probe Hit Dirty w/Mem Cancel");
+                return results;
+            }
+        }
+
+        public class UpstreamRequests : MonitoringConfig
+        {
+            private PiledriverNorthbridge dataFabric;
+
+            public string[] columns = new string[] { "Item", "Count * 64B", "Count" };
+            public string GetHelpText() { return ""; }
+            public UpstreamRequests(PiledriverNorthbridge dataFabric)
+            {
+                this.dataFabric = dataFabric;
+            }
+
+            public string GetConfigName() { return "Upstream Requsets"; }
+            public string[] GetColumns() { return columns; }
+            public void Initialize()
+            {
+                dataFabric.ProgramPerfCounters(
+                    GetNBPerfCtlValue(0xEC, 0x10, true, 0), // Upstream display refresh/ISOC reads
+                    GetNBPerfCtlValue(0xEC, 0x20, true, 0), // Upstream non-ISOC reads
+                    GetNBPerfCtlValue(0xEC, 0x40, true, 0), // Upstream ISOC writes
+                    GetNBPerfCtlValue(0xEC, 0x80, true, 0)); // Upstream non-ISOC writes
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                NormalizedNbCounterData counterData = dataFabric.UpdateNbPerfCounterData();
+
+                results.unitMetrics = new string[4][];
+                results.unitMetrics[0] = new string[] { "ISOC Read (Display)", FormatLargeNumber(counterData.ctr0 * 64) + "B/s", FormatLargeNumber(counterData.ctr0) };
+                results.unitMetrics[1] = new string[] { "Non-ISOC Read", FormatLargeNumber(counterData.ctr1 * 64) + "B/s", FormatLargeNumber(counterData.ctr1) };
+                results.unitMetrics[2] = new string[] { "ISOC Write", FormatLargeNumber(counterData.ctr2 * 64) + "B/s", FormatLargeNumber(counterData.ctr2) };
+                results.unitMetrics[3] = new string[] { "Non-ISOC Write", FormatLargeNumber(counterData.ctr3 * 64) + "B/s", FormatLargeNumber(counterData.ctr3) };
+
+                float totalReqs = counterData.ctr0 + counterData.ctr1 + counterData.ctr2 + counterData.ctr3;
+                results.overallMetrics = new string[] { "Total", FormatLargeNumber(totalReqs * 64) + "B/s", FormatLargeNumber(totalReqs) };
+
+                results.overallCounterValues = dataFabric.GetOverallCounterValues(counterData, "ISOC Read", "Non-ISOC Read", "ISOC Write", "Non-ISOC Write");
                 return results;
             }
         }

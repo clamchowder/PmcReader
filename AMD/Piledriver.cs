@@ -126,7 +126,7 @@ namespace PmcReader.AMD
             }
 
             public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", 
-                "Uops/C", "Uops/Instr", "IC Hitrate", "IC Hit BW", "IC MPKI", "L2->IC Fill BW", "L2 Code Hitrate", "L2 Code MPKI", "Sys->IC Fill BW", "Self Modifying Code Pipeline Restarts" };
+                "Uops/C", "Uops/Instr", "IC Hitrate", "IC Hit BW", "IC MPKI", "L2->IC Fill BW", "L2 Code Hitrate", "L2 Code MPKI", "Sys->IC Fill BW", "Self Modifying Code Pipeline Restarts", "Total Instr", "Total L1i Data" };
 
             public string GetHelpText()
             {
@@ -150,7 +150,9 @@ namespace PmcReader.AMD
                         FormatPercentage(counterData.ctr1, counterData.ctr1 + counterData.ctr2),       // L2 code hitrate
                         string.Format("{0:F2}", 1000 * counterData.ctr2 / instr), // L2 code MPKI
                         FormatLargeNumber(64 * counterData.ctr2) + "B/s", // IC refill from system
-                        FormatLargeNumber(counterData.ctr5)};   
+                        FormatLargeNumber(counterData.ctr5), 
+                        FormatLargeNumber(counterData.ctr3total),
+                        FormatLargeNumber((counterData.ctr0total - (counterData.ctr1total + counterData.ctr2total)) * 32) + "B"};   
             }
         }
 
