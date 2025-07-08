@@ -48,7 +48,7 @@ namespace PmcReader.Intel
         public class ArbCounterTotals
         {
             public ulong totalSncuUncoreClk;
-            public ulong totalCncuUnocreClk;
+            public ulong totalCncuUncoreClock;
             public ulong totalArbCtr0;
             public ulong totalArbCtr1;
             public ulong totalHacArbCtr0;
@@ -112,7 +112,7 @@ namespace PmcReader.Intel
             rc.sncuUncoreClk = elapsedSncuClk * normalizationFactor;
             rc.cncuUncoreClk = elapsedCncuClk * normalizationFactor;
 
-            this.arbCounterTotals.totalCncuUnocreClk += elapsedSncuClk;
+            this.arbCounterTotals.totalCncuUncoreClock += elapsedSncuClk;
             this.arbCounterTotals.totalSncuUncoreClk += elapsedSncuClk;
             this.arbCounterTotals.totalArbCtr0 += arbCtr0;
             this.arbCounterTotals.totalArbCtr1 += arbCtr1;
@@ -206,7 +206,7 @@ namespace PmcReader.Intel
                 // ok 0x81 doesn't work, how about 0x8A
                 // 0x86 is almost right? seems to count in 32B increments and doesn't count GPU BW
                 //Ring0.WriteMsr(MTL_UNC_ARB_CTRL, GetUncorePerfEvtSelRegisterValue(0x85, 0, false, false, true, false, 0));
-                Ring0.WriteMsr(MTL_UNC_ARB_CTRL, GetUncorePerfEvtSelRegisterValue(0x85, 0, false, false, true, false, 20));
+                Ring0.WriteMsr(MTL_UNC_ARB_CTRL, GetUncorePerfEvtSelRegisterValue(0x85, 0, false, false, true, false, cmask: 0));
                 Ring0.WriteMsr(MTL_UNC_ARB_CTR, 0);
                 //Ring0.WriteMsr(MTL_UNC_ARB_CTR + 1, 0);
 
@@ -225,13 +225,13 @@ namespace PmcReader.Intel
                     new string[] { "HAC ARB (CMI Transactions)", FormatLargeNumber(normalizedArbCounterData.hacArbCtr1 * 64) + "B/s", FormatLargeNumber(arb.arbCounterTotals.totalHacArbCtr1 * 64) + "B" },
 
                     // which clock?
-                    new string[] { "ARB", FormatLargeNumber(arbReqs) + ">20", FormatPercentage(arb.arbCounterTotals.totalArbCtr0, arb.arbCounterTotals.totalCncuUnocreClk) },
+                    new string[] { "ARB", string.Format("{0:F2}", normalizedArbCounterData.arbCtr0 / normalizedArbCounterData.cncuUncoreClk), "-" },
                     new string[] { "sNCU", FormatLargeNumber(normalizedArbCounterData.sncuUncoreClk) + "Hz", "-" },
                     new string[] { "cNCU", FormatLargeNumber(normalizedArbCounterData.cncuUncoreClk) + "Hz", "-" },
                 };
 
                 results.overallMetrics = new string[] { "N/A", "N/A", "N/A" };
-                results.overallCounterValues = arb.GetOverallCounterValues(normalizedArbCounterData, "ARB Occ over 20 Cycles", "Unused", "HAC ARB Reqs", "HAC ARB CMI Transactions", "HAC CBo Alloc", "Unused");
+                results.overallCounterValues = arb.GetOverallCounterValues(normalizedArbCounterData, "ARB Occ", "Unused", "HAC ARB Reqs", "HAC ARB CMI Transactions", "HAC CBo Alloc", "Unused");
                 return results;
             }
         }

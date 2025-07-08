@@ -68,6 +68,9 @@ namespace PmcReader.Intel
         // an offcore response register
         public const byte OFFCORE_RESPONSE_EVENT_1 = 0xBB;
 
+        // Introduced in Skylake
+        public const uint MSR_PEBS_FRONTEND = 0x3F7;
+
         public NormalizedCoreCounterData[] NormalizedThreadCounts;
         public NormalizedCoreCounterData NormalizedTotalCounts;
         public RawTotalCoreCounterData RawTotalCounts;
@@ -1432,23 +1435,23 @@ namespace PmcReader.Intel
                 for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
                 {
                     cpu.UpdateThreadCoreCounterData(threadIdx);
-                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
+                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx], null);
                 }
 
                 cpu.ReadPackagePowerCounter();
-                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts, cpu.RawTotalCounts);
                 results.overallCounterValues = cpu.GetOverallCounterValues("Retired Branches", "Retired Misp Branches", "LLC References", "LLC Misses");
                 return results;
             }
 
-            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "BPU Accuracy", "Branch MPKI", "% Branches", "LLC Hitrate", "LLC MPKI", "LLC References", "LLC Hit BW" };
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "BPU Accuracy", "Branch MPKI", "% Branches", "LLC Hitrate", "LLC MPKI", "LLC References", "LLC Hit BW", "Total Instructions" };
 
             public string GetHelpText()
             {
                 return "";
             }
 
-            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData, RawTotalCoreCounterData totals)
             {
                 float totalOps = counterData.pmc[0] + counterData.pmc[1] + counterData.pmc[2] + counterData.pmc[3];
                 return new string[] { label,
@@ -1462,6 +1465,7 @@ namespace PmcReader.Intel
                         string.Format("{0:F2}", 1000 * counterData.pmc[3] / counterData.instr),
                         FormatLargeNumber(counterData.pmc[3]),
                         FormatLargeNumber(64 * (counterData.pmc[2] - counterData.pmc[3])) + "B/s",
+                        totals == null ? "-" : FormatLargeNumber(totals.instr)
                 };
             }
         }
