@@ -54,6 +54,7 @@ namespace PmcReader.Intel
                     configs.Add(new ECoreTopDown(this));
                     configs.Add(new ECoreBranch(this));
                     configs.Add(new ECoreIFetch(this));
+                    configs.Add(new ECoreDecode(this));
                 }
             }
             monitoringConfigs = configs.ToArray();
@@ -1357,6 +1358,92 @@ namespace PmcReader.Intel
                         FormatPercentage(counterData.pmc[4], counterData.activeCycles),
                         FormatPercentage(counterData.pmc[5], counterData.activeCycles * 8),
                         FormatPercentage(counterData.pmc[6], counterData.activeCycles * 8)
+                };
+            }
+        }
+
+        public class ECoreDecode : MonitoringConfig
+        {
+            private ArrowLake cpu;
+            private CoreType coreType;
+            public string GetConfigName() { return "E Cores: Decode"; }
+
+            public ECoreDecode(ArrowLake intelCpu)
+            {
+                cpu = intelCpu;
+                foreach (CoreType type in cpu.coreTypes)
+                {
+                    if (type.Type == ADL_E_CORE_TYPE)
+                    {
+                        coreType = type;
+                        break;
+                    }
+                }
+            }
+
+            public string[] GetColumns()
+            {
+                return columns;
+            }
+
+            public void Initialize()
+            {
+                cpu.DisablePerformanceCounters();
+
+                // 0x71, 0x4: slots lost to predecode wrong
+                // 0x71, 0x8: slots lost to decode stalls
+                // 0x71, 0x1: slots lost to microcode sequencer
+                // 0x71, 0x80: slots lost to other misc reasons
+                ulong[] pmc = new ulong[8];
+                pmc[0] = GetPerfEvtSelRegisterValue(0x71, 4); // predecode wrong
+                pmc[1] = GetPerfEvtSelRegisterValue(0x71, 8); // decode stall
+                pmc[2] = GetPerfEvtSelRegisterValue(0x71, 1); // microcode sequencer (CISC)
+                pmc[3] = GetPerfEvtSelRegisterValue(0x71, 0x80); // misc
+                cpu.ProgramPerfCounters(pmc, coreType.Type);
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[coreType.CoreCount][];
+                cpu.InitializeCoreTotals();
+                int pCoreIdx = 0;
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    if (((coreType.CoreMask >> threadIdx) & 0x1) != 0x1)
+                        continue;
+                    cpu.UpdateThreadCoreCounterData(threadIdx);
+                    results.unitMetrics[pCoreIdx] = computeMetrics(coreType.Name + " " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
+                    pCoreIdx++;
+                }
+
+                cpu.ReadPackagePowerCounter();
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                results.overallCounterValues = cpu.GetOverallCounterValues(new String[] {
+                   "Predecode Wrong Slots", "Deocde Stall Slots", "Microcode Sequencer Slots", "Misc Slots"});
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "PkgPower",
+                "Predecode Wrong", "Decode Stall", "MS", "Misc"};
+
+            public string GetHelpText()
+            {
+                return "";
+            }
+
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
+            {
+                float slots = counterData.activeCycles * 8;
+                return new string[] { label,
+                        FormatLargeNumber(counterData.activeCycles),
+                        FormatLargeNumber(counterData.instr),
+                        string.Format("{0:F2}", counterData.instr / counterData.activeCycles),
+                        string.Format("{0:F2} W", counterData.packagePower),
+                        FormatPercentage(counterData.pmc[0], slots),
+                        FormatPercentage(counterData.pmc[1], slots),
+                        FormatPercentage(counterData.pmc[2], slots),
+                        FormatPercentage(counterData.pmc[3], slots)
                 };
             }
         }
