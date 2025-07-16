@@ -51,7 +51,9 @@ namespace PmcReader.Intel
                 }
                 if (coreTypes[coreIdx].Type == ADL_E_CORE_TYPE)
                 {
-
+                    configs.Add(new ECoreTopDown(this));
+                    configs.Add(new ECoreBranch(this));
+                    configs.Add(new ECoreIFetch(this));
                 }
             }
             monitoringConfigs = configs.ToArray();
@@ -85,6 +87,7 @@ namespace PmcReader.Intel
             return value;
         }
 
+        #region pcore
         public class PCoreMem : MonitoringConfig
         {
             private ArrowLake cpu;
@@ -1068,6 +1071,293 @@ namespace PmcReader.Intel
             public string GetHelpText()
             {
                 return "Debugging config for reading raw perf counter values";
+            }
+        }
+        #endregion
+
+        public class ECoreTopDown : MonitoringConfig
+        {
+            private ArrowLake cpu;
+            private CoreType coreType;
+            public string GetConfigName() { return "E Cores: Top Down"; }
+
+            public ECoreTopDown(ArrowLake intelCpu)
+            {
+                cpu = intelCpu;
+                foreach (CoreType type in cpu.coreTypes)
+                {
+                    if (type.Type == ADL_E_CORE_TYPE)
+                    {
+                        coreType = type;
+                        break;
+                    }
+                }
+            }
+
+            public string[] GetColumns()
+            {
+                return columns;
+            }
+
+            public void Initialize()
+            {
+                cpu.DisablePerformanceCounters();
+
+                // 0x71, 0x72: frontend latency
+                // 0x71, 0x8d: frontend bandwidth
+                // 0x73, 0x00: bad speculation slots
+                // 0xa4, 0x02: backend bound (all)
+                // 0xc2, 0x02: retiring
+                // cmask backend bound
+                // 0x05, 0xf4: l1 bound at retire (oldest load blocked, store addr match, dtlb miss/page walk)
+                // 0x05, 0xff: oldest load of load buffer stalled for any reason
+                ulong[] pmc = new ulong[8];
+                pmc[0] = GetPerfEvtSelRegisterValue(0x71, 0x72); // frontend latency
+                pmc[1] = GetPerfEvtSelRegisterValue(0x71, 0x8D); // frontend bandwidth
+                pmc[2] = GetPerfEvtSelRegisterValue(0x73, 0); // bad speculation
+                pmc[3] = GetPerfEvtSelRegisterValue(0xA4, 2); // backend bound
+                pmc[4] = GetPerfEvtSelRegisterValue(0xC2, 2); // retiring
+                pmc[5] = GetPerfEvtSelRegisterValue(0xA4, 2, cmask: 1); // backend bound cycles
+                pmc[6] = GetPerfEvtSelRegisterValue(5, 0xFF); // load blocking retire cycles
+                pmc[7] = GetPerfEvtSelRegisterValue(5, 0x81); // load blocking retire, l1 miss
+                cpu.ProgramPerfCounters(pmc, coreType.Type);
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[coreType.CoreCount][];
+                cpu.InitializeCoreTotals();
+                int pCoreIdx = 0;
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    if (((coreType.CoreMask >> threadIdx) & 0x1) != 0x1)
+                        continue;
+                    cpu.UpdateThreadCoreCounterData(threadIdx);
+                    results.unitMetrics[pCoreIdx] = computeMetrics(coreType.Name + " " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
+                    pCoreIdx++;
+                }
+
+                cpu.ReadPackagePowerCounter();
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                results.overallCounterValues = cpu.GetOverallCounterValues(new String[] {
+                   "Frontnd Latency", "Frontend Bandwidth", "Bad Speculation", "Backend Bound", "Retiring", "Backend Bound Cmask 1", "Retire blocked by load", "Retire blocked by l1 miss load"});
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "PkgPower",
+                "Bad Speculation", "FE Latency", "FE BW", "Core Bound", "Backend Bound", "Retiring", "Load Blocking Ret", "L1D Miss Load Blocking Ret"};
+
+            public string GetHelpText()
+            {
+                return "";
+            }
+
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
+            {
+                float slots = counterData.activeCycles * 8;
+                return new string[] { label,
+                        FormatLargeNumber(counterData.activeCycles),
+                        FormatLargeNumber(counterData.instr),
+                        string.Format("{0:F2}", counterData.instr / counterData.activeCycles),
+                        string.Format("{0:F2} W", counterData.packagePower),
+                        FormatPercentage(counterData.pmc[2], slots), // Bad spec
+                        FormatPercentage(counterData.pmc[0], slots), // FE latency
+                        FormatPercentage(counterData.pmc[1], slots), // FE BW
+                        FormatPercentage(counterData.pmc[3], slots), // Backend Bound
+                        FormatPercentage(counterData.pmc[4], slots), // retiring
+                        FormatPercentage(counterData.pmc[6], counterData.activeCycles),
+                        FormatPercentage(counterData.pmc[7], counterData.activeCycles)
+                };
+            }
+        }
+
+        public class ECoreBranch : MonitoringConfig
+        {
+            private ArrowLake cpu;
+            private CoreType coreType;
+            public string GetConfigName() { return "E Cores: Branch"; }
+
+            public ECoreBranch(ArrowLake intelCpu)
+            {
+                cpu = intelCpu;
+                foreach (CoreType type in cpu.coreTypes)
+                {
+                    if (type.Type == ADL_E_CORE_TYPE)
+                    {
+                        coreType = type;
+                        break;
+                    }
+                }
+            }
+
+            public string[] GetColumns()
+            {
+                return columns;
+            }
+
+            public void Initialize()
+            {
+                cpu.DisablePerformanceCounters();
+
+                // 0xE6, umask 1: baclear
+                // 0x71, umask 2: branch detect slots
+                // 0x71, umask 0x40: branch resteer (btclear)
+                // 0x73, umask 4: mispredict slots
+                // 0xC4, umask 0: all branches
+                // 0xC5, umask 0: all mispredicted branches
+                ulong[] pmc = new ulong[8];
+                pmc[0] = GetPerfEvtSelRegisterValue(0xC4, 0); // branches
+                pmc[1] = GetPerfEvtSelRegisterValue(0xC5, 0); // mispredicted branches
+                pmc[2] = GetPerfEvtSelRegisterValue(0xE6, 1); // BAClear
+                pmc[3] = GetPerfEvtSelRegisterValue(0x71, 0x40); // baclear slots
+                pmc[4] = GetPerfEvtSelRegisterValue(0x71, 2); // btclear slots
+                pmc[5] = GetPerfEvtSelRegisterValue(0x73, 2, cmask: 1); //mispredict slots
+                pmc[6] = GetPerfEvtSelRegisterValue(0x71, 0x40, cmask: 1); // baclear cycles
+                pmc[7] = GetPerfEvtSelRegisterValue(0x71, 0x40, cmask: 1, edge: true); // baclear occurrences
+                cpu.ProgramPerfCounters(pmc, coreType.Type);
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[coreType.CoreCount][];
+                cpu.InitializeCoreTotals();
+                int pCoreIdx = 0;
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    if (((coreType.CoreMask >> threadIdx) & 0x1) != 0x1)
+                        continue;
+                    cpu.UpdateThreadCoreCounterData(threadIdx);
+                    results.unitMetrics[pCoreIdx] = computeMetrics(coreType.Name + " " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
+                    pCoreIdx++;
+                }
+
+                cpu.ReadPackagePowerCounter();
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                results.overallCounterValues = cpu.GetOverallCounterValues(new String[] {
+                   "Branches", "Mispredicted branches", "BAClear", "BAClear Slots", "BTClear slots", "Mispredict slots", "BAClear Slots cmask 1", "BAClear Slots cmask 1 edge"});
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "PkgPower",
+                "BPU Accuracy", "BPU MPKI", "BAClear/Ki", "BAClear Slots", "BAClear Duration", "BTClear Slots"};
+
+            public string GetHelpText()
+            {
+                return "";
+            }
+
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
+            {
+                float slots = counterData.activeCycles * 8;
+                return new string[] { label,
+                        FormatLargeNumber(counterData.activeCycles),
+                        FormatLargeNumber(counterData.instr),
+                        string.Format("{0:F2}", counterData.instr / counterData.activeCycles),
+                        string.Format("{0:F2} W", counterData.packagePower),
+                        FormatPercentage(counterData.pmc[0] - counterData.pmc[1], counterData.pmc[0]),
+                        string.Format("{0:F2}", 1000 * counterData.pmc[1] / counterData.instr),
+                        FormatPercentage(counterData.pmc[3], counterData.activeCycles * 8),
+                        string.Format("{0:F2} clks", counterData.pmc[6] / counterData.pmc[7])
+                };
+            }
+        }
+
+        public class ECoreIFetch : MonitoringConfig
+        {
+            private ArrowLake cpu;
+            private CoreType coreType;
+            public string GetConfigName() { return "E Cores: FE Latency"; }
+
+            public ECoreIFetch(ArrowLake intelCpu)
+            {
+                cpu = intelCpu;
+                foreach (CoreType type in cpu.coreTypes)
+                {
+                    if (type.Type == ADL_E_CORE_TYPE)
+                    {
+                        coreType = type;
+                        break;
+                    }
+                }
+            }
+
+            public string[] GetColumns()
+            {
+                return columns;
+            }
+
+            public void Initialize()
+            {
+                cpu.DisablePerformanceCounters();
+
+                // 0x80, 0x1: ic hit
+                // 0x80, 0x2: ic miss
+                // 0x35, 0x1: L1i stall cycles, l2 hit
+                // 0x35, 0x6: L1i stall cycles, llc hit
+                // 0x35, 0x78: L1i stall cycles, llc miss?
+                // 0x71, 0x4: issue slots lost, ic miss
+                // 0x71, 0x10: issue slots lost, itlb miss
+                // unused
+                ulong[] pmc = new ulong[8];
+                pmc[0] = GetPerfEvtSelRegisterValue(0x80, 1); // ic hit
+                pmc[1] = GetPerfEvtSelRegisterValue(0x80, 2); // ic miss
+                pmc[2] = GetPerfEvtSelRegisterValue(0x35, 1); // stall fe l2 hit
+                pmc[3] = GetPerfEvtSelRegisterValue(0x35, 6); // stall fe llc hit
+                pmc[4] = GetPerfEvtSelRegisterValue(0x35, 0x78); // stall fe llc miss
+                pmc[5] = GetPerfEvtSelRegisterValue(0x71, 4); // issue slots lost, ic miss
+                pmc[6] = GetPerfEvtSelRegisterValue(0x71, 0x10); // issue slots lost, itlb miss
+                pmc[7] = 0;
+                cpu.ProgramPerfCounters(pmc, coreType.Type);
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[coreType.CoreCount][];
+                cpu.InitializeCoreTotals();
+                int pCoreIdx = 0;
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    if (((coreType.CoreMask >> threadIdx) & 0x1) != 0x1)
+                        continue;
+                    cpu.UpdateThreadCoreCounterData(threadIdx);
+                    results.unitMetrics[pCoreIdx] = computeMetrics(coreType.Name + " " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
+                    pCoreIdx++;
+                }
+
+                cpu.ReadPackagePowerCounter();
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                results.overallCounterValues = cpu.GetOverallCounterValues(new String[] {
+                   "IC Hit", "IC Miss", "L2 FE Mem Bound Core Stall Cycles", "LLC FE Mem Bound Core Stall Cycles", "LLC Miss FE Mem Bound Core Stall Cycles", "IC Miss Slots", "iTLB Miss Slots"});
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "PkgPower",
+                "IC Hitrate", "IC MPKI", "FE L2 Bound", "FE LLC Bound", "FE LLC Miss Bound", "IC Miss TD", "iTLB Miss TD"};
+
+            public string GetHelpText()
+            {
+                return "";
+            }
+
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
+            {
+                float slots = counterData.activeCycles * 8;
+                return new string[] { label,
+                        FormatLargeNumber(counterData.activeCycles),
+                        FormatLargeNumber(counterData.instr),
+                        string.Format("{0:F2}", counterData.instr / counterData.activeCycles),
+                        string.Format("{0:F2} W", counterData.packagePower),
+                        FormatPercentage(counterData.pmc[0], counterData.pmc[0] + counterData.pmc[1]),
+                        string.Format("{0:F2}", 1000 *counterData.pmc[1] / counterData.instr),
+                        FormatPercentage(counterData.pmc[2], counterData.activeCycles),
+                        FormatPercentage(counterData.pmc[3], counterData.activeCycles),
+                        FormatPercentage(counterData.pmc[4], counterData.activeCycles),
+                        FormatPercentage(counterData.pmc[5], counterData.activeCycles * 8),
+                        FormatPercentage(counterData.pmc[6], counterData.activeCycles * 8)
+                };
             }
         }
     }
