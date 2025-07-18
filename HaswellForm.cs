@@ -142,7 +142,7 @@ namespace PmcReader
                 }
                 else if (cpuFamily == 0x1A)
                 {
-                    if (cpuModel == 0x44)
+                    if (cpuModel == 0x44 || cpuModel == 0x60)
                     {
                         coreMonitoring.monitoringArea = new AMD.Zen5();
                         l3Monitoring.monitoringArea = new AMD.Zen5L3Cache();
