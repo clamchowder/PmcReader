@@ -206,7 +206,7 @@ namespace PmcReader.Intel
                 // ok 0x81 doesn't work, how about 0x8A
                 // 0x86 is almost right? seems to count in 32B increments and doesn't count GPU BW
                 //Ring0.WriteMsr(MTL_UNC_ARB_CTRL, GetUncorePerfEvtSelRegisterValue(0x85, 0, false, false, true, false, 0));
-                Ring0.WriteMsr(MTL_UNC_ARB_CTRL, GetUncorePerfEvtSelRegisterValue(0x85, 0, false, false, true, false, cmask: 0));
+                Ring0.WriteMsr(MTL_UNC_ARB_CTRL, GetUncorePerfEvtSelRegisterValue(0x85, 0, false, false, true, false, cmask: 0xFF));
                 Ring0.WriteMsr(MTL_UNC_ARB_CTR, 0);
                 //Ring0.WriteMsr(MTL_UNC_ARB_CTR + 1, 0);
 
@@ -225,7 +225,8 @@ namespace PmcReader.Intel
                     new string[] { "HAC ARB (CMI Transactions)", FormatLargeNumber(normalizedArbCounterData.hacArbCtr1 * 64) + "B/s", FormatLargeNumber(arb.arbCounterTotals.totalHacArbCtr1 * 64) + "B" },
 
                     // which clock?
-                    new string[] { "ARB", string.Format("{0:F2}", normalizedArbCounterData.arbCtr0 / normalizedArbCounterData.cncuUncoreClk), "-" },
+                    // new string[] { "ARB", string.Format("{0:F2}", normalizedArbCounterData.arbCtr0 / normalizedArbCounterData.cncuUncoreClk), "-" },
+                    new string[] { "ARB Cmask FF", FormatLargeNumber(normalizedArbCounterData.arbCtr0)},
                     new string[] { "sNCU", FormatLargeNumber(normalizedArbCounterData.sncuUncoreClk) + "Hz", "-" },
                     new string[] { "cNCU", FormatLargeNumber(normalizedArbCounterData.cncuUncoreClk) + "Hz", "-" },
                 };

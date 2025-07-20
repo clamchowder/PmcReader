@@ -75,7 +75,9 @@ namespace PmcReader.Intel
                 (ovf_en ? 1UL : 0UL) << 20 |
                 (enable ? 1UL : 0UL) << 22 |
                 (invert ? 1UL : 0UL) << 23 |
-                (ulong)(cmask & 0xF) << 24;
+                // From kernel sources, ADL widens the threshold field to bits 24:29
+                // LNL adds a threshold2 field, making it 16 bits
+                (ulong)(cmask & 0xFF) << 24; 
         }
     }
 }

@@ -76,7 +76,7 @@ namespace PmcReader.Intel
                 (ovf_en ? 1UL : 0UL) << 20 |
                 (enable ? 1UL : 0UL) << 22 |
                 (invert ? 1UL : 0UL) << 23 |
-                (ulong)(cmask & 0xF) << 24;
+                (ulong)(cmask & 0x1F) << 24;
         }
     }
 }

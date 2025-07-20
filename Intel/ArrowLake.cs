@@ -1109,7 +1109,7 @@ namespace PmcReader.Intel
                 // 0x73, 0x00: bad speculation slots
                 // 0xa4, 0x02: backend bound (all)
                 // 0xc2, 0x02: retiring
-                // cmask backend bound
+                // cmask retire blocked
                 // 0x05, 0xf4: l1 bound at retire (oldest load blocked, store addr match, dtlb miss/page walk)
                 // 0x05, 0xff: oldest load of load buffer stalled for any reason
                 ulong[] pmc = new ulong[8];
@@ -1118,7 +1118,7 @@ namespace PmcReader.Intel
                 pmc[2] = GetPerfEvtSelRegisterValue(0x73, 0); // bad speculation
                 pmc[3] = GetPerfEvtSelRegisterValue(0xA4, 2); // backend bound
                 pmc[4] = GetPerfEvtSelRegisterValue(0xC2, 2); // retiring
-                pmc[5] = GetPerfEvtSelRegisterValue(0xA4, 2, cmask: 1); // backend bound cycles
+                pmc[5] = GetPerfEvtSelRegisterValue(0xC2, 2, cmask: 1, invert: true); // retire blocked cycles
                 pmc[6] = GetPerfEvtSelRegisterValue(5, 0xFF); // load blocking retire cycles
                 pmc[7] = GetPerfEvtSelRegisterValue(5, 0x81); // load blocking retire, l1 miss
                 cpu.ProgramPerfCounters(pmc, coreType.Type);
@@ -1142,12 +1142,12 @@ namespace PmcReader.Intel
                 cpu.ReadPackagePowerCounter();
                 results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
                 results.overallCounterValues = cpu.GetOverallCounterValues(new String[] {
-                   "Frontnd Latency", "Frontend Bandwidth", "Bad Speculation", "Backend Bound", "Retiring", "Backend Bound Cmask 1", "Retire blocked by load", "Retire blocked by l1 miss load"});
+                   "Frontnd Latency", "Frontend Bandwidth", "Bad Speculation", "Backend Bound", "Retiring", "No retire cycles", "Retire blocked by load", "Retire blocked by l1 miss load"});
                 return results;
             }
 
             public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "PkgPower",
-                "Bad Speculation", "FE Latency", "FE BW", "Core Bound", "Backend Bound", "Retiring", "Load Blocking Ret", "L1D Miss Load Blocking Ret"};
+                "Bad Speculation", "FE Latency", "FE BW", "BE Core Bound", "BE Mem Bound", "Retiring", "Load Blocking Ret", "L1D Miss Load Blocking Ret"};
 
             public string GetHelpText()
             {
@@ -1157,6 +1157,7 @@ namespace PmcReader.Intel
             private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
             {
                 float slots = counterData.activeCycles * 8;
+                float loadBlockPct = counterData.pmc[6] / counterData.pmc[5];
                 return new string[] { label,
                         FormatLargeNumber(counterData.activeCycles),
                         FormatLargeNumber(counterData.instr),
@@ -1165,7 +1166,8 @@ namespace PmcReader.Intel
                         FormatPercentage(counterData.pmc[2], slots), // Bad spec
                         FormatPercentage(counterData.pmc[0], slots), // FE latency
                         FormatPercentage(counterData.pmc[1], slots), // FE BW
-                        FormatPercentage(counterData.pmc[3], slots), // Backend Bound
+                        FormatPercentage(counterData.pmc[3] * (1 - loadBlockPct), slots), // Backend Bound, Core
+                        FormatPercentage(counterData.pmc[3] * loadBlockPct, slots), // Backend Bound, Mem
                         FormatPercentage(counterData.pmc[4], slots), // retiring
                         FormatPercentage(counterData.pmc[6], counterData.activeCycles),
                         FormatPercentage(counterData.pmc[7], counterData.activeCycles)
@@ -1259,8 +1261,10 @@ namespace PmcReader.Intel
                         string.Format("{0:F2} W", counterData.packagePower),
                         FormatPercentage(counterData.pmc[0] - counterData.pmc[1], counterData.pmc[0]),
                         string.Format("{0:F2}", 1000 * counterData.pmc[1] / counterData.instr),
+                        string.Format("{0:F2}", 1000 * counterData.pmc[2] / counterData.instr),
                         FormatPercentage(counterData.pmc[3], counterData.activeCycles * 8),
-                        string.Format("{0:F2} clks", counterData.pmc[6] / counterData.pmc[7])
+                        string.Format("{0:F2} clks", counterData.pmc[6] / counterData.pmc[7]),
+                        FormatPercentage(counterData.pmc[4], counterData.activeCycles * 8),
                 };
             }
         }
