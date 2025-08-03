@@ -285,7 +285,7 @@ namespace PmcReader
         /// <returns>Formatted string, with G/M/K suffix if big</returns>
         public static string FormatLargeNumber(ulong n)
         {
-            if (n > 2000000000000)
+            if (n > 2000000000000UL)
             {
                 return string.Format("{0:F2} T", (float)n / 1000000000000);
             }
