@@ -32,6 +32,8 @@ namespace PmcReader.Intel
         {
             public float ctr0;
             public float ctr1;
+            public ulong totalCtr0;
+            public ulong totalCtr1;
         }
 
         public void InitializeCboTotals()
@@ -58,8 +60,12 @@ namespace PmcReader.Intel
 
             cboData[cboIdx].ctr0 = ctr0 * normalizationFactor;
             cboData[cboIdx].ctr1 = ctr1 * normalizationFactor;
+            cboData[cboIdx].totalCtr0 += ctr0;
+            cboData[cboIdx].totalCtr1 += ctr1;
             cboTotals.ctr0 += cboData[cboIdx].ctr0;
             cboTotals.ctr1 += cboData[cboIdx].ctr1;
+            cboTotals.totalCtr0 += ctr0;
+            cboTotals.totalCtr1 += ctr1;
         }
 
         public Tuple<string, float>[] GetOverallCounterValues(string ctr0, string ctr1)
@@ -114,7 +120,7 @@ namespace PmcReader.Intel
                 return results;
             }
 
-            public string[] columns = new string[] { "Item", "Hitrate", "Hit BW", "All Lookups", "I state" };
+            public string[] columns = new string[] { "Item", "Hitrate", "Hit BW", "All Lookups", "I state", "Hit Data" };
 
             public string GetHelpText() { return ""; }
 
@@ -124,7 +130,8 @@ namespace PmcReader.Intel
                     string.Format("{0:F2}%", 100 * (1 - counterData.ctr1 / counterData.ctr0)),
                     FormatLargeNumber((counterData.ctr0 - counterData.ctr1) * 64) + "B/s",
                     FormatLargeNumber(counterData.ctr0),
-                    FormatLargeNumber(counterData.ctr1)};
+                    FormatLargeNumber(counterData.ctr1),
+                    FormatLargeNumber(64 *(counterData.totalCtr0 - counterData.totalCtr1)) + "B"};
             }
         }
     }

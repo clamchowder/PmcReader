@@ -78,7 +78,7 @@ namespace PmcReader.AMD
                         FormatLargeNumber(counterData.aperf),
                         FormatLargeNumber(counterData.instr),
                         string.Format("{0:F2}", counterData.instr / counterData.aperf),
-                        FormatPercentage(counterData.ctr4, counterData.ctr5),
+                        FormatPercentage(counterData.ctr5 - counterData.ctr4, counterData.ctr5),
                         string.Format("{0:F2}", 1000* counterData.ctr0 / counterData.instr),
                         string.Format("{0:F2}", 1000* counterData.ctr1 / counterData.instr),
                         string.Format("{0:F2}", 1000 * counterData.ctr2 / counterData.instr),
@@ -167,6 +167,68 @@ namespace PmcReader.AMD
                     GetPerfCtlValue(0x44, 4, true, true, false, false, true, false, 0, 0, false, false), // other CCX
                     GetPerfCtlValue(0x45, 0xF0, true, true, false, false, true, false, 0, 0, false, false), // L2 DTLB Miss
                     GetPerfCtlValue(0x45, 0xF, true, true, false, false, true, false, 0, 0, false, false)  // Reload from L2 TLB
+                    );
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[cpu.GetThreadCount()][];
+                cpu.InitializeCoreTotals();
+                for (int threadIdx = 0; threadIdx < cpu.GetThreadCount(); threadIdx++)
+                {
+                    cpu.UpdateThreadCoreCounterData(threadIdx);
+                    results.unitMetrics[threadIdx] = computeMetrics("Thread " + threadIdx, cpu.NormalizedThreadCounts[threadIdx]);
+                }
+
+                results.overallMetrics = computeMetrics("Overall", cpu.NormalizedTotalCounts);
+                results.overallCounterValues = cpu.GetOverallCounterValues("DC Fill from L2", "Fill from CCX", "Fill from DRAM", "Fill from other CCX", "L2 DTLB Miss", "Fill from L2 DTLB");
+                return results;
+            }
+
+            public string[] columns = new string[] { "Item", "Active Cycles", "Instructions", "IPC", "Fill from L2", "Fill from CCX", "Fill from DRAM", "Other CCX", "L2 DTLB Miss", "DTLB Miss" };
+
+            public string GetHelpText()
+            {
+                return "";
+            }
+
+            private string[] computeMetrics(string label, NormalizedCoreCounterData counterData)
+            {
+                float totalOps = counterData.ctr2 + counterData.ctr3;
+                float totalDispatchedOps = counterData.ctr4 + counterData.ctr5;
+                return new string[] { label,
+                        FormatLargeNumber(counterData.aperf),
+                        FormatLargeNumber(counterData.instr),
+                        string.Format("{0:F2}", counterData.instr / counterData.aperf),
+                        string.Format("{0:F2}", 1000* counterData.ctr0 / counterData.instr),
+                        string.Format("{0:F2}", 1000* counterData.ctr1 / counterData.instr),
+                        string.Format("{0:F2}", 1000 * counterData.ctr2 / counterData.instr),
+                        string.Format("{0:F2}", 1000 * counterData.ctr3 / counterData.instr),
+                        string.Format("{0:F2}", 1000 * counterData.ctr4 / counterData.instr),
+                        string.Format("{0:F2}", 1000 * counterData.ctr5 / counterData.instr),
+                        };
+            }
+        }
+
+        public class BackendLatency : MonitoringConfig
+        {
+            private Zen5 cpu;
+            public string GetConfigName() { return "Backend Latency"; }
+
+            public BackendLatency(Zen5 amdCpu) { cpu = amdCpu; }
+
+            public string[] GetColumns() { return columns; }
+
+            public void Initialize()
+            {
+                cpu.ProgramPerfCounters(
+                    GetPerfCtlValue(0x41, 0xF, true, true, false, false, true, false, 0, 0, false, false),  // MAB Alloc
+                    GetPerfCtlValue(0x5F, 0, true, true, false, false, true, false, 0, 0, false, false),  // Allocated DC Misses
+                    GetPerfCtlValue(0xD6, 0xA2, true, true, false, false, true, false, 0, 0, false, false),  // No retire, waiting on load
+                    GetPerfCtlValue(0xD6, 2, true, true, false, false, true, false, 0, 0, false, false), // No retire, non-load
+                    GetPerfCtlValue(0xD6, 0xA2, true, true, edge: true, false, true, false, 0, 0, false, false), // L2 DTLB Miss
+                    GetPerfCtlValue(0xD6, 0xF, true, true, edge: true, false, true, false, 0, 0, false, false)  // Reload from L2 TLB
                     );
             }
 
@@ -382,10 +444,10 @@ namespace PmcReader.AMD
                         FormatLargeNumber(counterData.instr),
                         string.Format("{0:F2}", counterData.instr / counterData.aperf),
                         FormatPercentage(counterData.ctr0, counterData.aperf),
-                        FormatPercentage(counterData.ctr2, counterData.aperf),
-                        FormatPercentage(counterData.ctr4, counterData.aperf),
                         FormatPercentage(counterData.ctr1, counterData.aperf),
+                        FormatPercentage(counterData.ctr2, counterData.aperf),
                         FormatPercentage(counterData.ctr3, counterData.aperf),
+                        FormatPercentage(counterData.ctr4, counterData.aperf),
                         FormatPercentage(counterData.ctr5, counterData.aperf)
                         };
             }

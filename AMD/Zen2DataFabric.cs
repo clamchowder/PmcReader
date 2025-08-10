@@ -18,6 +18,8 @@ namespace PmcReader.AMD
             List<MonitoringConfig> monitoringConfigList = new List<MonitoringConfig>();
             if (dfType == DfType.Client) monitoringConfigList.Add(new ClientBwConfig(this));
             else if (dfType == DfType.DestkopThreadripper) monitoringConfigList.Add(new TrDramBwConfig(this));
+
+            monitoringConfigList.Add(new Zen2DfTest(this));
             monitoringConfigs = monitoringConfigList.ToArray();
         }
 
@@ -89,8 +91,9 @@ namespace PmcReader.AMD
             private Zen2DataFabric dataFabric;
             private long lastUpdateTime;
             private const int monitoringThread = 1;
+            private ulong[] totals;
 
-            public string[] columns = new string[] { "Item", "Count * 64B", "Count", "Pkg Pwr" };
+            public string[] columns = new string[] { "Item", "Bandwidth", "Total Data", "Pkg Pwr" };
             public string GetHelpText() { return ""; }
             public ClientBwConfig(Zen2DataFabric dataFabric)
             {
@@ -120,8 +123,14 @@ namespace PmcReader.AMD
                 Ring0.WriteMsr(MSR_DF_PERF_CTL_2, GetDFPerfCtlValue(0x47, 0x20, true, 0, 0));// ch1 read?
                 Ring0.WriteMsr(MSR_DF_PERF_CTL_3, GetDFPerfCtlValue(0x47, 0x8, true, 0, 0)); // ch1 write?
 
+                Ring0.WriteMsr(MSR_DF_PERF_CTR_0, 0);
+                Ring0.WriteMsr(MSR_DF_PERF_CTR_1, 0);
+                Ring0.WriteMsr(MSR_DF_PERF_CTR_2, 0);
+                Ring0.WriteMsr(MSR_DF_PERF_CTR_3, 0);
+
                 dataFabric.InitializeCoreTotals();
                 lastUpdateTime = DateTimeOffset.Now.ToUnixTimeMilliseconds();
+                totals = new ulong[4];
             }
 
             public MonitoringUpdateResults Update()
@@ -133,18 +142,23 @@ namespace PmcReader.AMD
                 ulong ctr1 = ReadAndClearMsr(MSR_DF_PERF_CTR_1);
                 ulong ctr2 = ReadAndClearMsr(MSR_DF_PERF_CTR_2);
                 ulong ctr3 = ReadAndClearMsr(MSR_DF_PERF_CTR_3);
+                totals[0] += ctr0;
+                totals[1] += ctr1;
+                totals[2] += ctr2;
+                totals[3] += ctr3;
+                ulong allData = totals[0] + totals[1] + totals[2] + totals[3];
 
                 dataFabric.ReadPackagePowerCounter();
                 results.unitMetrics = new string[4][];
-                results.unitMetrics[0] = new string[] { "Ch 0 Read?", FormatLargeNumber(ctr0 * normalizationFactor * 64) + "B/s", FormatLargeNumber(ctr0 * normalizationFactor), "N/A" };
-                results.unitMetrics[1] = new string[] { "Ch 0 Write?", FormatLargeNumber(ctr1 * normalizationFactor * 64) + "B/s", FormatLargeNumber(ctr1 * normalizationFactor), "N/A" };
-                results.unitMetrics[2] = new string[] { "Ch 1 Read?", FormatLargeNumber(ctr2 * normalizationFactor * 64) + "B/s", FormatLargeNumber(ctr2 * normalizationFactor), "N/A" };
-                results.unitMetrics[3] = new string[] { "Ch 1 Write?", FormatLargeNumber(ctr3 * normalizationFactor * 64) + "B/s", FormatLargeNumber(ctr3 * normalizationFactor), "N/A" };
+                results.unitMetrics[0] = new string[] { "Ch 0 Read?", FormatLargeNumber(ctr0 * normalizationFactor * 64) + "B/s", FormatLargeNumber(totals[0] * 64) + "B", "N/A" };
+                results.unitMetrics[1] = new string[] { "Ch 0 Write?", FormatLargeNumber(ctr1 * normalizationFactor * 64) + "B/s", FormatLargeNumber(totals[1] * 64) + "B", "N/A" };
+                results.unitMetrics[2] = new string[] { "Ch 1 Read?", FormatLargeNumber(ctr2 * normalizationFactor * 64) + "B/s", FormatLargeNumber(totals[2] * 64) + "B", "N/A" };
+                results.unitMetrics[3] = new string[] { "Ch 1 Write?", FormatLargeNumber(ctr3 * normalizationFactor * 64) + "B/s", FormatLargeNumber(totals[3] * 64) + "B", "N/A" };
 
                 ulong total = ctr0 + ctr1 + ctr2 + ctr3;
                 results.overallMetrics = new string[] { "Total",
                     FormatLargeNumber(total * normalizationFactor * 64) + "B/s",
-                    FormatLargeNumber(total * normalizationFactor),
+                    FormatLargeNumber(allData * 64) + "B",
                     string.Format("{0:F2} W", dataFabric.NormalizedTotalCounts.watts)
                 };
                 
@@ -154,6 +168,62 @@ namespace PmcReader.AMD
                 results.overallCounterValues[2] = new Tuple<string, float>("Ch 0 Write?", ctr1);
                 results.overallCounterValues[3] = new Tuple<string, float>("Ch 1 Read?", ctr2);
                 results.overallCounterValues[4] = new Tuple<string, float>("Ch 1 Write?", ctr3);
+                return results;
+            }
+        }
+
+        public class Zen2DfTest : MonitoringConfig
+        {
+            private Zen2DataFabric dataFabric;
+            private long lastUpdateTime;
+            private const int monitoringThread = 1;
+
+            public string[] columns = new string[] { "Item", "Data BW" };
+            public string GetHelpText() { return ""; }
+            public Zen2DfTest(Zen2DataFabric dataFabric)
+            {
+                this.dataFabric = dataFabric;
+            }
+
+            public string GetConfigName() { return "DF Test"; }
+            public string[] GetColumns() { return columns; }
+            public void Initialize()
+            {
+                // 0x38 = requests with data (documented for Milan)
+                // instances 0,1 = CS0,1 tied to memory controllers
+                // instances 4,5 count up when testing copy bw to iGPU, but undercount at larger copy sizes
+                // 4,5 also count up during SSD read
+                Ring0.WriteMsr(MSR_DF_PERF_CTL_0, GetDFPerfCtlValue(0x07, 0x38, true, 1, 0)); // ch0 read?
+                Ring0.WriteMsr(MSR_DF_PERF_CTL_1, GetDFPerfCtlValue(0x47, 0x38, true, 1, 0));  // ch0 write?
+                Ring0.WriteMsr(MSR_DF_PERF_CTL_2, GetDFPerfCtlValue(0x7, 0x38, true, 4, 0));// ch1 read?
+                Ring0.WriteMsr(MSR_DF_PERF_CTL_3, GetDFPerfCtlValue(0x47, 0x38, true, 4, 0)); // ch1 write?
+
+                Ring0.WriteMsr(MSR_DF_PERF_CTR_0, 0);
+                Ring0.WriteMsr(MSR_DF_PERF_CTR_1, 0);
+                Ring0.WriteMsr(MSR_DF_PERF_CTR_2, 0);
+                Ring0.WriteMsr(MSR_DF_PERF_CTR_3, 0);
+
+                lastUpdateTime = DateTimeOffset.Now.ToUnixTimeMilliseconds();
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                float normalizationFactor = dataFabric.GetNormalizationFactor(ref lastUpdateTime);
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                results.unitMetrics = new string[4][];
+                ThreadAffinity.Set(1UL << monitoringThread);
+                ulong mysteryOutboundBytes0 = ReadAndClearMsr(MSR_DF_PERF_CTR_0) * 64;
+                ulong mysteryOutboundBytes1 = ReadAndClearMsr(MSR_DF_PERF_CTR_1) * 64;
+                ulong mysteryOutboundBytes2 = ReadAndClearMsr(MSR_DF_PERF_CTR_2) * 64;
+                ulong mysteryOutboundBytes3 = ReadAndClearMsr(MSR_DF_PERF_CTR_3) * 64;
+
+                results.unitMetrics[0] = new string[] { "DF Data Inst 4", FormatLargeNumber(mysteryOutboundBytes0 * normalizationFactor) + "B/s" };
+                results.unitMetrics[1] = new string[] { "DF Data Inst 5", FormatLargeNumber(mysteryOutboundBytes1 * normalizationFactor) + "B/s" };
+                results.unitMetrics[2] = new string[] { "DF Data Inst 16", FormatLargeNumber(mysteryOutboundBytes2 * normalizationFactor) + "B/s" };
+                results.unitMetrics[3] = new string[] { "DF Data Inst 17", FormatLargeNumber(mysteryOutboundBytes3 * normalizationFactor) + "B/s" };
+
+                results.overallMetrics = new string[] { "Overall",
+                    FormatLargeNumber((mysteryOutboundBytes0 + mysteryOutboundBytes1 + mysteryOutboundBytes2 + mysteryOutboundBytes3) * normalizationFactor) + "B/s" };
                 return results;
             }
         }
