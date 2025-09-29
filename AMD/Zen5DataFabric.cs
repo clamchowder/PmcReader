@@ -17,6 +17,7 @@ namespace PmcReader.AMD
             architectureName = "Zen 5 UMC";
             List<MonitoringConfig> monitoringConfigList = new List<MonitoringConfig>();
             monitoringConfigList.Add(new UMCConfig(this));
+            monitoringConfigList.Add(new UMCSubtimingsConfig(this));
             monitoringConfigList.Add(new CSConfig(this));
             monitoringConfigList.Add(new CMConfig(this));
             monitoringConfigs = monitoringConfigList.ToArray();
@@ -261,6 +262,119 @@ namespace PmcReader.AMD
                 overallCounterList.Add(new Tuple<string, float>("UMC1 CAS Read", ch1Read));
                 overallCounterList.Add(new Tuple<string, float>("UMC1 CAS Write", ch1Write));
                 overallCounterList.Add(new Tuple<string, float>("UMC1 Clk", ch1Clk));
+                overallCounterList.Add(new Tuple<string, float>("UMC1 Data Bus Utilized Clk", ch1BusUtil));
+                results.overallCounterValues = overallCounterList.ToArray();
+                return results;
+            }
+        }
+
+        public class UMCSubtimingsConfig : MonitoringConfig
+        {
+            private Zen5DataFabric dataFabric;
+            private long lastUpdateTime;
+            private const int monitoringThread = 1;
+            private ulong[] totals;
+
+            public string[] columns = new string[] { "Item", "Item*64B", "Pkg Pwr" };
+            public string GetHelpText() { return ""; }
+            public UMCSubtimingsConfig(Zen5DataFabric dataFabric)
+            {
+                this.dataFabric = dataFabric;
+            }
+
+            public string GetConfigName() { return "Subtimings"; }
+            public string[] GetColumns() { return columns; }
+            public void Initialize()
+            {
+                ThreadAffinity.Set(1UL << monitoringThread);
+
+                ulong hwcrValue;
+                Ring0.ReadMsr(HWCR, out hwcrValue);
+                hwcrValue |= 1UL << 30; // instructions retired counter
+                hwcrValue |= 1UL << 31; // enable UMC counters
+                Ring0.WriteMsr(HWCR, hwcrValue);
+                Ring0.ReadMsr(HWCR, out hwcrValue);
+
+                ulong clkEvt = GetUmcPerfCtlValue(0, false, false); // clk
+                /*OpCode.CpuidTx(0x80000022, 0, out uint extPerfMonAndDbgEax, out uint extPerfMonAndDbgEbx, out uint extPerfMonAndDbgEcx, out uint _, 1);
+
+                // does not work, everything returns 0
+                uint umcPerfCtrCount = (extPerfMonAndDbgEbx >> 16) & 0xFF;
+                uint umcPerfCtrMask = extPerfMonAndDbgEcx;
+                Console.WriteLine(string.Format("{0} UMC PMCs, active mask {1:X}", umcPerfCtrCount, umcPerfCtrMask));
+                // From brute force experimentation, the 9900X has eight usable UMC perf counters
+                // likely split 4+4
+
+                for (uint i = 0; i < 16; i++)
+                {
+                    Ring0.WriteMsr(MSR_UMC_PERF_CTL_base + MSR_UMC_PERF_increment * i, clkEvt);
+                }*/
+
+                ulong cas = GetUmcPerfCtlValue(0xa, maskReads: false, maskWrites: false);
+                ulong activate = GetUmcPerfCtlValue(5, maskReads: false, maskWrites: false);
+                ulong precharge = GetUmcPerfCtlValue(0x6, maskReads: false, maskWrites: false);
+                ulong busUtil = GetUmcPerfCtlValue(0x14, maskReads: false, maskWrites: false);
+                Ring0.WriteMsr(MSR_UMC_PERF_CTL_base, cas);
+                Ring0.WriteMsr(MSR_UMC_PERF_CTL_base + MSR_UMC_PERF_increment, activate);
+                Ring0.WriteMsr(MSR_UMC_PERF_CTL_base + MSR_UMC_PERF_increment * 2, precharge);
+                Ring0.WriteMsr(MSR_UMC_PERF_CTL_base + MSR_UMC_PERF_increment * 3, busUtil);
+                Ring0.WriteMsr(MSR_UMC_PERF_CTL_base + MSR_UMC_PERF_increment * 4, cas);
+                Ring0.WriteMsr(MSR_UMC_PERF_CTL_base + MSR_UMC_PERF_increment * 5, activate);
+                Ring0.WriteMsr(MSR_UMC_PERF_CTL_base + MSR_UMC_PERF_increment * 6, precharge);
+                Ring0.WriteMsr(MSR_UMC_PERF_CTL_base + MSR_UMC_PERF_increment * 7, busUtil);
+
+                for (uint i = 0; i < 8; i++) Ring0.WriteMsr(MSR_UMC_PERF_CTR_base + MSR_UMC_PERF_increment * i, 0);
+
+                dataFabric.InitializeCoreTotals();
+                totals = new ulong[4];
+                lastUpdateTime = DateTimeOffset.Now.ToUnixTimeMilliseconds();
+            }
+
+            public MonitoringUpdateResults Update()
+            {
+                float normalizationFactor = dataFabric.GetNormalizationFactor(ref lastUpdateTime);
+                MonitoringUpdateResults results = new MonitoringUpdateResults();
+                ThreadAffinity.Set(1UL << monitoringThread);
+                ulong ch0Cas = ReadAndClearMsr(MSR_UMC_PERF_CTR_base);
+                ulong ch0Activate = ReadAndClearMsr(MSR_UMC_PERF_CTR_base + MSR_UMC_PERF_increment);
+                ulong ch0Precharge = ReadAndClearMsr(MSR_UMC_PERF_CTR_base + MSR_UMC_PERF_increment * 2);
+                ulong ch0BusUtil = ReadAndClearMsr(MSR_UMC_PERF_CTR_base + MSR_UMC_PERF_increment * 3);
+                ulong ch1Cas = ReadAndClearMsr(MSR_UMC_PERF_CTR_base + MSR_UMC_PERF_increment * 4);
+                ulong ch1Activate = ReadAndClearMsr(MSR_UMC_PERF_CTR_base + MSR_UMC_PERF_increment * 5);
+                ulong ch1Precharge = ReadAndClearMsr(MSR_UMC_PERF_CTR_base + MSR_UMC_PERF_increment * 6);
+                ulong ch1BusUtil = ReadAndClearMsr(MSR_UMC_PERF_CTR_base + MSR_UMC_PERF_increment * 7);
+
+                totals[0] += ch0Cas;
+                totals[1] += ch0Activate;
+                totals[2] += ch1Cas;
+                totals[3] += ch1Activate;
+
+                dataFabric.ReadPackagePowerCounter();
+
+                results.unitMetrics = new string[6][];
+                results.unitMetrics[0] = new string[] { "UMC0 CAS", FormatLargeNumber(ch0Cas * normalizationFactor * 64) + "B/s", string.Empty };
+                results.unitMetrics[1] = new string[] { "UMC0 ACT", FormatLargeNumber(ch0Activate * normalizationFactor * 64) + "B/s", string.Empty };
+                results.unitMetrics[2] = new string[] { "UMC0 Precharge", FormatLargeNumber(ch0Precharge * normalizationFactor * 64) + "B/s", string.Empty };
+                results.unitMetrics[3] = new string[] { "UMC1 CAS", FormatLargeNumber(ch1Cas * normalizationFactor * 64) + "B/s", string.Empty };
+                results.unitMetrics[4] = new string[] { "UMC1 ACT", FormatLargeNumber(ch1Activate * normalizationFactor * 64) + "B/s", string.Empty };
+                results.unitMetrics[5] = new string[] { "UMC1 Precharge", FormatLargeNumber(ch1Precharge * normalizationFactor * 64) + "B/s", string.Empty };
+
+                ulong accumulatedCas = totals[0] + totals[2];
+                ulong totalCas = ch0Cas + ch1Cas;
+                results.overallMetrics = new string[] { "Total",
+                    FormatLargeNumber(totalCas * normalizationFactor * 64) + "B/s",
+                    string.Format("{0:F2} W", dataFabric.NormalizedTotalCounts.watts)
+                };
+
+                List<Tuple<string, float>> overallCounterList = new List<Tuple<string, float>>();
+                overallCounterList.Add(new Tuple<string, float>("Package Power", dataFabric.NormalizedTotalCounts.watts));
+                overallCounterList.Add(new Tuple<string, float>("UMC0 CAS", ch0Cas));
+                overallCounterList.Add(new Tuple<string, float>("UMC0 Activate", ch0Activate));
+                overallCounterList.Add(new Tuple<string, float>("UMC0 Precharge", ch0Precharge));
+                overallCounterList.Add(new Tuple<string, float>("UMC0 Data Bus Utilized Clk", ch0BusUtil));
+                overallCounterList.Add(new Tuple<string, float>("UMC1 CAS", ch1Cas));
+                overallCounterList.Add(new Tuple<string, float>("UMC1 Activate", ch1Activate));
+                overallCounterList.Add(new Tuple<string, float>("UMC1 Precharge", ch1Precharge));
                 overallCounterList.Add(new Tuple<string, float>("UMC1 Data Bus Utilized Clk", ch1BusUtil));
                 results.overallCounterValues = overallCounterList.ToArray();
                 return results;
