@@ -149,6 +149,14 @@ namespace PmcReader
                         dfMonitoring.monitoringArea = new AMD.Zen5DataFabric(AMD.Zen5DataFabric.DfType.Client);
                         crazyThings = new AMD.Amd19hCpu();
                     }
+                    else if (cpuModel == 0x70)
+                    {
+                        // Strix Halo
+                        coreMonitoring.monitoringArea = new AMD.Zen5();
+                        l3Monitoring.monitoringArea = new AMD.Zen5L3Cache();
+                        dfMonitoring.monitoringArea = new AMD.Zen5DataFabric(AMD.Zen5DataFabric.DfType.StrixHaloExperimental);
+                        crazyThings = new AMD.Amd19hCpu();
+                    }
                 }
                 else if (cpuFamily == 0x16)
                 {

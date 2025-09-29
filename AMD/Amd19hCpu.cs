@@ -218,12 +218,15 @@ namespace PmcReader.AMD
         /// </summary>
         /// <param name="instanceId">0-11: CS (UMC), 12-15: CS (CXL), 0x10-0x17: CCM0-7, 0x35-0x3A: LINK</param>
         /// <param name="read">true = count read, false = count write</param>
+        /// <param name="ctlValue"></param>
+        /// <param name="firstInterface">For CCMs, monitor first interface if true</param>
         /// <returns>perf ctl value</returns>
-        public static ulong GetDFBandwidthPerfCtlValue(byte instanceId, bool read)
+        public static ulong GetDFBandwidthPerfCtlValue(byte instanceId, bool read, bool firstInterface = false)
         {
             // event is split 0:7, 32:38, for 14 bits total
             // bits 0:5 = event encoding, only DATA_BW (0x1F) is documented
-            ulong ctlValue = 0x1F;
+            // A CCM can connect to two CCDs. The first link is 0x1E, the second is 0x1F
+            ulong ctlValue = (ulong)(firstInterface ? 0x1E : 0x1F);
 
             // 6:13 = instance id. first two bits fit in 0:7 low section
             ulong instanceIdLo = (ulong)instanceId & 3;
@@ -234,7 +237,7 @@ namespace PmcReader.AMD
             // unit mask is split 8:15, 24:27
             ulong umask = read ? 0UL : 1; // read request = 0, write request = 1
             umask |= 0x1FF << 1; // 9 reserved bits
-            umask |= 1 << 10; // 1 = same node, 2 = remote node, 3 = count all (src = same or remote die)
+            umask |= 3 << 10; // 1 = same node, 2 = remote node, 3 = count all (src = same or remote die)
             ctlValue |= (umask & 0xFF) << 8; // low bits
             ctlValue |= (umask >> 8) << 24; // high 4 bits
 
