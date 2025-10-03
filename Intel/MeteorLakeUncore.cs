@@ -20,6 +20,7 @@ namespace PmcReader.Intel
         public const uint MTL_UNC_CNCU_FIXED_CTR = 0x2408;
         public const uint MTL_UNC_CNCU_BOX_CTRL = 0x240e;
 
+        // Note there are *two* ARB boxes
         // System agent's arbitration queue?
         public const uint MTL_UNC_ARB_CTRL = 0x2412;
         public const uint MTL_UNC_ARB_CTR = 0x2418;
