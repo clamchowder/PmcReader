@@ -34,7 +34,6 @@ namespace PmcReader.Intel
         }
 
         // Skylake introduces special frontend perfmon facilities
-        public const uint MSR_PEBS_FRONTEND = 0x3F7;
         private const byte FRONTEND_RETIRED_EVT = 0xC6;
         private const byte FRONTEND_RETIRED_UMASK = 0x1;
 
